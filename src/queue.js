@@ -1,25 +1,14 @@
-/*
- * Firebase Queue is a fault-tolerant, multi-worker, multi-stage job pipeline
- * built on Firebase.
- *
- * Firebase Queue 0.0.0
- * https://github.com/firebase/firebase-queue/
- * License: MIT
- */
-'use strict';
+'use strict'
 
-var _ = require('lodash');
-var RSVP = require('rsvp');
-var logger = require('winston');
-var QueueWorker = require('./lib/queue_worker.js');
+const QueueWorker = require('./lib/queue_worker.js')
 
-var DEFAULT_NUM_WORKERS = 1;
-var DEFAULT_SANITIZE = true;
-var DEFAULT_SUPPRESS_STACK = false;
-var DEFAULT_TASK_SPEC = {
+const DEFAULT_NUM_WORKERS = 1
+const DEFAULT_SANITIZE = true
+const DEFAULT_SUPPRESS_STACK = false
+const DEFAULT_TASK_SPEC = {
   inProgressState: 'in_progress',
   timeout: 300000 // 5 minutes
-};
+}
 
 
 /**
@@ -54,212 +43,166 @@ var DEFAULT_TASK_SPEC = {
  *         of whether the operation was successful.
  * @returns {Object} The new Queue object.
  */
-function Queue() {
-  var self = this;
-  var constructorArguments = arguments;
+module.exports = function Queue() {
 
-  var error;
-  self.numWorkers = DEFAULT_NUM_WORKERS;
-  self.sanitize = DEFAULT_SANITIZE;
-  self.suppressStack = DEFAULT_SUPPRESS_STACK;
-  self.initialized = false;
-  self.shuttingDown = false;
+  var constructorArguments = arguments
 
-  self.specChangeListener = null;
+  let currentTaskSpec = undefined
+  let initialized = false
+  let shuttingDown = false
 
-  if (constructorArguments.length < 2) {
-    error = 'Queue must at least have the queueRef and ' +
-      'processingFunction arguments.';
-    logger.debug('Queue(): Error during initialization', error);
-    throw new Error(error);
-  } else if (constructorArguments.length === 2) {
-    self.processingFunction = constructorArguments[1];
-  } else if (constructorArguments.length === 3) {
-    var options = constructorArguments[1];
-    if (!_.isPlainObject(options)) {
-      error = 'Options parameter must be a plain object.';
-      logger.debug('Queue(): Error during initialization', error);
-      throw new Error(error);
-    }
-    if (!_.isUndefined(options.specId)) {
-      if (_.isString(options.specId)) {
-        self.specId = options.specId;
-      } else {
-        error = 'options.specId must be a String.';
-        logger.debug('Queue(): Error during initialization', error);
-        throw new Error(error);
-      }
-    }
-    if (!_.isUndefined(options.numWorkers)) {
-      if (_.isNumber(options.numWorkers) &&
-          options.numWorkers > 0 &&
-          options.numWorkers % 1 === 0) {
-        self.numWorkers = options.numWorkers;
-      } else {
-        error = 'options.numWorkers must be a positive integer.';
-        logger.debug('Queue(): Error during initialization', error);
-        throw new Error(error);
-      }
-    }
-    if (!_.isUndefined(options.sanitize)) {
-      if (_.isBoolean(options.sanitize)) {
-        self.sanitize = options.sanitize;
-      } else {
-        error = 'options.sanitize must be a boolean.';
-        logger.debug('Queue(): Error during initialization', error);
-        throw new Error(error);
-      }
-    }
-    if (!_.isUndefined(options.suppressStack)) {
-      if (_.isBoolean(options.suppressStack)) {
-        self.suppressStack = options.suppressStack;
-      } else {
-        error = 'options.suppressStack must be a boolean.';
-        logger.debug('Queue(): Error during initialization', error);
-        throw new Error(error);
-      }
-    }
-    self.processingFunction = constructorArguments[2];
+  let specChangeListener = null
+
+  const options = constructorArguments.length === 3
+    ? (isObject(constructorArguments[1]) && constructorArguments[1]) || throwError('Options parameter must be a plain object.')
+    : {}
+
+  const processingFunction = constructorArguments.length < 2
+    ? throwError('Queue must at least have the queueRef and processingFunction arguments.')
+    : constructorArguments.length === 2
+    ? constructorArguments[1]
+    : constructorArguments.length === 3
+    ? constructorArguments[2]
+    : throwError('Queue can only take at most three arguments - queueRef, options (optional), and processingFunction.')
+
+  const numWorkers = options.numWorkers === undefined
+    ? DEFAULT_NUM_WORKERS
+    : ((typeof options.numWorkers == 'number' && options.numWorkers > 0 && options.numWorkers % 1 === 0) || throwError('options.numWorkers must be a positive integer.')) &&
+      options.numWorkers
+
+  const specId = options.specId === undefined
+    ? undefined
+    : (typeof options.specId === 'string' && options.specId) || 
+      throwError('options.specId must be a String.')
+
+  const sanitize = options.sanitize === undefined
+    ? DEFAULT_SANITIZE
+    : ((options.sanitize === true || options.sanitize === false) || throwError('options.sanitize must be a boolean.')) &&
+      options.sanitize
+      
+  const suppressStack = options.suppressStack === undefined
+    ? DEFAULT_SUPPRESS_STACK
+    : ((options.suppressStack === true || options.suppressStack === false) || throwError('options.suppressStack must be a boolean.')) &&
+      options.suppressStack
+
+  const [tasksRef, specsRef] = constructorArguments[0].tasksRef && (!specId || constructorArguments[0].specsRef)
+    ? [constructorArguments[0].tasksRef, constructorArguments[0].specsRef]
+    : isObject(constructorArguments[0])
+    ? throwError('When ref is an object it must contain both keys \'tasksRef\' and \'specsRef\'')
+    : [constructorArguments[0].child('tasks'), constructorArguments[0].child('specs')]
+
+  const workers = Array(numWorkers).fill().map(createWorker)
+
+  if (!specId) {
+    workers.forEach(worker => worker.setTaskSpec(DEFAULT_TASK_SPEC))
+    initialized = true
   } else {
-    error = 'Queue can only take at most three arguments - queueRef, ' +
-      'options (optional), and processingFunction.';
-    logger.debug('Queue(): Error during initialization', error);
-    throw new Error(error);
-  }
-
-  if (_.has(constructorArguments[0], 'tasksRef') &&
-      _.has(constructorArguments[0], 'specsRef')) {
-    self.tasksRef = constructorArguments[0].tasksRef;
-    self.specsRef = constructorArguments[0].specsRef;
-  } else if (_.isPlainObject(constructorArguments[0])) {
-    error = 'When ref is an object it must contain both keys \'tasksRef\' ' +
-      'and \'specsRef\'';
-    logger.debug('Queue(): Error during initialization', error);
-    throw new Error(error);
-  } else {
-    self.tasksRef = constructorArguments[0].child('tasks');
-    self.specsRef = constructorArguments[0].child('specs');
-  }
-
-  self.workers = [];
-  for (var i = 0; i < self.numWorkers; i++) {
-    var processId = (self.specId ? self.specId + ':' : '') + i;
-    self.workers.push(new QueueWorker(
-      self.tasksRef,
-      processId,
-      self.sanitize,
-      self.suppressStack,
-      self.processingFunction
-    ));
-  }
-
-  if (_.isUndefined(self.specId)) {
-    for (var j = 0; j < self.numWorkers; j++) {
-      self.workers[j].setTaskSpec(DEFAULT_TASK_SPEC);
-    }
-    self.initialized = true;
-  } else {
-    self.specChangeListener = self.specsRef.child(self.specId).on(
-      'value',
-      function(taskSpecSnap) {
-        var taskSpec = {
-          startState: taskSpecSnap.child('start_state').val(),
-          inProgressState: taskSpecSnap.child('in_progress_state').val(),
-          finishedState: taskSpecSnap.child('finished_state').val(),
-          errorState: taskSpecSnap.child('error_state').val(),
-          timeout: taskSpecSnap.child('timeout').val(),
-          retries: taskSpecSnap.child('retries').val()
-        };
-
-        for (var k = 0; k < self.numWorkers; k++) {
-          self.workers[k].setTaskSpec(taskSpec);
+    specChangeListener = specsRef.child(specId).on(
+      'value', 
+      taskSpecSnap => {
+        const taskSpec = {
+          startState: val('start_state'),
+          inProgressState: val('in_progress_state'),
+          finishedState: val('finished_state'),
+          errorState: val('error_state'),
+          timeout: val('timeout'),
+          retries: val('retries')
         }
-        self.currentTaskSpec = taskSpec;
-        self.initialized = true;
-      }, /* istanbul ignore next */ function(err) {
-        logger.debug('Queue(): Error connecting to Firebase reference',
-          err.message);
-      });
+
+        workers.forEach(worker => worker.setTaskSpec(taskSpec))
+        currentTaskSpec = taskSpec
+        initialized = true
+
+        function val(key) { return taskSpecSnap.child(key).val() }
+      },
+      /* istanbul ignore next */ throwError
+    )
   }
 
-  return self;
+  this.addWorker = addWorker
+  this.getWorkerCount = getWorkerCount
+  this.shutdownWorker = shutdownWorker
+  this.shutdown = shutdown
+
+  // used in tests
+  this._workers = workers
+  this._specId = specId
+  this._sanitize = sanitize
+  this._suppressStack = suppressStack
+  this._initialized = () => initialized
+  this._specChangeListener = () => specChangeListener
+
+  return this
+
+  /**
+   * Gracefully shuts down a queue.
+   * @returns {Promise} A promise fulfilled when all the worker processes
+   *   have finished their current tasks and are no longer listening for new ones.
+   */
+  function shutdown() {
+    shuttingDown = true
+
+    if (specChangeListener) {
+      specsRef.child(specId).off('value', specChangeListener)
+      specChangeListener = null
+    }
+
+    return Promise.all(workers.map(worker => worker.shutdown()))
+  }
+
+  /**
+   * Adds a queue worker.
+   * @returns {QueueWorker} the worker created.
+   */
+  function addWorker() {
+    if (shuttingDown) throwError('Cannot add worker while queue is shutting down')
+
+    const worker = createWorker()
+    workers.push(worker)
+
+    if (!specId) worker.setTaskSpec(DEFAULT_TASK_SPEC)
+    else if (currentTaskSpec) worker.setTaskSpec(currentTaskSpec)
+    // if the currentTaskSpec is not yet set it will be called once it's fetched
+
+    return worker
+  }
+
+  /**
+   * Gets queue worker count.
+   * @returns {Number} Total number of workers for this queue.
+   */
+  function getWorkerCount() {
+    return workers.length
+  }
+
+  /**
+   * Shutdowns a queue worker if one exists.
+   * @returns {RSVP.Promise} A promise fulfilled once the worker is shutdown
+   *   or rejected if there are no workers left to shutdown.
+   */
+  function shutdownWorker() {
+    const worker = workers.pop()
+
+    return worker
+      ? worker.shutdown()
+      : Promise.reject(new Error('No workers to shutdown'))
+  }
+
+  function createWorker(_, i = workers.length) {
+    const processId = (specId ? specId + ':' : '') + i
+    return new QueueWorker(
+      tasksRef,
+      processId,
+      sanitize,
+      suppressStack,
+      processingFunction
+    )
+  }
+
+  function isObject(value) {
+    return value && !Object.getPrototypeOf(Object.getPrototypeOf(value))
+  }
+
+  // allows us to use throw both as statement and expression
+  function throwError(message) { throw new Error(message) }
 }
-
-/**
- * Gracefully shuts down a queue.
- * @returns {RSVP.Promise} A promise fulfilled when all the worker processes
- *   have finished their current tasks and are no longer listening for new ones.
- */
-Queue.prototype.shutdown = function() {
-  this.shuttingDown = true;
-  logger.debug('Queue: Shutting down');
-  if (!_.isNull(this.specChangeListener)) {
-    this.specsRef.child(this.specId).off('value',
-      this.specChangeListener);
-    this.specChangeListener = null;
-  }
-
-  return RSVP.all(_.map(this.workers, function(worker) {
-    return worker.shutdown();
-  }));
-};
-
-/**
- * Gets queue worker count.
- * @returns {Number} Total number of workers for this queue.
- */
-Queue.prototype.getWorkerCount = function() {
-  return this.workers.length;
-};
-
-/**
- * Adds a queue worker.
- * @returns {QueueWorker} the worker created.
- */
-Queue.prototype.addWorker = function() {
-  if (this.shuttingDown) {
-    throw new Error('Cannot add worker while queue is shutting down');
-  }
-
-  logger.debug('Queue: adding worker');
-  var processId = (this.specId ? this.specId + ':' : '') + this.workers.length;
-  var worker = new QueueWorker(
-    this.tasksRef,
-    processId,
-    this.sanitize,
-    this.suppressStack,
-    this.processingFunction
-  );
-  this.workers.push(worker);
-
-  if (_.isUndefined(this.specId)) {
-    worker.setTaskSpec(DEFAULT_TASK_SPEC);
-  // if the currentTaskSpec is not yet set it will be called once it's fetched
-  } else if (!_.isUndefined(this.currentTaskSpec)) {
-    worker.setTaskSpec(this.currentTaskSpec);
-  }
-
-  return worker;
-};
-
-/**
- * Shutdowns a queue worker if one exists.
- * @returns {RSVP.Promise} A promise fulfilled once the worker is shutdown
- *   or rejected if there are no workers left to shutdown.
- */
-Queue.prototype.shutdownWorker = function() {
-  var worker = this.workers.pop();
-
-  var promise;
-  if (_.isUndefined(worker)) {
-    promise = RSVP.reject(new Error('No workers to shutdown'));
-  } else {
-    logger.debug('Queue: shutting down worker');
-    promise = worker.shutdown();
-  }
-
-  return promise;
-};
-
-
-module.exports = Queue;

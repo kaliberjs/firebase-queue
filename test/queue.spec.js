@@ -33,9 +33,15 @@ describe('Queue', function() {
     _.forEach([{}, { foo: 'bar' }, { tasksRef: th.testRef }, { specsRef: th.testRef }], function(invalidRefConfigurationObject) {
       it('should not create a Queue with a ref configuration object that contains keys: {' + _.keys(invalidRefConfigurationObject).join(', ') + '}', function() {
         expect(function() {
-          new th.Queue(invalidRefConfigurationObject, _.noop);
+          new th.Queue(invalidRefConfigurationObject, { specId: 'test_task' }, _.noop);
         }).to.throw('When ref is an object it must contain both keys \'tasksRef\' and \'specsRef\'');
       });
+    });
+
+    it('should create a Queue with a ref configuration object that contains keys: { tasksRef }', function() {
+      expect(function() {
+        new th.Queue({ tasksRef: th.testRef }, _.noop);
+      }).to.not.throw('When ref is an object it must contain both keys \'tasksRef\' and \'specsRef\'');
     });
 
     _.forEach(['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }], function(nonFunctionObject) {
@@ -67,7 +73,7 @@ describe('Queue', function() {
     });
 
     _.forEach([NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop], function(nonStringObject) {
-      it('should not create a Queue with a non-string specId specified', function() {
+      it('should not create a Queue with a non-string specId specified ' + JSON.stringify(nonStringObject), function() {
         expect(function() {
           new th.Queue(th.testRef, { specId: nonStringObject }, _.noop);
         }).to.throw('options.specId must be a String.');
@@ -75,7 +81,7 @@ describe('Queue', function() {
     });
 
     _.forEach(['', 'foo', NaN, Infinity, true, false, 0, -1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop], function(nonPositiveIntigerObject) {
-      it('should not create a Queue with a non-positive integer numWorkers specified', function() {
+      it('should not create a Queue with a non-positive integer numWorkers specified ' + JSON.stringify(nonPositiveIntigerObject), function() {
         expect(function() {
           new th.Queue(th.testRef, { numWorkers: nonPositiveIntigerObject }, _.noop);
         }).to.throw('options.numWorkers must be a positive integer.');
@@ -101,20 +107,20 @@ describe('Queue', function() {
     _.forEach(_.range(1, 20), function(numWorkers) {
       it('should create a Queue with ' + numWorkers + ' workers when specified in options.numWorkers', function() {
         var q = new th.Queue(th.testRef, { numWorkers: numWorkers }, _.noop);
-        expect(q.workers.length).to.equal(numWorkers);
+        expect(q.getWorkerCount()).to.equal(numWorkers);
       });
     });
 
     it('should create a Queue with a specific specId when specified', function(done) {
       var specId = 'test_task';
       var q = new th.Queue(th.testRef, { specId: specId }, _.noop);
-      expect(q.specId).to.equal(specId);
+      expect(q._specId).to.equal(specId);
       var interval = setInterval(function() {
-        if (q.initialized) {
+        if (q._initialized()) {
           clearInterval(interval);
           try {
             var specRegex = new RegExp('^' + specId + ':0:[a-f0-9\\-]{36}$');
-            expect(q.workers[0].processId).to.match(specRegex);
+            expect(q._workers[0].processId).to.match(specRegex);
             done();
           } catch (error) {
             done(error);
@@ -126,14 +132,14 @@ describe('Queue', function() {
     [true, false].forEach(function(bool) {
       it('should create a Queue with a ' + bool + ' sanitize option when specified', function() {
         var q = new th.Queue(th.testRef, { sanitize: bool }, _.noop);
-        expect(q.sanitize).to.equal(bool);
+        expect(q._sanitize).to.equal(bool);
       });
     });
 
     [true, false].forEach(function(bool) {
       it('should create a Queue with a ' + bool + ' suppressStack option when specified', function() {
         var q = new th.Queue(th.testRef, { suppressStack: bool }, _.noop);
-        expect(q.suppressStack).to.equal(bool);
+        expect(q._suppressStack).to.equal(bool);
       });
     });
 
@@ -219,11 +225,11 @@ describe('Queue', function() {
     it('should shutdown a queue initialized with a custom spec after the listener callback', function(done) {
       q = new th.Queue(th.testRef, { specId: 'test_task' }, _.noop);
       var interval = setInterval(function() {
-        if (q.initialized) {
+        if (q._initialized()) {
           clearInterval(interval);
           try {
             var shutdownPromise = q.shutdown();
-            expect(q.specChangeListener).to.be.null;
+            expect(q._specChangeListener()).to.be.null;
             shutdownPromise.should.eventually.be.fulfilled.notify(done);
           } catch (error) {
             done(error);

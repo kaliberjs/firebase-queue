@@ -5,11 +5,9 @@ var path = require('path');
 var util = require('util');
 var admin = require('firebase-admin');
 
-var serviceAccount = require('./key.json');
-
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL: process.env.FB_QUEUE_TEST_DB_URL
+  credential: admin.credential.cert(require('./key.json')),
+  databaseURL: require('./url.js')
 });
 
 module.exports = function() {

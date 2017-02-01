@@ -71,19 +71,18 @@ environment set up.
 ### Install Dependencies
 
 ```bash
-$ git clone https://github.com/firebase/firebase-queue.git
+$ git clone https://github.com/eecolor/firebase-queue.git
 $ cd firebase-queue     # go to the firebase-queue directory
-$ npm install -g gulp   # globally install gulp task runner
-$ npm install           # install local npm build / test dependencies
+$ yarn                  # install local npm build / test dependencies
 ```
 
 ### Create a Firebase Project
 
 1. Create a Firebase project [here](https://console.firebase.google.com).
-2. Set the `FB_QUEUE_TEST_DB_URL` environment variable to your project's database URL:
+2. Create `test/url.js`:
 
-```bash
-$ export FB_QUEUE_TEST_DB_URL="https://<YOUR-DATABASE-NAME>.firebaseio.com"
+```javascript
+module.exports = 'https://<YOUR-DATABASE-NAME>.firebaseio.com'
 ```
 
 ### Download a Service Account JSON File
