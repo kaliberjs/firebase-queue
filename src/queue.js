@@ -77,7 +77,7 @@ module.exports = function Queue() {
 
   const sanitize = options.sanitize === undefined
     ? DEFAULT_SANITIZE
-    : ((options.sanitize === true || options.sanitize === false) || throwError('options.sanitize must be a boolean.')) &&
+    : ((Boolean(options.sanitize) === options.sanitize) || throwError('options.sanitize must be a boolean.')) &&
       options.sanitize
       
   const suppressStack = options.suppressStack === undefined

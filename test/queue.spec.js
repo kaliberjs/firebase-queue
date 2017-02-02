@@ -120,7 +120,7 @@ describe('Queue', function() {
           clearInterval(interval);
           try {
             var specRegex = new RegExp('^' + specId + ':0:[a-f0-9\\-]{36}$');
-            expect(q._workers[0].processId).to.match(specRegex);
+            expect(q._workers[0]._processId).to.match(specRegex);
             done();
           } catch (error) {
             done(error);
@@ -171,7 +171,7 @@ describe('Queue', function() {
       var q = new th.Queue(th.testRef, { specId: specId }, _.noop);
       var worker = q.addWorker();
       var specRegex = new RegExp('^' + specId + ':1:[a-f0-9\\-]{36}$');
-      expect(worker.processId).to.match(specRegex);
+      expect(worker._processId).to.match(specRegex);
     });
 
     it('should not allow a worker to be added if the queue is shutting down', function() {

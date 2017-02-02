@@ -2,7 +2,6 @@
 
 var _ = require('lodash');
 var path = require('path');
-var util = require('util');
 var admin = require('firebase-admin');
 
 admin.initializeApp({
@@ -23,16 +22,16 @@ module.exports = function() {
 
   this.QueueWorkerWithoutProcessingOrTimeouts = function() {
     self.QueueWorker.apply(this, arguments);
+
+    this._tryToProcess = _.noop
+    this._setUpTimeouts = _.noop
   };
-  util.inherits(this.QueueWorkerWithoutProcessingOrTimeouts, this.QueueWorker);
-  this.QueueWorkerWithoutProcessingOrTimeouts.prototype._tryToProcess = _.noop;
-  this.QueueWorkerWithoutProcessingOrTimeouts.prototype._setUpTimeouts = _.noop;
 
   this.QueueWorkerWithoutProcessing = function() {
     self.QueueWorker.apply(this, arguments);
+
+    this._tryToProcess = _.noop
   };
-  util.inherits(this.QueueWorkerWithoutProcessing, this.QueueWorker);
-  this.QueueWorkerWithoutProcessing.prototype._tryToProcess = _.noop;
 
   this.validBasicTaskSpec = {
     inProgressState: 'in_progress'
