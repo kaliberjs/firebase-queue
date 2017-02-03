@@ -37,7 +37,7 @@
     "chai": "^3.5.0",
     "chai-as-promised": "^6.0.0",
     "coveralls": "^2.11.8",
-    "firebase-admin": "^4.0.3",
+    "firebase-admin": "^4.1.0",
     "gulp": "^3.9.1",
     "gulp-eslint": "^3.0.1",
     "gulp-exit": "^0.0.2",
