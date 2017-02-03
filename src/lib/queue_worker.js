@@ -1,6 +1,5 @@
 'use strict';
 
-var logger = require('winston');
 var uuid = require('uuid');
 var _ = require('lodash');
 
@@ -68,7 +67,6 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
   let taskNumber = 0
   let errorState = DEFAULT_ERROR_STATE;
 
-  this._getLogEntry = _getLogEntry
   this._resetTask = _resetTask
   this._resolve = _resolve
   this._reject = _reject
@@ -93,15 +91,6 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
   this._taskNumber = (val) => val ? (taskNumber = val, undefined) : taskNumber
 
   return this
-
-
-  /**
-   * Logs an info message with a worker-specific prefix.
-   * @param {String} message The message to log.
-   */
-  function _getLogEntry(message) {
-    return 'QueueWorker ' + processId + ' ' + message;
-  };
 
   /**
    * Returns the state of a task to the start state.
@@ -144,16 +133,14 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
       /* istanbul ignore if */
       if (error) {
         if (++retries < MAX_TRANSACTION_ATTEMPTS) {
-          logger.debug(self._getLogEntry('reset task errored, retrying'), error);
+          // reset task errored, retrying
           setImmediate(self._resetTask.bind(self), taskRef, immediate, deferred);
         } else {
-          var errorMsg = 'reset task errored too many times, no longer retrying';
-          logger.debug(self._getLogEntry(errorMsg), error);
-          deferred.reject(new Error(errorMsg));
+          deferred.reject(new Error('reset task errored too many times, no longer retrying'))
         }
       } else {
         if (committed && snapshot.exists()) {
-          logger.debug(self._getLogEntry('reset ' + _getKey(snapshot)));
+          // 'reset ' + _getKey(snapshot);
         }
         deferred.resolve();
       }
@@ -180,11 +167,9 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
     var resolve = function(newTask) {
       if ((taskNumber !== requestedTaskNumber) || _.isNull(currentTaskRef)) {
         if (_.isNull(currentTaskRef)) {
-          logger.debug(self._getLogEntry('Can\'t resolve task - no task ' +
-            'currently being processed'));
+          // Can't resolve task - no task  currently being processed
         } else {
-          logger.debug(self._getLogEntry('Can\'t resolve task - no longer ' +
-            'processing current task'));
+          // Can't resolve task - no longer processing current task
         }
         deferred.resolve();
         busy = false;
@@ -225,21 +210,16 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
           /* istanbul ignore if */
           if (error) {
             if (++retries < MAX_TRANSACTION_ATTEMPTS) {
-              logger.debug(self._getLogEntry('resolve task errored, retrying'),
-                error);
+              // resolve task errored, retrying
               setImmediate(resolve, newTask);
             } else {
-              var errorMsg = 'resolve task errored too many times, no longer ' +
-                'retrying';
-              logger.debug(self._getLogEntry(errorMsg), error);
-              deferred.reject(new Error(errorMsg));
+              deferred.reject(new Error('resolve task errored too many times, no longer retrying'));
             }
           } else {
             if (committed && existedBefore) {
-              logger.debug(self._getLogEntry('completed ' + _getKey(snapshot)));
+              // 'completed ' + _getKey(snapshot)
             } else {
-              logger.debug(self._getLogEntry('Can\'t resolve task - current ' +
-                'task no longer owned by this process'));
+              // Can't resolve task - current task no longer owned by this process
             }
             deferred.resolve();
             busy = false;
@@ -275,11 +255,9 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
     var reject = function(error) {
       if ((taskNumber !== requestedTaskNumber) || _.isNull(currentTaskRef)) {
         if (_.isNull(currentTaskRef)) {
-          logger.debug(self._getLogEntry('Can\'t reject task - no task ' +
-            'currently being processed'));
+          // Can't reject task - no task currently being processed
         } else {
-          logger.debug(self._getLogEntry('Can\'t reject task - no longer ' +
-            'processing current task'));
+          // Can't reject task - no longer processing current task
         }
         deferred.resolve();
         busy = false;
@@ -334,22 +312,16 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
           /* istanbul ignore if */
           if (transactionError) {
             if (++retries < MAX_TRANSACTION_ATTEMPTS) {
-              logger.debug(self._getLogEntry('reject task errored, retrying'),
-                transactionError);
-              setImmediate(reject, error);
+              // reject task errored, retrying
+              setImmediate(reject, error); // <-- shouldn't this be transactionError?
             } else {
-              var errorMsg = 'reject task errored too many times, no longer ' +
-                'retrying';
-              logger.debug(self._getLogEntry(errorMsg), transactionError);
-              deferred.reject(new Error(errorMsg));
+              deferred.reject(new Error('reject task errored too many times, no longer retrying'));
             }
           } else {
             if (committed && existedBefore) {
-              logger.debug(self._getLogEntry('errored while attempting to ' +
-                'complete ' + _getKey(snapshot)));
+              // 'errored while attempting to complete ' + _getKey(snapshot)
             } else {
-              logger.debug(self._getLogEntry('Can\'t reject task - current task' +
-                ' no longer owned by this process'));
+              // Can't reject task - current task no longer owned by this process
             }
             deferred.resolve();
             busy = false;
@@ -370,7 +342,6 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
    */
   function _updateProgress(requestedTaskNumber) {
     var self = this;
-    var errorMsg;
 
     /**
      * Updates the progress state of the task.
@@ -385,9 +356,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
         return Promise.reject(new Error('Invalid progress'));
       }
       if ((taskNumber !== requestedTaskNumber)  || _.isNull(currentTaskRef)) {
-        errorMsg = 'Can\'t update progress - no task currently being processed';
-        logger.debug(self._getLogEntry(errorMsg));
-        return Promise.reject(new Error(errorMsg));
+        return Promise.reject(new Error('Can\'t update progress - no task currently being processed'));
       }
       return new Promise(function(resolve, reject) {
         currentTaskRef.transaction(function(task) {
@@ -405,17 +374,12 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
         }, function(transactionError, committed, snapshot) {
           /* istanbul ignore if */
           if (transactionError) {
-            errorMsg = 'errored while attempting to update progress';
-            logger.debug(self._getLogEntry(errorMsg), transactionError);
-            return reject(new Error(errorMsg));
+            return reject(new Error('errored while attempting to update progress'));
           }
           if (committed && snapshot.exists()) {
             return resolve();
           }
-          errorMsg = 'Can\'t update progress - current task no longer owned ' +
-            'by this process';
-          logger.debug(self._getLogEntry(errorMsg));
-          return reject(new Error(errorMsg));
+          return reject(new Error('Can\'t update progress - current task no longer owned by this process'));
         }, false);
       });
     };
@@ -441,7 +405,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
         deferred.reject(new Error('Shutting down - can no longer process new ' +
           'tasks'));
         self.setTaskSpec(null);
-        logger.debug(self._getLogEntry('finished shutdown'));
+        // finished shutdown
         shutdownDeferred.resolve()
       } else {
         if (!newTaskRef) {
@@ -487,25 +451,19 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
                 task._progress = 0;
                 return task;
               }
-              logger.debug(self._getLogEntry('task no longer in correct state: ' +
-                'expected ' + self.startState + ', got ' + task._state));
+              // task no longer in correct state: expected ' + self.startState + ', got ' + task._state
               return undefined;
             }, function(error, committed, snapshot) {
               /* istanbul ignore if */
               if (error) {
                 if (++retries < MAX_TRANSACTION_ATTEMPTS) {
-                  logger.debug(self._getLogEntry('errored while attempting to ' +
-                    'claim a new task, retrying'), error);
+                  // errored while attempting to claim a new task, retrying
                   return setImmediate(self._tryToProcess.bind(self), deferred);
                 }
-                var errorMsg = 'errored while attempting to claim a new task ' +
-                  'too many times, no longer retrying';
-                logger.debug(self._getLogEntry(errorMsg), error);
-                return deferred.reject(new Error(errorMsg));
+                return deferred.reject(new Error('errored while attempting to claim a new task too many times, no longer retrying'));
               } else if (committed && snapshot.exists()) {
                 if (malformed) {
-                  logger.debug(self._getLogEntry('found malformed entry ' +
-                    _getKey(snapshot)));
+                  // found malformed entry ' + _getKey(snapshot)
                 } else {
                   /* istanbul ignore if */
                   if (busy) {
@@ -515,7 +473,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
                   } else {
                     busy = true;
                     taskNumber += 1;
-                    logger.debug(self._getLogEntry('claimed ' + _getKey(snapshot)));
+                    // 'claimed ' + _getKey(snapshot)
                     currentTaskRef = _getRef(snapshot);
                     currentTaskListener = currentTaskRef
                         .child('_owner').on('value', function(ownerSnapshot) {
@@ -617,7 +575,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
       processingTaskAddedListener = processingTasksRef.on('child_added',
         setUpTimeout,
         /* istanbul ignore next */ function(error) {
-          logger.debug(self._getLogEntry('errored listening to Firebase'), error);
+          // errored listening to Firebase
         });
       processingTaskRemovedListener = processingTasksRef.on(
         'child_removed',
@@ -627,7 +585,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
           delete expiryTimeouts[taskName];
           delete owners[taskName];
         }, /* istanbul ignore next */ function(error) {
-          logger.debug(self._getLogEntry('errored listening to Firebase'), error);
+          // errored listening to Firebase
         });
       processingTasksRef.on('child_changed', function(snapshot) {
         // This catches de-duped events from the server - if the task was removed
@@ -638,7 +596,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
           setUpTimeout(snapshot);
         }
       }, /* istanbul ignore next */ function(error) {
-        logger.debug(self._getLogEntry('errored listening to Firebase'), error);
+        // errored listening to Firebase
       });
     } else {
       processingTasksRef = null;
@@ -740,17 +698,16 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
                             .orderByChild('_state')
                             .equalTo(self.startState)
                             .limitToFirst(1);
-      logger.debug(self._getLogEntry('listening'));
+      // listening
       newTaskListener = newTaskRef.on(
         'child_added',
         function() {
           self._tryToProcess();
         }, /* istanbul ignore next */ function(error) {
-          logger.debug(self._getLogEntry('errored listening to Firebase'), error);
+          // errored listening to Firebase
         });
     } else {
-      logger.debug(self._getLogEntry('invalid task spec, not listening for new ' +
-        'tasks'));
+      // invalid task spec, not listening for new tasks
       self.startState = null;
       self.inProgressState = null;
       self.finishedState = null;
@@ -770,7 +727,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
 
     if (shutdownDeferred) return shutdownDeferred.promise
 
-    logger.debug(self._getLogEntry('shutting down'));
+    // shutting down
 
     // Set the global shutdown deferred promise, which signals we're shutting down
     shutdownDeferred = createDeferred()
@@ -778,7 +735,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
     // We can report success immediately if we're not busy
     if (!busy) {
       self.setTaskSpec(null);
-      logger.debug(self._getLogEntry('finished shutdown'));
+      // finished shutdown
       shutdownDeferred.resolve()
     }
 

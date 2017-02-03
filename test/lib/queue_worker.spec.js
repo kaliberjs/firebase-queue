@@ -75,20 +75,6 @@ describe('QueueWorker', function() {
     });
   });
 
-  describe('#_getLogEntry', function() {
-    var qw = new th.QueueWorker(tasksRef, '0', true, false, _.noop);
-
-    it('should construct a log entry given a string', function() {
-      expect(qw._getLogEntry('informative message')).to.equal('QueueWorker ' + qw._processId + ' informative message');
-    });
-
-    it('should construct a log entry given a non-string', function() {
-      [NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(nonStringObject) {
-        expect(qw._getLogEntry(nonStringObject)).to.equal('QueueWorker ' + qw._processId + ' ' + nonStringObject);
-      });
-    });
-  });
-
   describe('#_resetTask', function() {
     var qw;
     var testRef;
