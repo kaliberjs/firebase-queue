@@ -100,6 +100,10 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
 
   return this
 
+  function currentId() { return processId + ':' + taskNumber }
+  function inProgress({ _state }) { return _state === inProgressState }
+  function isOwner({ _owner }) { return _owner === currentId() }
+
   /**
    * Returns the state of a task to the start state.
    * @param {firebase.database.Reference} taskRef Firebase Realtime Database
@@ -109,51 +113,39 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
    *   necessarily expect this worker to own.
    * @returns {Promise} Whether the task was able to be reset.
    */
-  function _resetTask(taskRef, immediate, deferred) {
+  function _resetTask(taskRef, immediate, deferred = createDeferred()) {
     const retries = 0;
 
-    /* istanbul ignore else */
-    if (_.isUndefined(deferred)) {
-      deferred = createDeferred();
-    }
+    taskRef
+      .transaction(
+        task => {
+          /* istanbul ignore if */
+          if (task === null) return task
+          
+          const correctOwner = isOwner(task) || !immediate // not clear how 'correctOwner' has anything to do with `immediate`
+          const timeSinceUpdate = /* use offset */ Date.now() - task._state_changed || 0
+          const timedOut = (taskTimeout && timeSinceUpdate > taskTimeout) || immediate
+          
+          if (inProgress(task) && correctOwner && timedOut) {
+            task._state = startState
+            task._state_changed = SERVER_TIMESTAMP
+            task._owner = null
+            task._progress = null
+            task._error_details = null
+            return task
+          }
+        }, 
+        undefined,
+        false
+      )
+      .then((committed, snapshot) => { deferred.resolve() })
+      .catch(error => {
+        // reset task errored, retrying
+        if ((retries + 1) < MAX_TRANSACTION_ATTEMPTS) setImmediate(self._resetTask.bind(self), taskRef, immediate, deferred)
+        else deferred.reject(new Error('reset task errored too many times, no longer retrying'))
+      })
 
-    taskRef.transaction(function(task) {
-      /* istanbul ignore if */
-      if (_.isNull(task)) {
-        return task;
-      }
-      var id = processId + ':' + taskNumber;
-      var correctState = (task._state === inProgressState);
-      var correctOwner = (task._owner === id || !immediate);
-      var timeSinceUpdate = Date.now() - _.get(task, '_state_changed', 0);
-      var timedOut = ((taskTimeout && timeSinceUpdate > taskTimeout) || immediate);
-      if (correctState && correctOwner && timedOut) {
-        task._state = startState;
-        task._state_changed = SERVER_TIMESTAMP;
-        task._owner = null;
-        task._progress = null;
-        task._error_details = null;
-        return task;
-      }
-      return undefined;
-    }, function(error, committed, snapshot) {
-      /* istanbul ignore if */
-      if (error) {
-        if ((retries + 1) < MAX_TRANSACTION_ATTEMPTS) {
-          // reset task errored, retrying
-          setImmediate(self._resetTask.bind(self), taskRef, immediate, deferred);
-        } else {
-          deferred.reject(new Error('reset task errored too many times, no longer retrying'))
-        }
-      } else {
-        if (committed && snapshot.exists()) {
-          // 'reset ' + snapshot.key;
-        }
-        deferred.resolve();
-      }
-    }, false);
-
-    return deferred.promise;
+    return deferred.promise
   };
 
   /**
@@ -188,9 +180,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
             existedBefore = false;
             return task;
           }
-          var id = processId + ':' + taskNumber;
-          if (task._state === inProgressState &&
-              task._owner === id) {
+          if (inProgress(task) && isOwner(task)) {
             var outputTask = _.clone(newTask);
             if (!_.isPlainObject(outputTask)) {
               outputTask = {};
@@ -287,9 +277,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
             existedBefore = false;
             return task;
           }
-          var id = processId + ':' + taskNumber;
-          if (task._state === inProgressState &&
-              task._owner === id) {
+          if (inProgress(task) && isOwner(task)) {
             var attempts = 0;
             var currentAttempts = _.get(task, '_error_details.attempts', 0);
             var currentPrevState = _.get(task, '_error_details.previous_state');
@@ -367,9 +355,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
           if (_.isNull(task)) {
             return task;
           }
-          var id = processId + ':' + taskNumber;
-          if (task._state === inProgressState &&
-              task._owner === id) {
+          if (inProgress(task) && isOwner(task)) {
             task._progress = progress;
             return task;
           }
@@ -479,9 +465,8 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
                     currentTaskRef = snapshot.ref;
                     currentTaskListener = currentTaskRef
                         .child('_owner').on('value', function(ownerSnapshot) {
-                          var id = processId + ':' + taskNumber;
                           /* istanbul ignore else */
-                          if (ownerSnapshot.val() !== id &&
+                          if (ownerSnapshot.val() !== currentId() &&
                               !_.isNull(currentTaskRef) &&
                               !_.isNull(currentTaskListener)) {
                             currentTaskRef.child('_owner').off(
