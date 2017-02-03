@@ -59,17 +59,28 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
   let taskNumber = 0
   let errorState = DEFAULT_ERROR_STATE;
 
-  this._resetTask = _resetTask
-  this._resolve = _resolve
-  this._reject = _reject
-  this._updateProgress = _updateProgress
-  this._tryToProcess = _tryToProcess
-  this._setUpTimeouts = _setUpTimeouts
-  this._isValidTaskSpec = _isValidTaskSpec
+  let taskTimeout = null
+  let inProgressState = null
+  let finishedState = null
+  let taskRetries = null
+  let startState = null
+
+
   this.setTaskSpec = setTaskSpec
   this.shutdown = shutdown
 
+  // we can not remove usage of `self` here because
+  // the tests either override or spy on these methods 
+  const self = this
+  this._resetTask = _resetTask
+  this._tryToProcess = _tryToProcess
+  this._setUpTimeouts = _setUpTimeouts
+
   // used in tests
+  this._isValidTaskSpec = _isValidTaskSpec
+  this._resolve = _resolve
+  this._updateProgress = _updateProgress
+  this._reject = _reject
   this._processId = processId
   this._expiryTimeouts = expiryTimeouts
   this._processingTasksRef = () => processingTasksRef
@@ -81,6 +92,11 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
   this._processingTaskAddedListener = () => processingTaskAddedListener
   this._processingTaskRemovedListener = () => processingTaskRemovedListener
   this._taskNumber = (val) => val ? (taskNumber = val, undefined) : taskNumber
+  this._taskTimeout = () => taskTimeout
+  this._inProgressState = (val) => val ? (inProgressState = val, undefined) : inProgressState
+  this._finishedState = (val) => val ? (finishedState = val, undefined) : finishedState
+  this._taskRetries = (val) => { taskRetries = val }
+  this._startState = (val) => val !== undefined ? (startState = val, undefined) : startState
 
   return this
 
@@ -94,7 +110,6 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
    * @returns {Promise} Whether the task was able to be reset.
    */
   function _resetTask(taskRef, immediate, deferred) {
-    var self = this;
     var retries = 0;
 
     /* istanbul ignore else */
@@ -108,12 +123,12 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
         return task;
       }
       var id = processId + ':' + taskNumber;
-      var correctState = (task._state === self.inProgressState);
+      var correctState = (task._state === inProgressState);
       var correctOwner = (task._owner === id || !immediate);
       var timeSinceUpdate = Date.now() - _.get(task, '_state_changed', 0);
-      var timedOut = ((self.taskTimeout && timeSinceUpdate > self.taskTimeout) || immediate);
+      var timedOut = ((taskTimeout && timeSinceUpdate > taskTimeout) || immediate);
       if (correctState && correctOwner && timedOut) {
-        task._state = self.startState;
+        task._state = startState;
         task._state_changed = SERVER_TIMESTAMP;
         task._owner = null;
         task._progress = null;
@@ -147,7 +162,6 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
    * @returns {Function} the resolve callback function.
    */
   function _resolve(requestedTaskNumber) {
-    var self = this;
     var retries = 0;
     var deferred = createDeferred();
 
@@ -175,7 +189,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
             return task;
           }
           var id = processId + ':' + taskNumber;
-          if (task._state === self.inProgressState &&
+          if (task._state === inProgressState &&
               task._owner === id) {
             var outputTask = _.clone(newTask);
             if (!_.isPlainObject(outputTask)) {
@@ -184,12 +198,12 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
             outputTask._state = _.get(outputTask, '_new_state');
             delete outputTask._new_state;
             if (!_.isNull(outputTask._state) && !_.isString(outputTask._state)) {
-              if (_.isNull(self.finishedState) || outputTask._state === false) {
+              if (_.isNull(finishedState) || outputTask._state === false) {
                 // Remove the item if no `finished_state` set in the spec or
                 // _new_state is explicitly set to `false`.
                 return null;
               }
-              outputTask._state = self.finishedState;
+              outputTask._state = finishedState;
             }
             outputTask._state_changed = SERVER_TIMESTAMP;
             outputTask._owner = null;
@@ -232,7 +246,6 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
    * @returns {Function} the reject callback function.
    */
   function _reject(requestedTaskNumber) {
-    var self = this;
     var retries = 0;
     var errorString = null;
     var errorStack = null;
@@ -275,24 +288,24 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
             return task;
           }
           var id = processId + ':' + taskNumber;
-          if (task._state === self.inProgressState &&
+          if (task._state === inProgressState &&
               task._owner === id) {
             var attempts = 0;
             var currentAttempts = _.get(task, '_error_details.attempts', 0);
             var currentPrevState = _.get(task, '_error_details.previous_state');
             if (currentAttempts > 0 &&
-                currentPrevState === self.inProgressState) {
+                currentPrevState === inProgressState) {
               attempts = currentAttempts;
             }
-            if (attempts >= self.taskRetries) {
+            if (attempts >= taskRetries) {
               task._state = errorState;
             } else {
-              task._state = self.startState;
+              task._state = startState;
             }
             task._state_changed = SERVER_TIMESTAMP;
             task._owner = null;
             task._error_details = {
-              previous_state: self.inProgressState,
+              previous_state: inProgressState,
               error: errorString,
               error_stack: errorStack,
               attempts: attempts + 1
@@ -333,8 +346,6 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
    * @returns {Function} the update callback function.
    */
   function _updateProgress(requestedTaskNumber) {
-    var self = this;
-
     /**
      * Updates the progress state of the task.
      * @param {Number} progress The progress to report.
@@ -357,7 +368,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
             return task;
           }
           var id = processId + ':' + taskNumber;
-          if (task._state === self.inProgressState &&
+          if (task._state === inProgressState &&
               task._owner === id) {
             task._progress = progress;
             return task;
@@ -383,7 +394,6 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
    * Attempts to claim the next task in the queue.
    */
   function _tryToProcess(deferred) {
-    var self = this;
     var retries = 0;
     var malformed = false;
 
@@ -436,14 +446,14 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
               if (_.isUndefined(task._state)) {
                 task._state = null;
               }
-              if (task._state === self.startState) {
-                task._state = self.inProgressState;
+              if (task._state === startState) {
+                task._state = inProgressState;
                 task._state_changed = SERVER_TIMESTAMP;
                 task._owner = processId + ':' + (taskNumber + 1);
                 task._progress = 0;
                 return task;
               }
-              // task no longer in correct state: expected ' + self.startState + ', got ' + task._state
+              // task no longer in correct state: expected ' + startState + ', got ' + task._state
               return undefined;
             }, function(error, committed, snapshot) {
               /* istanbul ignore if */
@@ -497,9 +507,9 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
                     } else {
                       data._id = snapshot.key;
                     }
-                    var progress = self._updateProgress(taskNumber);
-                    var resolve = self._resolve(taskNumber);
-                    var reject = self._reject(taskNumber);
+                    var progress = _updateProgress(taskNumber);
+                    var resolve = _resolve(taskNumber);
+                    var reject = _reject(taskNumber);
                     setImmediate(function() {
                       try {
                         processingFunction.call(null, data, progress, resolve, reject);
@@ -526,8 +536,6 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
    * Sets up timeouts to reclaim tasks that fail due to taking too long.
    */
   function _setUpTimeouts() {
-    var self = this;
-
     if (!_.isNull(processingTaskAddedListener)) {
       processingTasksRef.off(
         'child_added',
@@ -547,15 +555,15 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
     })
     Object.keys(owners).forEach(key => { delete owners[key] })
 
-    if (self.taskTimeout) {
+    if (taskTimeout) {
       processingTasksRef = tasksRef.orderByChild('_state')
-        .equalTo(self.inProgressState);
+        .equalTo(inProgressState);
 
       var setUpTimeout = function(snapshot) {
         var taskName = snapshot.key;
         var now = new Date().getTime();
         var startTime = (snapshot.child('_state_changed').val() || now);
-        var expires = Math.max(0, startTime - now + self.taskTimeout);
+        var expires = Math.max(0, startTime - now + taskTimeout);
         var ref = snapshot.ref;
         owners[taskName] = snapshot.child('_owner').val();
         expiryTimeouts[taskName] = setTimeout(
@@ -659,8 +667,6 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
    * @param {Object} taskSpec The specification for the task.
    */
   function setTaskSpec(taskSpec) {
-    var self = this;
-
     // Increment the taskNumber so that a task being processed before the change
     // doesn't continue to use incorrect data
     taskNumber += 1;
@@ -678,17 +684,17 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
       currentTaskListener = null;
     }
 
-    if (self._isValidTaskSpec(taskSpec)) {
-      self.startState = taskSpec.startState || null;
-      self.inProgressState = taskSpec.inProgressState;
-      self.finishedState = taskSpec.finishedState || null;
+    if (_isValidTaskSpec(taskSpec)) {
+      startState = taskSpec.startState || null;
+      inProgressState = taskSpec.inProgressState;
+      finishedState = taskSpec.finishedState || null;
       errorState = taskSpec.errorState || DEFAULT_ERROR_STATE;
-      self.taskTimeout = taskSpec.timeout || null;
-      self.taskRetries = taskSpec.retries || DEFAULT_RETRIES;
+      taskTimeout = taskSpec.timeout || null;
+      taskRetries = taskSpec.retries || DEFAULT_RETRIES;
 
       newTaskRef = tasksRef
                             .orderByChild('_state')
-                            .equalTo(self.startState)
+                            .equalTo(startState)
                             .limitToFirst(1);
       // listening
       newTaskListener = newTaskRef.on(
@@ -700,12 +706,12 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
         });
     } else {
       // invalid task spec, not listening for new tasks
-      self.startState = null;
-      self.inProgressState = null;
-      self.finishedState = null;
+      startState = null;
+      inProgressState = null;
+      finishedState = null;
       errorState = DEFAULT_ERROR_STATE;
-      self.taskTimeout = null;
-      self.taskRetries = DEFAULT_RETRIES;
+      taskTimeout = null;
+      taskRetries = DEFAULT_RETRIES;
 
       newTaskRef = null;
       newTaskListener = null;
@@ -715,8 +721,6 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
   };
 
   function shutdown() {
-    var self = this;
-
     if (shutdownDeferred) return shutdownDeferred.promise
 
     // shutting down

@@ -1294,8 +1294,8 @@ describe('QueueWorker', function() {
     });
 
     it('should not try and process a task if busy', function(done) {
-      qw.startState = th.validTaskSpecWithStartState.startState;
-      qw.inProgressState = th.validTaskSpecWithStartState.inProgressState;
+      qw._startState(th.validTaskSpecWithStartState.startState);
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
       qw._busy(true);
       qw._newTaskRef(tasksRef);
       tasksRef.push({
@@ -1316,8 +1316,8 @@ describe('QueueWorker', function() {
     });
 
     it('should try and process a task if not busy', function(done) {
-      qw.startState = th.validTaskSpecWithStartState.startState;
-      qw.inProgressState = th.validTaskSpecWithStartState.inProgressState;
+      qw._startState(th.validTaskSpecWithStartState.startState);
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
       qw._newTaskRef(tasksRef);
       tasksRef.push({
         '_state': th.validTaskSpecWithStartState.startState
@@ -1341,10 +1341,10 @@ describe('QueueWorker', function() {
       qw = new th.QueueWorker(tasksRef, '0', true, false, function() {
         throw new Error('Error thrown in processingFunction');
       });
-      qw.startState = th.validTaskSpecWithStartState.startState;
-      qw.inProgressState = th.validTaskSpecWithStartState.inProgressState;
-      qw.finishedState = th.validTaskSpecWithFinishedState.finishedState;
-      qw.taskRetries = 0;
+      qw._startState(th.validTaskSpecWithStartState.startState);
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
+      qw._finishedState(th.validTaskSpecWithFinishedState.finishedState);
+      qw._taskRetries(0);
       qw._newTaskRef(tasksRef);
       var testRef = tasksRef.push({
         '_state': th.validTaskSpecWithStartState.startState
@@ -1387,8 +1387,8 @@ describe('QueueWorker', function() {
     });
 
     it('should try and process a task without a _state if not busy', function(done) {
-      qw.startState = null;
-      qw.inProgressState = th.validBasicTaskSpec.inProgressState;
+      qw._startState(null);
+      qw._inProgressState(th.validBasicTaskSpec.inProgressState);
       qw._newTaskRef(tasksRef);
       tasksRef.push({
         foo: 'bar'
@@ -1409,7 +1409,7 @@ describe('QueueWorker', function() {
     });
 
     it('should not try and process a task if not a plain object [1]', function(done) {
-      qw.inProgressState = th.validTaskSpecWithStartState.inProgressState;
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
       qw._suppressStack(true);
       qw._newTaskRef(tasksRef);
       var testRef = tasksRef.push('invalid', function(errorA) {
@@ -1442,7 +1442,7 @@ describe('QueueWorker', function() {
     });
 
     it('should not try and process a task if not a plain object [2]', function(done) {
-      qw.inProgressState = th.validTaskSpecWithStartState.inProgressState;
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
       qw._newTaskRef(tasksRef);
       var testRef = tasksRef.push('invalid', function(errorA) {
         if (errorA) {
@@ -1475,8 +1475,8 @@ describe('QueueWorker', function() {
     });
 
     it('should not try and process a task if no longer in correct startState', function(done) {
-      qw.startState = th.validTaskSpecWithStartState.startState;
-      qw.inProgressState = th.validTaskSpecWithStartState.inProgressState;
+      qw._startState(th.validTaskSpecWithStartState.startState);
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
       qw._newTaskRef(tasksRef);
       tasksRef.push({
         '_state': th.validTaskSpecWithStartState.inProgressState
@@ -1496,8 +1496,8 @@ describe('QueueWorker', function() {
     });
 
     it('should not try and process a task if no task to process', function(done) {
-      qw.startState = th.validTaskSpecWithStartState.startState;
-      qw.inProgressState = th.validTaskSpecWithStartState.inProgressState;
+      qw._startState(th.validTaskSpecWithStartState.startState);
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
       qw._newTaskRef(tasksRef);
       qw._tryToProcess().then(function() {
         try {
@@ -1510,8 +1510,8 @@ describe('QueueWorker', function() {
     });
 
     it('should invalidate callbacks if another process times the task out', function(done) {
-      qw.startState = th.validTaskSpecWithStartState.startState;
-      qw.inProgressState = th.validTaskSpecWithStartState.inProgressState;
+      qw._startState(th.validTaskSpecWithStartState.startState);
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
       qw._newTaskRef(tasksRef);
       var testRef = tasksRef.push({
         '_state': th.validTaskSpecWithStartState.startState
@@ -2003,10 +2003,10 @@ describe('QueueWorker', function() {
         var oldTaskNumber = qw._taskNumber();
         qw.setTaskSpec(invalidTaskSpec);
         expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-        expect(qw.startState).to.be.null;
-        expect(qw.inProgressState).to.be.null;
-        expect(qw.finishedState).to.be.null;
-        expect(qw.taskTimeout).to.be.null;
+        expect(qw._startState()).to.be.null;
+        expect(qw._inProgressState()).to.be.null;
+        expect(qw._finishedState()).to.be.null;
+        expect(qw._taskTimeout()).to.be.null;
         expect(qw._newTaskRef()).to.be.null;
         expect(qw._newTaskListener()).to.be.null;
         expect(qw._expiryTimeouts).to.deep.equal({});
@@ -2020,10 +2020,10 @@ describe('QueueWorker', function() {
         var oldTaskNumber = qw._taskNumber();
         qw.setTaskSpec(invalidTaskSpec);
         expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-        expect(qw.startState).to.be.null;
-        expect(qw.inProgressState).to.be.null;
-        expect(qw.finishedState).to.be.null;
-        expect(qw.taskTimeout).to.be.null;
+        expect(qw._startState()).to.be.null;
+        expect(qw._inProgressState()).to.be.null;
+        expect(qw._finishedState()).to.be.null;
+        expect(qw._taskTimeout()).to.be.null;
         expect(qw._newTaskRef()).to.be.null;
         expect(qw._newTaskListener()).to.be.null;
         expect(qw._expiryTimeouts).to.deep.equal({});
@@ -2037,10 +2037,10 @@ describe('QueueWorker', function() {
         var oldTaskNumber = qw._taskNumber();
         qw.setTaskSpec(invalidTaskSpec);
         expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-        expect(qw.startState).to.be.null;
-        expect(qw.inProgressState).to.be.null;
-        expect(qw.finishedState).to.be.null;
-        expect(qw.taskTimeout).to.be.null;
+        expect(qw._startState()).to.be.null;
+        expect(qw._inProgressState()).to.be.null;
+        expect(qw._finishedState()).to.be.null;
+        expect(qw._taskTimeout()).to.be.null;
         expect(qw._newTaskRef()).to.be.null;
         expect(qw._newTaskListener()).to.be.null;
         expect(qw._expiryTimeouts).to.deep.equal({});
@@ -2052,10 +2052,10 @@ describe('QueueWorker', function() {
       var oldTaskNumber = qw._taskNumber();
       qw.setTaskSpec(th.validBasicTaskSpec);
       expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-      expect(qw.startState).to.be.null;
-      expect(qw.inProgressState).to.equal(th.validBasicTaskSpec.inProgressState);
-      expect(qw.finishedState).to.be.null;
-      expect(qw.taskTimeout).to.be.null;
+      expect(qw._startState()).to.be.null;
+      expect(qw._inProgressState()).to.equal(th.validBasicTaskSpec.inProgressState);
+      expect(qw._finishedState()).to.be.null;
+      expect(qw._taskTimeout()).to.be.null;
       expect(qw._newTaskRef()).to.have.property('on').and.be.a('function');
       expect(qw._newTaskListener()).to.be.a('function');
       expect(qw._expiryTimeouts).to.deep.equal({});
@@ -2066,10 +2066,10 @@ describe('QueueWorker', function() {
       var oldTaskNumber = qw._taskNumber();
       qw.setTaskSpec(th.validTaskSpecWithStartState);
       expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-      expect(qw.startState).to.equal(th.validTaskSpecWithStartState.startState);
-      expect(qw.inProgressState).to.equal(th.validTaskSpecWithStartState.inProgressState);
-      expect(qw.finishedState).to.be.null;
-      expect(qw.taskTimeout).to.be.null;
+      expect(qw._startState()).to.equal(th.validTaskSpecWithStartState.startState);
+      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithStartState.inProgressState);
+      expect(qw._finishedState()).to.be.null;
+      expect(qw._taskTimeout()).to.be.null;
       expect(qw._newTaskRef()).to.have.property('on').and.be.a('function');
       expect(qw._newTaskListener()).to.be.a('function');
       expect(qw._expiryTimeouts).to.deep.equal({});
@@ -2080,10 +2080,10 @@ describe('QueueWorker', function() {
       var oldTaskNumber = qw._taskNumber();
       qw.setTaskSpec(th.validTaskSpecWithFinishedState);
       expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-      expect(qw.startState).to.be.null;
-      expect(qw.inProgressState).to.equal(th.validTaskSpecWithFinishedState.inProgressState);
-      expect(qw.finishedState).to.equal(th.validTaskSpecWithFinishedState.finishedState);
-      expect(qw.taskTimeout).to.be.null;
+      expect(qw._startState()).to.be.null;
+      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithFinishedState.inProgressState);
+      expect(qw._finishedState()).to.equal(th.validTaskSpecWithFinishedState.finishedState);
+      expect(qw._taskTimeout()).to.be.null;
       expect(qw._newTaskRef()).to.have.property('on').and.be.a('function');
       expect(qw._newTaskListener()).to.be.a('function');
       expect(qw._expiryTimeouts).to.deep.equal({});
@@ -2094,10 +2094,10 @@ describe('QueueWorker', function() {
       var oldTaskNumber = qw._taskNumber();
       qw.setTaskSpec(th.validTaskSpecWithTimeout);
       expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-      expect(qw.startState).to.be.null;
-      expect(qw.inProgressState).to.equal(th.validTaskSpecWithTimeout.inProgressState);
-      expect(qw.finishedState).to.be.null;
-      expect(qw.taskTimeout).to.equal(th.validTaskSpecWithTimeout.timeout);
+      expect(qw._startState()).to.be.null;
+      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithTimeout.inProgressState);
+      expect(qw._finishedState()).to.be.null;
+      expect(qw._taskTimeout()).to.equal(th.validTaskSpecWithTimeout.timeout);
       expect(qw._newTaskRef()).to.have.property('on').and.be.a('function');
       expect(qw._newTaskListener()).to.be.a('function');
       expect(qw._expiryTimeouts).to.deep.equal({});
@@ -2108,10 +2108,10 @@ describe('QueueWorker', function() {
       var oldTaskNumber = qw._taskNumber();
       qw.setTaskSpec(th.validTaskSpecWithEverything);
       expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-      expect(qw.startState).to.equal(th.validTaskSpecWithEverything.startState);
-      expect(qw.inProgressState).to.equal(th.validTaskSpecWithEverything.inProgressState);
-      expect(qw.finishedState).to.equal(th.validTaskSpecWithEverything.finishedState);
-      expect(qw.taskTimeout).to.equal(th.validTaskSpecWithEverything.timeout);
+      expect(qw._startState()).to.equal(th.validTaskSpecWithEverything.startState);
+      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithEverything.inProgressState);
+      expect(qw._finishedState()).to.equal(th.validTaskSpecWithEverything.finishedState);
+      expect(qw._taskTimeout()).to.equal(th.validTaskSpecWithEverything.timeout);
       expect(qw._newTaskRef()).to.have.property('on').and.be.a('function');
       expect(qw._newTaskListener()).to.be.a('function');
       expect(qw._expiryTimeouts).to.deep.equal({});
