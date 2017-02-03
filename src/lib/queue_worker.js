@@ -110,7 +110,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
    * @returns {Promise} Whether the task was able to be reset.
    */
   function _resetTask(taskRef, immediate, deferred) {
-    var retries = 0;
+    const retries = 0;
 
     /* istanbul ignore else */
     if (_.isUndefined(deferred)) {
@@ -139,7 +139,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
     }, function(error, committed, snapshot) {
       /* istanbul ignore if */
       if (error) {
-        if (++retries < MAX_TRANSACTION_ATTEMPTS) {
+        if ((retries + 1) < MAX_TRANSACTION_ATTEMPTS) {
           // reset task errored, retrying
           setImmediate(self._resetTask.bind(self), taskRef, immediate, deferred);
         } else {
