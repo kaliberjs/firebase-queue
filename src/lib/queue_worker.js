@@ -9,14 +9,6 @@ var DEFAULT_RETRIES = 0;
 
 var SERVER_TIMESTAMP = {'.sv': 'timestamp'};
 
-function _getKey(snapshot) {
-  return _.isFunction(snapshot.key) ? snapshot.key() : snapshot.key;
-}
-
-function _getRef(snapshot) {
-  return _.isFunction(snapshot.ref) ? snapshot.ref() : snapshot.ref;
-}
-
 function throwError(message) { throw new Error(message) }
 
 function createDeferred() {
@@ -140,7 +132,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
         }
       } else {
         if (committed && snapshot.exists()) {
-          // 'reset ' + _getKey(snapshot);
+          // 'reset ' + snapshot.key;
         }
         deferred.resolve();
       }
@@ -217,7 +209,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
             }
           } else {
             if (committed && existedBefore) {
-              // 'completed ' + _getKey(snapshot)
+              // 'completed ' + snapshot.key
             } else {
               // Can't resolve task - current task no longer owned by this process
             }
@@ -319,7 +311,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
             }
           } else {
             if (committed && existedBefore) {
-              // 'errored while attempting to complete ' + _getKey(snapshot)
+              // 'errored while attempting to complete ' + snapshot.key
             } else {
               // Can't reject task - current task no longer owned by this process
             }
@@ -417,7 +409,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
             }
             var nextTaskRef;
             taskSnap.forEach(function(childSnap) {
-              nextTaskRef = _getRef(childSnap);
+              nextTaskRef = childSnap.ref;
             });
             return nextTaskRef.transaction(function(task) {
               /* istanbul ignore if */
@@ -463,7 +455,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
                 return deferred.reject(new Error('errored while attempting to claim a new task too many times, no longer retrying'));
               } else if (committed && snapshot.exists()) {
                 if (malformed) {
-                  // found malformed entry ' + _getKey(snapshot)
+                  // found malformed entry ' + snapshot.key
                 } else {
                   /* istanbul ignore if */
                   if (busy) {
@@ -473,8 +465,8 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
                   } else {
                     busy = true;
                     taskNumber += 1;
-                    // 'claimed ' + _getKey(snapshot)
-                    currentTaskRef = _getRef(snapshot);
+                    // 'claimed ' + snapshot.key
+                    currentTaskRef = snapshot.ref;
                     currentTaskListener = currentTaskRef
                         .child('_owner').on('value', function(ownerSnapshot) {
                           var id = processId + ':' + taskNumber;
@@ -503,7 +495,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
                         }
                       });
                     } else {
-                      data._id = _getKey(snapshot);
+                      data._id = snapshot.key;
                     }
                     var progress = self._updateProgress(taskNumber);
                     var resolve = self._resolve(taskNumber);
@@ -560,11 +552,11 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
         .equalTo(self.inProgressState);
 
       var setUpTimeout = function(snapshot) {
-        var taskName = _getKey(snapshot);
+        var taskName = snapshot.key;
         var now = new Date().getTime();
         var startTime = (snapshot.child('_state_changed').val() || now);
         var expires = Math.max(0, startTime - now + self.taskTimeout);
-        var ref = _getRef(snapshot);
+        var ref = snapshot.ref;
         owners[taskName] = snapshot.child('_owner').val();
         expiryTimeouts[taskName] = setTimeout(
           self._resetTask.bind(self),
@@ -580,7 +572,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
       processingTaskRemovedListener = processingTasksRef.on(
         'child_removed',
         function(snapshot) {
-          var taskName = _getKey(snapshot);
+          var taskName = snapshot.key;
           clearTimeout(expiryTimeouts[taskName]);
           delete expiryTimeouts[taskName];
           delete owners[taskName];
@@ -591,7 +583,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
         // This catches de-duped events from the server - if the task was removed
         // and added in quick succession, the server may squash them into a
         // single update
-        var taskName = _getKey(snapshot);
+        var taskName = snapshot.key;
         if (snapshot.child('_owner').val() !== owners[taskName]) {
           setUpTimeout(snapshot);
         }
