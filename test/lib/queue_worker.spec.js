@@ -94,8 +94,7 @@ describe('QueueWorker', () => {
         task: {
           '_state': th.validBasicTaskSpec.inProgressState,
           '_state_changed': now(),
-          '_owner': qw._currentId(),
-          '_progress': 10
+          '_owner': qw._currentId()
         }
       }).then(snapshot => {
           const task = snapshot.val()
@@ -111,8 +110,7 @@ describe('QueueWorker', () => {
       const task = {
         '_state': th.validBasicTaskSpec.inProgressState,
         '_state_changed': now(),
-        '_owner': 'someone-else',
-        '_progress': 0
+        '_owner': 'someone-else'
       }
       resetTask({ task, forceReset: true })
         .then(snapshot => {
@@ -126,8 +124,7 @@ describe('QueueWorker', () => {
       const task = {
         '_state': th.validBasicTaskSpec.inProgressState,
         '_state_changed': now(),
-        '_owner': 'someone',
-        '_progress': 0
+        '_owner': 'someone'
       }
       resetTask({ task, forceReset: false })
         .then(snapshot => {
@@ -143,8 +140,7 @@ describe('QueueWorker', () => {
         task: {
           '_state': th.validBasicTaskSpec.inProgressState,
           '_state_changed': now() - th.validTaskSpecWithTimeout.timeout,
-          '_owner': 'someone',
-          '_progress': 10
+          '_owner': 'someone'
         }
       }).then(snapshot => {
           var task = snapshot.val()
@@ -169,8 +165,7 @@ describe('QueueWorker', () => {
       const task = {
         '_state': th.validTaskSpecWithFinishedState.finishedState,
         '_state_changed': now(),
-        '_owner': qw._currentId(),
-        '_progress': 0
+        '_owner': qw._currentId()
       }
       resetTask({ task, forceReset: true })
         .then(snapshot => {
@@ -183,8 +178,7 @@ describe('QueueWorker', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState);
       const task = {
         '_state_changed': now(),
-        '_owner': qw._currentId(),
-        '_progress': 0
+        '_owner': qw._currentId()
       }
       resetTask({ task, forceReset: true })
         .then(snapshot => {
