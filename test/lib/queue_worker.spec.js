@@ -15,9 +15,10 @@ const { expect } = chai
 const th = new Helpers()
 const tasksRef = th.testRef.child('tasks')
 
-const nonBooleans  = [NaN, Infinity, ''  , 'foo', 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop]
-const nonStrings   = [NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop]
-const nonFunctions = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }]
+const nonBooleans     = [NaN, Infinity, ''  , 'foo', 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop]
+const nonStrings      = [NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop]
+const nonFunctions    = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }]
+const nonPlainObjects = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], null, _.noop]
 
 function now() { return new Date().getTime() }
 
@@ -75,7 +76,7 @@ describe('QueueWorker', () => {
     afterEach(done => {
       testRef.off()
       qw.shutdown()
-        .then(tasksRef.set(null))
+        .then(_ => tasksRef.set(null))
         .then(done)
     })
 
@@ -193,452 +194,277 @@ describe('QueueWorker', () => {
     })
   })
 
-  describe('#_resolve', function() {
-    var qw;
-    var testRef;
+  describe('#_resolve', () => {
+    let qw
+    let testRef
 
-    afterEach(function(done) {
-      qw.setTaskSpec();
-      testRef.off();
-      tasksRef.set(null, done);
-    });
+    beforeEach(() => {
+      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop)
+    })
 
-    it('should resolve a task owned by the current worker and remove it when no finishedState is specified', function(done) {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      qw.setTaskSpec(th.validBasicTaskSpec);
-      testRef = tasksRef.push({
-        '_state': th.validBasicTaskSpec.inProgressState,
-        '_state_changed': now(),
-        '_owner': qw._processId + ':' + qw._taskNumber(),
-        '_progress': 0
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
+    afterEach(done => {
+      testRef.off()
+      qw.shutdown()
+        .then(_ => tasksRef.set(null))
+        .then(done)
+    })
+
+    function resolve({ task, taskNumber, newTask, currentTask }) {
+      testRef = tasksRef.push()
+      const currentTaskRef = currentTask === undefined ? testRef : currentTask
+      return testRef.set(task)
+        .then(_ => (qw._currentTaskRef(currentTaskRef), qw._resolve(taskNumber)(newTask)))
+        .then(_ => testRef.once('value'))
+    }
+
+    it('should resolve a task owned by the current worker and remove it when no finishedState is specified', done => {
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      resolve({
+        taskNumber: qw._taskNumber(),
+        task: {
+          '_state': th.validBasicTaskSpec.inProgressState,
+          '_owner': qw._currentId()
         }
-        qw._currentTaskRef(testRef);
-        var initial = true;
-        return testRef.on('value', function(snapshot) {
-          if (initial) {
-            initial = false;
-            qw._resolve(qw._taskNumber())();
-          } else {
-            try {
-              expect(snapshot.val()).to.be.null;
-              done();
-            } catch (errorB) {
-              done(errorB);
-            }
-          }
-        });
-      });
-    });
+      }).then(snapshot => {
+          expect(snapshot.val()).to.be.null
+        })
+        .then(done).catch(done)
+    })
 
-    it('should resolve a task owned by the current worker and change the state when a finishedState is specified and no object passed', function(done) {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      testRef = tasksRef.push({
-        '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_state_changed': now(),
-        '_owner': qw._processId + ':' + qw._taskNumber(),
-        '_progress': 0
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        qw._currentTaskRef(testRef);
-        var initial = true;
-        return testRef.on('value', function(snapshot) {
-          if (initial) {
-            initial = false;
-            qw._resolve(qw._taskNumber())();
-          } else {
-            try {
-              var task = snapshot.val();
-              expect(task).to.have.all.keys(['_state', '_state_changed', '_progress']);
-              expect(task._progress).to.equal(100);
-              expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState);
-              expect(task._state_changed).to.be.closeTo(now() + th.offset, 250);
-              done();
-            } catch (errorB) {
-              done(errorB);
-            }
-          }
-        });
-      });
-    });
-
-    ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], null, _.noop].forEach(function(nonPlainObject) {
-      it('should resolve an task owned by the current worker and change the state when a finishedState is specified and an invalid object ' + nonPlainObject + ' passed', function(done) {
-        qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-        qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-        testRef = tasksRef.push({
+    it('should resolve a task owned by the current worker and change the state when a finishedState is specified and no object passed', done => {
+      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
+      resolve({
+        taskNumber: qw._taskNumber(),
+        task: {
           '_state': th.validTaskSpecWithFinishedState.inProgressState,
-          '_state_changed': now(),
-          '_owner': qw._processId + ':' + qw._taskNumber(),
-          '_progress': 0
-        }, function(errorA) {
-          if (errorA) {
-            return done(errorA);
-          }
-          qw._currentTaskRef(testRef);
-          var initial = true;
-          return testRef.on('value', function(snapshot) {
-            if (initial) {
-              initial = false;
-              qw._resolve(qw._taskNumber())(nonPlainObject);
-            } else {
-              try {
-                var task = snapshot.val();
-                expect(task).to.have.all.keys(['_state', '_state_changed', '_progress']);
-                expect(task._progress).to.equal(100);
-                expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState);
-                expect(task._state_changed).to.be.closeTo(now() + th.offset, 250);
-                done();
-              } catch (errorB) {
-                done(errorB);
-              }
-            }
-          });
-        });
-      });
-    });
-
-    it('should resolve a task owned by the current worker and change the state when a finishedState is specified and a plain object passed', function(done) {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      testRef = tasksRef.push({
-        '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_state_changed': now(),
-        '_owner': qw._processId + ':' + qw._taskNumber(),
-        '_progress': 0
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
+          '_owner': qw._currentId()
         }
-        qw._currentTaskRef(testRef);
-        var initial = true;
-        return testRef.on('value', function(snapshot) {
-          if (initial) {
-            initial = false;
-            qw._resolve(qw._taskNumber())({ foo: 'bar' });
-          } else {
-            try {
-              var task = snapshot.val();
-              expect(task).to.have.all.keys(['_state', '_state_changed', '_progress', 'foo']);
-              expect(task._progress).to.equal(100);
-              expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState);
-              expect(task._state_changed).to.be.closeTo(now() + th.offset, 250);
-              expect(task.foo).to.equal('bar');
-              done();
-            } catch (errorB) {
-              done(errorB);
-            }
-          }
-        });
-      });
-    });
+      }).then(snapshot => {
+          var task = snapshot.val()
+          expect(task).to.have.all.keys(['_state', '_state_changed', '_progress'])
+          expect(task._progress).to.equal(100)
+          expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState)
+          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+        })
+        .then(done).catch(done)
+    })
 
-    it('should resolve a task owned by the current worker and change the state to a provided valid string _new_state', function(done) {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
+    nonPlainObjects.forEach(nonPlainObject => 
+      it('should resolve an task owned by the current worker and change the state when a finishedState is specified and an invalid object ' + nonPlainObject + ' passed', done => {
+        qw.setTaskSpec(th.validTaskSpecWithFinishedState)
+        resolve({
+          taskNumber: qw._taskNumber(),
+          task: {
+            '_state': th.validTaskSpecWithFinishedState.inProgressState,
+            '_owner': qw._currentId()
+          },
+          newTask: nonPlainObject
+        }).then(snapshot => {
+            var task = snapshot.val()
+            expect(task).to.have.all.keys(['_state', '_state_changed', '_progress'])
+            expect(task._progress).to.equal(100)
+            expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState)
+            expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          })
+          .then(done).catch(done)
+      })
+    )
+
+    it('should resolve a task owned by the current worker and change the state when a finishedState is specified and a plain object passed', done => {
+      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
+      resolve({
+        taskNumber: qw._taskNumber(),
+        task: {
+          '_state': th.validTaskSpecWithFinishedState.inProgressState,
+          '_owner': qw._currentId()
+        },
+        newTask: { foo: 'bar' }
+      }).then(snapshot => {
+          var task = snapshot.val()
+          expect(task).to.have.all.keys(['_state', '_state_changed', '_progress', 'foo'])
+          expect(task._progress).to.equal(100)
+          expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState)
+          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task.foo).to.equal('bar')
+        })
+        .then(done).catch(done)
+    })
+
+    it('should resolve a task owned by the current worker and change the state to a provided valid string _new_state', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      testRef = tasksRef.push({
-        '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_state_changed': now(),
-        '_owner': qw._processId + ':' + qw._taskNumber(),
-        '_progress': 0
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
+      resolve({
+        taskNumber: qw._taskNumber(),
+        task: {
+          '_state': th.validTaskSpecWithFinishedState.inProgressState,
+          '_owner': qw._currentId()
+        },
+        newTask: {
+          foo: 'bar',
+          _new_state: 'valid_new_state'
         }
-        qw._currentTaskRef(testRef);
-        var initial = true;
-        return testRef.on('value', function(snapshot) {
-          if (initial) {
-            initial = false;
-            qw._resolve(qw._taskNumber())({
-              foo: 'bar',
-              _new_state: 'valid_new_state'
-            });
-          } else {
-            try {
-              var task = snapshot.val();
-              expect(task).to.have.all.keys(['_state', '_state_changed', '_progress', 'foo']);
-              expect(task._progress).to.equal(100);
-              expect(task._state).to.equal('valid_new_state');
-              expect(task._state_changed).to.be.closeTo(now() + th.offset, 250);
-              expect(task.foo).to.equal('bar');
-              done();
-            } catch (errorB) {
-              done(errorB);
-            }
-          }
-        });
-      });
-    });
+      }).then(snapshot => {
+          var task = snapshot.val();
+          expect(task).to.have.all.keys(['_state', '_state_changed', '_progress', 'foo'])
+          expect(task._progress).to.equal(100)
+          expect(task._state).to.equal('valid_new_state')
+          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task.foo).to.equal('bar')
+          // _new_state should be gone right?
+        })
+        .then(done).catch(done)
+    })
 
-    it('should resolve a task owned by the current worker and change the state to a provided valid null _new_state', function(done) {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
+    it('should resolve a task owned by the current worker and change the state to a provided valid null _new_state', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      testRef = tasksRef.push({
-        '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_state_changed': now(),
-        '_owner': qw._processId + ':' + qw._taskNumber(),
-        '_progress': 0
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
+      resolve({
+        taskNumber: qw._taskNumber(),
+        task: {
+          '_state': th.validTaskSpecWithFinishedState.inProgressState,
+          '_owner': qw._currentId()
+        },
+        newTask: {
+          foo: 'bar',
+          _new_state: null
         }
-        qw._currentTaskRef(testRef);
-        var initial = true;
-        return testRef.on('value', function(snapshot) {
-          if (initial) {
-            initial = false;
-            qw._resolve(qw._taskNumber())({
-              foo: 'bar',
-              _new_state: null
-            });
-          } else {
-            try {
-              var task = snapshot.val();
-              expect(task).to.have.all.keys(['_state_changed', '_progress', 'foo']);
-              expect(task._progress).to.equal(100);
-              expect(task._state_changed).to.be.closeTo(now() + th.offset, 250);
-              expect(task.foo).to.equal('bar');
-              done();
-            } catch (errorB) {
-              done(errorB);
-            }
-          }
-        });
-      });
-    });
+      }).then(snapshot => {
+          var task = snapshot.val()
+          expect(task).to.have.all.keys(['_state_changed', '_progress', 'foo'])
+          expect(task._progress).to.equal(100)
+          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task.foo).to.equal('bar')
+        })
+        .then(done).catch(done)
+    })
 
-    it('should resolve a task owned by the current worker and remove the task when provided _new_state = false', function(done) {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      testRef = tasksRef.push({
-        '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_state_changed': now(),
-        '_owner': qw._processId + ':' + qw._taskNumber(),
-        '_progress': 0
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
+    it('should resolve a task owned by the current worker and remove the task when provided _new_state = false', done => {
+      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
+      resolve({
+        taskNumber: qw._taskNumber(),
+        task: {
+          '_state': th.validTaskSpecWithFinishedState.inProgressState,
+          '_owner': qw._currentId()
+        },
+        newTask: {
+          foo: 'bar',
+          _new_state: false
         }
-        qw._currentTaskRef(testRef);
-        var initial = true;
-        return testRef.on('value', function(snapshot) {
-          if (initial) {
-            initial = false;
-            qw._resolve(qw._taskNumber())({
-              foo: 'bar',
-              _new_state: false
-            });
-          } else {
-            try {
-              expect(snapshot.val()).to.be.null;
-              done();
-            } catch (errorB) {
-              done(errorB);
-            }
-          }
-        });
-      });
-    });
+      }).then(snapshot => {
+          expect(snapshot.val()).to.be.null
+        })
+        .then(done).catch(done)
+    })
 
-    it('should resolve a task owned by the current worker and change the state to finishedState when provided an invalid _new_state', function(done) {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      testRef = tasksRef.push({
-        '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_state_changed': now(),
-        '_owner': qw._processId + ':' + qw._taskNumber(),
-        '_progress': 0
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
+    it('should resolve a task owned by the current worker and change the state to finishedState when provided an invalid _new_state', done => {
+      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
+      resolve({
+        taskNumber: qw._taskNumber(),
+        task: {
+          '_state': th.validTaskSpecWithFinishedState.inProgressState,
+          '_owner': qw._currentId()
+        },
+        newTask: {
+          foo: 'bar',
+          _new_state: {
+            state: 'object_is_an_invalid_new_state'
+          }
         }
-        qw._currentTaskRef(testRef);
-        var initial = true;
-        return testRef.on('value', function(snapshot) {
-          if (initial) {
-            initial = false;
-            qw._resolve(qw._taskNumber())({
-              foo: 'bar',
-              _new_state: {
-                state: 'object_is_an_invalid_new_state'
-              }
-            });
-          } else {
-            try {
-              var task = snapshot.val();
-              expect(task).to.have.all.keys(['_state', '_state_changed', '_progress', 'foo']);
-              expect(task._progress).to.equal(100);
-              expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState);
-              expect(task._state_changed).to.be.closeTo(now() + th.offset, 250);
-              expect(task.foo).to.equal('bar');
-              done();
-            } catch (errorB) {
-              done(errorB);
-            }
-          }
-        });
-      });
-    });
+      }).then(snapshot => {
+          var task = snapshot.val()
+          expect(task).to.have.all.keys(['_state', '_state_changed', '_progress', 'foo'])
+          expect(task._progress).to.equal(100)
+          expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState)
+          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task.foo).to.equal('bar')
+        })
+        .then(done).catch(done)
+    })
 
-    it('should not resolve a task that no longer exists', function(done) {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
+    it('should not resolve a task that no longer exists', done => {
+      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
+      resolve({
+        taskNumber: qw._taskNumber(),
+        task: null
+      }).then(snapshot => {
+          expect(snapshot.val()).to.be.null
+        })
+        .then(done).catch(done)
+    })
 
-      testRef = tasksRef.push();
-      qw._currentTaskRef(testRef);
-      qw._resolve(qw._taskNumber())().then(function() {
-        testRef.once('value', function(snapshot) {
-          try {
-            expect(snapshot.val()).to.be.null;
-            done();
-          } catch (error) {
-            done(error);
-          }
-        });
-      }).catch(done);
-    });
-
-    it('should not resolve a task if it is no longer owned by the current worker', function(done) {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      var originalTask = {
+    it('should not resolve a task if it is no longer owned by the current worker', done => {
+      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
+      const task = {
         '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_state_changed': now(),
-        '_owner': 'other_worker',
-        '_progress': 0
+        '_owner': 'other_worker'
       };
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      testRef = tasksRef.push(originalTask, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        qw._currentTaskRef(testRef);
-        return qw._resolve(qw._taskNumber())().then(function() {
-          testRef.once('value', function(snapshot) {
-            try {
-              expect(snapshot.val()).to.deep.equal(originalTask);
-              done();
-            } catch (errorB) {
-              done(errorB);
-            }
-          });
-        }).catch(done);
-      });
-    });
+      resolve({
+        taskNumber: qw._taskNumber(),
+        task
+      }).then(snapshot => {
+          expect(snapshot.val()).to.deep.equal(task)
+        })
+        .then(done).catch(done)
+    })
 
-    it('should not resolve a task if it is has already changed state', function(done) {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      var originalTask = {
+    it('should not resolve a task if it is has already changed state', done => {
+      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
+      const task = {
         '_state': th.validTaskSpecWithFinishedState.finishedState,
-        '_state_changed': now(),
-        '_owner': qw._processId + ':' + qw._taskNumber(),
-        '_progress': 0
+        '_owner': qw._currentId()
       };
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      testRef = tasksRef.push(originalTask, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        qw._currentTaskRef(testRef);
-        return qw._resolve(qw._taskNumber())().then(function() {
-          testRef.once('value', function(snapshot) {
-            try {
-              expect(snapshot.val()).to.deep.equal(originalTask);
-              done();
-            } catch (errorB) {
-              done(errorB);
-            }
-          });
-        }).catch(done);
-      });
-    });
+      resolve({
+        taskNumber: qw._taskNumber(),
+        task
+      }).then(snapshot => {
+          expect(snapshot.val()).to.deep.equal(task)
+        })
+        .then(done).catch(done)
+    })
 
-    it('should not resolve a task if it is has no state', function(done) {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      var originalTask = {
-        '_state_changed': now(),
-        '_owner': qw._processId + ':' + qw._taskNumber(),
-        '_progress': 0
-      };
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      testRef = tasksRef.push(originalTask, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        qw._currentTaskRef(testRef);
-        return qw._resolve(qw._taskNumber())().then(function() {
-          testRef.once('value', function(snapshot) {
-            try {
-              expect(snapshot.val()).to.deep.equal(originalTask);
-              done();
-            } catch (errorB) {
-              done(errorB);
-            }
-          });
-        }).catch(done);
-      });
-    });
+    it('should not resolve a task if it is has no state', done => {
+      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
+      const task = {
+        '_owner': qw._processId + ':' + qw._taskNumber()
+      }
+      resolve({
+        taskNumber: qw._taskNumber(),
+        task
+      }).then(snapshot => {
+          expect(snapshot.val()).to.deep.equal(task)
+        })
+        .then(done).catch(done)
+    })
 
-    it('should not resolve a task if it is no longer being processed', function(done) {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      var originalTask = {
+    it('should not resolve a task if it is no longer being processed', done => {
+      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
+      const task = {
         '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_state_changed': now(),
-        '_owner': qw._processId  + ':' + qw._taskNumber(),
-        '_progress': 0
-      };
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      testRef = tasksRef.push(originalTask, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        return qw._resolve(qw._taskNumber())().then(function() {
-          testRef.once('value', function(snapshot) {
-            try {
-              expect(snapshot.val()).to.deep.equal(originalTask);
-              done();
-            } catch (errorB) {
-              done(errorB);
-            }
-          });
-        }).catch(done);
-      });
-    });
+        '_owner': qw._currentId()
+      }
+      resolve({
+        taskNumber: qw._taskNumber(),
+        task,
+        currentTask: null
+      }).then(snapshot => {
+          expect(snapshot.val()).to.deep.equal(task)
+        })
+        .then(done).catch(done)
+    })
 
-    it('should not resolve a task if a new task is being processed', function(done) {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      var originalTask = {
+    it('should not resolve a task if a new task is being processed', done => {
+      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
+      const task = {
         '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_state_changed': now(),
-        '_owner': qw._processId + ':' + qw._taskNumber(),
-        '_progress': 0
-      };
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      testRef = tasksRef.push(originalTask, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        qw._currentTaskRef(testRef);
-        var resolve = qw._resolve(qw._taskNumber());
-        qw._taskNumber(qw._taskNumber() + 1);
-        return resolve().then(function() {
-          testRef.once('value', function(snapshot) {
-            try {
-              expect(snapshot.val()).to.deep.equal(originalTask);
-              done();
-            } catch (errorB) {
-              done(errorB);
-            }
-          });
-        }).catch(done);
-      });
-    });
-  });
+        '_owner': qw._currentId()
+      }
+      resolve({
+        taskNumber: qw._taskNumber() + 1,
+        task
+      }).then(snapshot => {
+          expect(snapshot.val()).to.deep.equal(task)
+        })
+        .then(done).catch(done)
+    })
+  })
 
   describe('#_reject', function() {
     var qw;
