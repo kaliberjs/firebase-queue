@@ -15,10 +15,14 @@ const { expect } = chai
 const th = new Helpers()
 const tasksRef = th.testRef.child('tasks')
 
-const nonBooleans     = [NaN, Infinity, ''  , 'foo', 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop]
-const nonStrings      = [NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop]
-const nonFunctions    = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }]
-const nonPlainObjects = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], null, _.noop]
+const nonBooleans         = ['', 'foo', NaN, Infinity,              0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop         ]
+const nonStrings          = [           NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop         ]
+const nonFunctions        = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }                 ]
+const nonPlainObjects     = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'],                 null,                                                  _.noop         ]
+const nonPositiveIntegers = ['', 'foo', NaN, Infinity, true, false, 0,    ['foo', 'bar'], { foo: 'bar' },       { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop, -1, 1.1]
+
+const nonStringsWithoutNull = nonStrings.filter(x => x !== null)
+const nonPositiveIntegersWithout0 = nonPositiveIntegers.filter(x => x !== 0)
 
 function now() { return new Date().getTime() }
 
@@ -447,7 +451,7 @@ describe('QueueWorker', () => {
     })
   })
 
-  describe('#_reject', function() {
+  describe('#_reject', () => {
     let qw
     let testRef
 
@@ -560,7 +564,7 @@ describe('QueueWorker', () => {
         .then(done).catch(done)
     })
 
-    nonStrings.filter(x => x !== null).forEach(nonStringObject =>
+    nonStringsWithoutNull.forEach(nonStringObject =>
       it('should reject a task owned by the current worker and convert the error to a string if not a string: ' + nonStringObject, done => {
         qw.setTaskSpec(th.validBasicTaskSpec)
         reject({
@@ -734,10 +738,10 @@ describe('QueueWorker', () => {
     })
   })
 
-  describe('#_updateProgress', function() {
+  describe('#_updateProgress', () => {
     var qw;
 
-    beforeEach(function() {
+    beforeEach(() => {
       qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
       qw._tryToProcess = _.noop;
     });
@@ -748,7 +752,7 @@ describe('QueueWorker', () => {
     });
 
     ['', 'foo', NaN, Infinity, true, false, -1, 100.1, ['foo', 'bar'], { foo: 'bar' }, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(invalidPercentageValue) {
-      it('should ignore invalid input ' + invalidPercentageValue + ' to update the progress', function() {
+      it('should ignore invalid input ' + invalidPercentageValue + ' to update the progress', () => {
         qw._currentTaskRef(tasksRef.push());
         return qw._updateProgress(qw._taskNumber())(invalidPercentageValue).should.eventually.be.rejectedWith('Invalid progress');
       });
@@ -817,10 +821,10 @@ describe('QueueWorker', () => {
     });
   });
 
-  describe('#_tryToProcess', function() {
+  describe('#_tryToProcess', () => {
     var qw;
 
-    beforeEach(function() {
+    beforeEach(() => {
       qw = new th.QueueWorker(tasksRef, '0', true, false, _.noop);
     });
 
@@ -840,7 +844,7 @@ describe('QueueWorker', () => {
         if (errorA) {
           return done(errorA);
         }
-        return qw._tryToProcess().then(function() {
+        return qw._tryToProcess().then(() => {
           try {
             expect(qw._currentTaskRef()).to.be.null;
             done();
@@ -861,7 +865,7 @@ describe('QueueWorker', () => {
         if (errorA) {
           return done(errorA);
         }
-        return qw._tryToProcess().then(function() {
+        return qw._tryToProcess().then(() => {
           try {
             expect(qw._currentTaskRef()).to.not.be.null;
             expect(qw._busy()).to.be.true;
@@ -874,7 +878,7 @@ describe('QueueWorker', () => {
     });
 
     it('should try and process a task if not busy, rejecting it if it throws', done => {
-      qw = new th.QueueWorker(tasksRef, '0', true, false, function() {
+      qw = new th.QueueWorker(tasksRef, '0', true, false, () => {
         throw new Error('Error thrown in processingFunction');
       });
       qw._startState(th.validTaskSpecWithStartState.startState);
@@ -888,7 +892,7 @@ describe('QueueWorker', () => {
         if (errorA) {
           return done(errorA);
         }
-        return qw._tryToProcess().then(function() {
+        return qw._tryToProcess().then(() => {
           try {
             expect(qw._currentTaskRef()).to.not.be.null;
             expect(qw._busy()).to.be.true;
@@ -932,7 +936,7 @@ describe('QueueWorker', () => {
         if (errorA) {
           return done(errorA);
         }
-        return qw._tryToProcess().then(function() {
+        return qw._tryToProcess().then(() => {
           try {
             expect(qw._currentTaskRef()).to.not.be.null;
             expect(qw._busy()).to.be.true;
@@ -952,7 +956,7 @@ describe('QueueWorker', () => {
         if (errorA) {
           return done(errorA);
         }
-        return qw._tryToProcess().then(function() {
+        return qw._tryToProcess().then(() => {
           try {
             expect(qw._currentTaskRef()).to.be.null;
             expect(qw._busy()).to.be.false;
@@ -984,7 +988,7 @@ describe('QueueWorker', () => {
         if (errorA) {
           return done(errorA);
         }
-        return qw._tryToProcess().then(function() {
+        return qw._tryToProcess().then(() => {
           try {
             expect(qw._currentTaskRef()).to.be.null;
             expect(qw._busy()).to.be.false;
@@ -1020,7 +1024,7 @@ describe('QueueWorker', () => {
         if (errorA) {
           return done(errorA);
         }
-        return qw._tryToProcess().then(function() {
+        return qw._tryToProcess().then(() => {
           try {
             expect(qw._currentTaskRef()).to.be.null;
             done();
@@ -1035,7 +1039,7 @@ describe('QueueWorker', () => {
       qw._startState(th.validTaskSpecWithStartState.startState);
       qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
       qw._newTaskRef(tasksRef);
-      qw._tryToProcess().then(function() {
+      qw._tryToProcess().then(() => {
         try {
           expect(qw._currentTaskRef()).to.be.null;
           done();
@@ -1055,7 +1059,7 @@ describe('QueueWorker', () => {
         if (errorA) {
           return done(errorA);
         }
-        return qw._tryToProcess().then(function() {
+        return qw._tryToProcess().then(() => {
           try {
             expect(qw._currentTaskRef()).to.not.be.null;
             expect(qw._busy()).to.be.true;
@@ -1107,11 +1111,11 @@ describe('QueueWorker', () => {
     });
   });
 
-  describe('#_setUpTimeouts', function() {
+  describe('#_setUpTimeouts', () => {
     var qw;
     var clock;
 
-    beforeEach(function() {
+    beforeEach(() => {
       clock = sinon.useFakeTimers(now());
       qw = new th.QueueWorkerWithoutProcessing(tasksRef, '0', true, false, _.noop);
     });
@@ -1160,7 +1164,7 @@ describe('QueueWorker', () => {
       });
     });
 
-    it('should set up timeout listeners when a task timeout is set', function() {
+    it('should set up timeout listeners when a task timeout is set', () => {
       expect(qw._expiryTimeouts).to.deep.equal({});
       expect(qw._processingTasksRef()).to.be.null;
       expect(qw._processingTaskAddedListener()).to.be.null;
@@ -1174,7 +1178,7 @@ describe('QueueWorker', () => {
       expect(qw._processingTaskRemovedListener()).to.not.be.null;
     });
 
-    it('should remove timeout listeners when a task timeout is not specified after a previous task specified a timeout', function() {
+    it('should remove timeout listeners when a task timeout is not specified after a previous task specified a timeout', () => {
       qw.setTaskSpec(th.validTaskSpecWithTimeout);
 
       expect(qw._expiryTimeouts).to.deep.equal({});
@@ -1373,156 +1377,151 @@ describe('QueueWorker', () => {
     });
   });
 
-  describe('#QueueWorker.isValidTaskSpec', function() {
+  describe('#QueueWorker.isValidTaskSpec', () => {
+
+    let taskSpec = null
 
     const { isValidTaskSpec } = th.QueueWorker
 
-    it('should not accept a non-plain object as a valid task spec', function() {
-      ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], null, _.noop].forEach(function(nonPlainObject) {
+    beforeEach(() => {
+      taskSpec = _.clone(th.validBasicTaskSpec)
+    })
+
+    it('should not accept a non-plain object as a valid task spec', () => 
+      nonPlainObjects.forEach(nonPlainObject => {
         expect(isValidTaskSpec(nonPlainObject)).to.be.false;
-      });
-    });
+      })
+    )
 
-    it('should not accept an empty object as a valid task spec', function() {
-      expect(isValidTaskSpec({})).to.be.false;
-    });
+    it('should not accept an empty object as a valid task spec', () => {
+      expect(isValidTaskSpec({})).to.be.false
+    })
 
-    it('should not accept a non-empty object without the required keys as a valid task spec', function() {
-      expect(isValidTaskSpec({ foo: 'bar' })).to.be.false;
-    });
+    it('should not accept a non-empty object without the required keys as a valid task spec', () => {
+      expect(isValidTaskSpec({ foo: 'bar' })).to.be.false
+    })
 
-    it('should not accept a startState that is not a string as a valid task spec', function() {
-      [NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(nonStringObject) {
-        var taskSpec = _.clone(th.validBasicTaskSpec);
-        taskSpec.startState = nonStringObject;
-        expect(isValidTaskSpec(taskSpec)).to.be.false;
-      });
-    });
+    it('should not accept a startState that is not a string as a valid task spec', () => 
+      nonStringsWithoutNull.forEach(nonStringObject => {
+        taskSpec.startState = nonStringObject
+        expect(isValidTaskSpec(taskSpec)).to.be.false
+      })
+    )
 
-    it('should not accept an inProgressState that is not a string as a valid task spec', function() {
-      [NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(nonStringObject) {
-        var taskSpec = _.clone(th.validBasicTaskSpec);
-        taskSpec.inProgressState = nonStringObject;
-        expect(isValidTaskSpec(taskSpec)).to.be.false;
-      });
-    });
+    it('should not accept an inProgressState that is not a string as a valid task spec', () => 
+      nonStrings.forEach(nonStringObject => {
+        taskSpec.inProgressState = nonStringObject
+        expect(isValidTaskSpec(taskSpec)).to.be.false
+      })
+    )
 
-    it('should not accept a finishedState that is not a string as a valid task spec', function() {
-      [NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(nonStringObject) {
-        var taskSpec = _.clone(th.validBasicTaskSpec);
-        taskSpec.finishedState = nonStringObject;
-        expect(isValidTaskSpec(taskSpec)).to.be.false;
-      });
-    });
+    it('should not accept a finishedState that is not a string as a valid task spec', () => 
+      nonStringsWithoutNull.forEach(nonStringObject => {
+        taskSpec.finishedState = nonStringObject
+        expect(isValidTaskSpec(taskSpec)).to.be.false
+      })
+    )
 
-    it('should not accept a finishedState that is not a string as a valid task spec', function() {
-      [NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(nonStringObject) {
-        var taskSpec = _.clone(th.validBasicTaskSpec);
-        taskSpec.errorState = nonStringObject;
-        expect(isValidTaskSpec(taskSpec)).to.be.false;
-      });
-    });
+    it('should not accept a finishedState that is not a string as a valid task spec', () => 
+      nonStringsWithoutNull.forEach(nonStringObject => {
+        taskSpec.errorState = nonStringObject
+        expect(isValidTaskSpec(taskSpec)).to.be.false
+      })
+    )
 
-    it('should not accept a timeout that is not a positive integer as a valid task spec', function() {
-      ['', 'foo', NaN, Infinity, true, false, 0, -1, 1.1, ['foo', 'bar'], { foo: 'bar' }, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(nonPositiveIntigerObject) {
-        var taskSpec = _.clone(th.validBasicTaskSpec);
-        taskSpec.timeout = nonPositiveIntigerObject;
-        expect(isValidTaskSpec(taskSpec)).to.be.false;
-      });
-    });
+    it('should not accept a timeout that is not a positive integer as a valid task spec', () => 
+      nonPositiveIntegers.forEach(nonPositiveIntegerObject => {
+        taskSpec.timeout = nonPositiveIntegerObject
+        expect(isValidTaskSpec(taskSpec)).to.be.false
+      })
+    )
 
-    it('should not accept a retries that is not a positive or 0 integer as a valid task spec', function() {
-      ['', 'foo', NaN, Infinity, true, false, -1, 1.1, ['foo', 'bar'], { foo: 'bar' }, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(nonPositiveIntigerObject) {
-        var taskSpec = _.clone(th.validBasicTaskSpec);
-        taskSpec.retries = nonPositiveIntigerObject;
-        expect(isValidTaskSpec(taskSpec)).to.be.false;
-      });
-    });
+    it('should not accept a retries that is not a positive or 0 integer as a valid task spec', () => 
+      nonPositiveIntegersWithout0.forEach(nonPositiveIntegerObject => {
+        taskSpec.retries = nonPositiveIntegerObject
+        expect(isValidTaskSpec(taskSpec)).to.be.false
+      })
+    )
 
-    it('should accept a valid task spec without a timeout', function() {
-      expect(isValidTaskSpec(th.validBasicTaskSpec)).to.be.true;
-    });
+    it('should accept a valid task spec without a timeout', () => {
+      expect(isValidTaskSpec(th.validBasicTaskSpec)).to.be.true
+    })
 
-    it('should accept a valid task spec with a startState', function() {
-      expect(isValidTaskSpec(th.validTaskSpecWithStartState)).to.be.true;
-    });
+    it('should accept a valid task spec with a startState', () => {
+      expect(isValidTaskSpec(th.validTaskSpecWithStartState)).to.be.true
+    })
 
-    it('should not accept a taskSpec with the same startState and inProgressState', function() {
-      var taskSpec = _.clone(th.validBasicTaskSpec);
-      taskSpec.startState = taskSpec.inProgressState;
-      expect(isValidTaskSpec(taskSpec)).to.be.false;
-    });
+    it('should not accept a taskSpec with the same startState and inProgressState', () => {
+      taskSpec.startState = taskSpec.inProgressState
+      expect(isValidTaskSpec(taskSpec)).to.be.false
+    })
 
-    it('should accept a valid task spec with a finishedState', function() {
-      expect(isValidTaskSpec(th.validTaskSpecWithFinishedState)).to.be.true;
-    });
+    it('should accept a valid task spec with a finishedState', () => {
+      expect(isValidTaskSpec(th.validTaskSpecWithFinishedState)).to.be.true
+    })
 
-    it('should not accept a taskSpec with the same finishedState and inProgressState', function() {
-      var taskSpec = _.clone(th.validBasicTaskSpec);
-      taskSpec.finishedState = taskSpec.inProgressState;
-      expect(isValidTaskSpec(taskSpec)).to.be.false;
-    });
+    it('should not accept a taskSpec with the same finishedState and inProgressState', () => {
+      taskSpec.finishedState = taskSpec.inProgressState
+      expect(isValidTaskSpec(taskSpec)).to.be.false
+    })
 
-    it('should accept a valid task spec with a errorState', function() {
-      expect(isValidTaskSpec(th.validTaskSpecWithErrorState)).to.be.true;
-    });
+    it('should accept a valid task spec with a errorState', () => {
+      expect(isValidTaskSpec(th.validTaskSpecWithErrorState)).to.be.true
+    })
 
-    it('should not accept a taskSpec with the same errorState and inProgressState', function() {
-      var taskSpec = _.clone(th.validBasicTaskSpec);
-      taskSpec.errorState = taskSpec.inProgressState;
-      expect(isValidTaskSpec(taskSpec)).to.be.false;
-    });
+    it('should not accept a taskSpec with the same errorState and inProgressState', () => {
+      taskSpec.errorState = taskSpec.inProgressState
+      expect(isValidTaskSpec(taskSpec)).to.be.false
+    })
 
-    it('should accept a valid task spec with a timeout', function() {
-      expect(isValidTaskSpec(th.validTaskSpecWithTimeout)).to.be.true;
-    });
+    it('should accept a valid task spec with a timeout', () => {
+      expect(isValidTaskSpec(th.validTaskSpecWithTimeout)).to.be.true
+    })
 
-    it('should accept a valid task spec with retries', function() {
-      expect(isValidTaskSpec(th.validTaskSpecWithRetries)).to.be.true;
-    });
+    it('should accept a valid task spec with retries', () => {
+      expect(isValidTaskSpec(th.validTaskSpecWithRetries)).to.be.true
+    })
 
-    it('should accept a valid task spec with 0 retries', function() {
-      var taskSpec = _.clone(th.validBasicTaskSpec);
-      taskSpec.retries = 0;
-      expect(isValidTaskSpec(taskSpec)).to.be.true;
-    });
+    it('should accept a valid task spec with 0 retries', () => {
+      taskSpec.retries = 0
+      expect(isValidTaskSpec(taskSpec)).to.be.true
+    })
 
-    it('should not accept a taskSpec with the same startState and finishedState', function() {
-      var taskSpec = _.clone(th.validTaskSpecWithFinishedState);
-      taskSpec.startState = taskSpec.finishedState;
-      expect(isValidTaskSpec(taskSpec)).to.be.false;
-    });
+    it('should not accept a taskSpec with the same startState and finishedState', () => {
+      taskSpec = _.clone(th.validTaskSpecWithFinishedState)
+      taskSpec.startState = taskSpec.finishedState
+      expect(isValidTaskSpec(taskSpec)).to.be.false
+    })
 
-    it('should accept a taskSpec with the same errorState and startState', function() {
-      var taskSpec = _.clone(th.validTaskSpecWithStartState);
-      taskSpec.errorState = taskSpec.startState;
-      expect(isValidTaskSpec(taskSpec)).to.be.true;
-    });
+    it('should accept a taskSpec with the same errorState and startState', () => {
+      taskSpec = _.clone(th.validTaskSpecWithStartState)
+      taskSpec.errorState = taskSpec.startState
+      expect(isValidTaskSpec(taskSpec)).to.be.true
+    })
 
-    it('should accept a taskSpec with the same errorState and finishedState', function() {
-      var taskSpec = _.clone(th.validTaskSpecWithFinishedState);
-      taskSpec.errorState = taskSpec.finishedState;
-      expect(isValidTaskSpec(taskSpec)).to.be.true;
-    });
+    it('should accept a taskSpec with the same errorState and finishedState', () => {
+      taskSpec = _.clone(th.validTaskSpecWithFinishedState)
+      taskSpec.errorState = taskSpec.finishedState
+      expect(isValidTaskSpec(taskSpec)).to.be.true
+    })
 
-    it('should accept a valid task spec with a startState, a finishedState, an errorState, a timeout, and retries', function() {
-      expect(isValidTaskSpec(th.validTaskSpecWithEverything)).to.be.true;
-    });
+    it('should accept a valid task spec with a startState, a finishedState, an errorState, a timeout, and retries', () => {
+      expect(isValidTaskSpec(th.validTaskSpecWithEverything)).to.be.true
+    })
 
-    it('should accept a valid basic task spec with null parameters for everything else', function() {
-      var taskSpec = _.clone(th.validBasicTaskSpec);
+    it('should accept a valid basic task spec with null parameters for everything else', () => {
       taskSpec = _.assign(taskSpec, {
         startState: null,
         finishedState: null,
         errorState: null,
         timeout: null,
         retries: null
-      });
-      expect(isValidTaskSpec(taskSpec)).to.be.true;
-    });
-  });
+      })
+      expect(isValidTaskSpec(taskSpec)).to.be.true
+    })
+  })
 
-  describe('#setTaskSpec', function() {
+  describe('#setTaskSpec', () => {
     var qw;
 
     afterEach(done => {
@@ -1530,7 +1529,7 @@ describe('QueueWorker', () => {
       tasksRef.set(null, done);
     });
 
-    it('should reset the worker when called with an invalid task spec', function() {
+    it('should reset the worker when called with an invalid task spec', () => {
       ['', 'foo', NaN, Infinity, true, false, null, undefined, 0, -1, 10, ['foo', 'bar'], { foo: 'bar' }, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(invalidTaskSpec) {
         qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
         var oldTaskNumber = qw._taskNumber();
@@ -1546,7 +1545,7 @@ describe('QueueWorker', () => {
       });
     });
 
-    it('should reset the worker when called with an invalid task spec after a valid task spec', function() {
+    it('should reset the worker when called with an invalid task spec after a valid task spec', () => {
       ['', 'foo', NaN, Infinity, true, false, null, undefined, 0, -1, 10, ['foo', 'bar'], { foo: 'bar' }, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(invalidTaskSpec) {
         qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
         qw.setTaskSpec(th.validBasicTaskSpec);
@@ -1563,7 +1562,7 @@ describe('QueueWorker', () => {
       });
     });
 
-    it('should reset the worker when called with an invalid task spec after a valid task spec with everythin', function() {
+    it('should reset the worker when called with an invalid task spec after a valid task spec with everythin', () => {
       ['', 'foo', NaN, Infinity, true, false, null, undefined, 0, -1, 10, ['foo', 'bar'], { foo: 'bar' }, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(invalidTaskSpec) {
         qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
         qw.setTaskSpec(th.validTaskSpecWithEverything);
@@ -1580,7 +1579,7 @@ describe('QueueWorker', () => {
       });
     });
 
-    it('should reset a worker when called with a basic valid task spec', function() {
+    it('should reset a worker when called with a basic valid task spec', () => {
       qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
       var oldTaskNumber = qw._taskNumber();
       qw.setTaskSpec(th.validBasicTaskSpec);
@@ -1594,7 +1593,7 @@ describe('QueueWorker', () => {
       expect(qw._expiryTimeouts).to.deep.equal({});
     });
 
-    it('should reset a worker when called with a valid task spec with a startState', function() {
+    it('should reset a worker when called with a valid task spec with a startState', () => {
       qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
       var oldTaskNumber = qw._taskNumber();
       qw.setTaskSpec(th.validTaskSpecWithStartState);
@@ -1608,7 +1607,7 @@ describe('QueueWorker', () => {
       expect(qw._expiryTimeouts).to.deep.equal({});
     });
 
-    it('should reset a worker when called with a valid task spec with a finishedState', function() {
+    it('should reset a worker when called with a valid task spec with a finishedState', () => {
       qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
       var oldTaskNumber = qw._taskNumber();
       qw.setTaskSpec(th.validTaskSpecWithFinishedState);
@@ -1622,7 +1621,7 @@ describe('QueueWorker', () => {
       expect(qw._expiryTimeouts).to.deep.equal({});
     });
 
-    it('should reset a worker when called with a valid task spec with a timeout', function() {
+    it('should reset a worker when called with a valid task spec with a timeout', () => {
       qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
       var oldTaskNumber = qw._taskNumber();
       qw.setTaskSpec(th.validTaskSpecWithTimeout);
@@ -1636,7 +1635,7 @@ describe('QueueWorker', () => {
       expect(qw._expiryTimeouts).to.deep.equal({});
     });
 
-    it('should reset a worker when called with a valid task spec with everything', function() {
+    it('should reset a worker when called with a valid task spec with everything', () => {
       qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
       var oldTaskNumber = qw._taskNumber();
       qw.setTaskSpec(th.validTaskSpecWithEverything);
@@ -1654,7 +1653,7 @@ describe('QueueWorker', () => {
       qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
       qw.setTaskSpec(th.validBasicTaskSpec);
       var spy = sinon.spy(qw, '_tryToProcess');
-      tasksRef.once('child_added', function() {
+      tasksRef.once('child_added', () => {
         try {
           expect(qw._tryToProcess).to.not.have.been.called;
           spy.restore();
@@ -1677,7 +1676,7 @@ describe('QueueWorker', () => {
       qw.setTaskSpec(th.validBasicTaskSpec);
       var spy = sinon.spy(qw, '_tryToProcess');
       var ref = tasksRef.push();
-      tasksRef.once('child_added', function() {
+      tasksRef.once('child_added', () => {
         try {
           expect(qw._tryToProcess).to.have.been.calledOnce;
           spy.restore();
@@ -1695,7 +1694,7 @@ describe('QueueWorker', () => {
       qw.setTaskSpec(th.validTaskSpecWithStartState);
       var spy = sinon.spy(qw, '_tryToProcess');
       var ref = tasksRef.push();
-      tasksRef.once('child_added', function() {
+      tasksRef.once('child_added', () => {
         try {
           expect(qw._tryToProcess).to.have.been.calledOnce;
           spy.restore();
@@ -1709,28 +1708,28 @@ describe('QueueWorker', () => {
     });
   });
 
-  describe('#shutdown', function() {
+  describe('#shutdown', () => {
     var qw;
     var callbackStarted;
     var callbackComplete;
 
-    beforeEach(function() {
+    beforeEach(() => {
       callbackStarted = false;
       callbackComplete = false;
       qw = new th.QueueWorker(tasksRef, '0', true, false, function(data, progress, resolve) {
         callbackStarted = true;
-        setTimeout(function() {
+        setTimeout(() => {
           callbackComplete = true;
           resolve();
         }, 500);
       });
     });
 
-    afterEach(function() {
+    afterEach(() => {
       qw.setTaskSpec();
     });
 
-    it('should shutdown a worker not processing any tasks', function() {
+    it('should shutdown a worker not processing any tasks', () => {
       return qw.shutdown().should.eventually.be.fulfilled;
     });
 
@@ -1742,11 +1741,11 @@ describe('QueueWorker', () => {
         if (errorA) {
           return done(errorA);
         }
-        return setTimeout(function() {
+        return setTimeout(() => {
           try {
             expect(callbackStarted).to.be.true;
             expect(callbackComplete).to.be.false;
-            qw.shutdown().then(function() {
+            qw.shutdown().then(() => {
               expect(callbackComplete).to.be.true;
             }).should.eventually.be.fulfilled.notify(done);
           } catch (errorB) {
