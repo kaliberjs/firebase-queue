@@ -1,18 +1,14 @@
 'use strict';
 
-var _ = require('lodash');
-var Helpers = require('./helpers.js');
-var chai = require('chai');
-var expect = chai.expect;
-var winston = require('winston');
-var chaiAsPromised = require('chai-as-promised');
+const _ = require('lodash')
+const Helpers = require('./helpers.js')
+const chai = require('chai')
+const chaiAsPromised = require('chai-as-promised')
 
-winston.level = 'none';
+chai.use(chaiAsPromised).should()
+const { expect } = chai
 
-chai.should();
-chai.use(chaiAsPromised);
-
-var th = new Helpers();
+const th = new Helpers()
 
 describe('Queue', function() {
   describe('initialize', function() {

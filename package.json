@@ -29,9 +29,7 @@
   ],
   "dependencies": {
     "lodash": "^4.6.1",
-    "rsvp": "^3.2.1",
-    "uuid": "^3.0.0",
-    "winston": "^2.2.0"
+    "uuid": "^3.0.0"
   },
   "devDependencies": {
     "chai": "^3.5.0",
