@@ -546,8 +546,6 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   function shutdown() {
     if (shutdownDeferred) return shutdownDeferred.promise
 
-    // shutting down
-
     // Set the global shutdown deferred promise, which signals we're shutting down
     shutdownDeferred = createDeferred()
 
@@ -558,8 +556,8 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
       shutdownDeferred.resolve()
     }
 
-    return shutdownDeferred.promise;
-  };
+    return shutdownDeferred.promise
+  }
 }
 
 /**
