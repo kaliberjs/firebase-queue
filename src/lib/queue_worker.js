@@ -447,17 +447,13 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
    * Sets up timeouts to reclaim tasks that fail due to taking too long.
    */
   function _setUpTimeouts() {
-    if (!_.isNull(processingTaskAddedListener)) {
-      processingTasksRef.off(
-        'child_added',
-        processingTaskAddedListener);
-      processingTaskAddedListener = null;
+    if (processingTaskAddedListener !== null) {
+      processingTasksRef.off('child_added', processingTaskAddedListener)
+      processingTaskAddedListener = null
     }
-    if (!_.isNull(processingTaskRemovedListener)) {
-      processingTasksRef.off(
-        'child_removed',
-        processingTaskRemovedListener);
-      processingTaskRemovedListener = null;
+    if (processingTaskRemovedListener !== null) {
+      processingTasksRef.off('child_removed', processingTaskRemovedListener)
+      processingTaskRemovedListener = null
     }
 
     Object.keys(expiryTimeouts).forEach(key => { 
@@ -466,53 +462,38 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
     })
     Object.keys(owners).forEach(key => { delete owners[key] })
 
-    if (taskTimeout) {
-      processingTasksRef = tasksRef.orderByChild('_state')
-        .equalTo(inProgressState);
+    if (!taskTimeout) processingTasksRef = null
+    else {
+      processingTasksRef = tasksRef.orderByChild('_state').equalTo(inProgressState);
 
-      var setUpTimeout = function(snapshot) {
-        var taskName = snapshot.key;
-        var now = new Date().getTime();
-        var startTime = (snapshot.child('_state_changed').val() || now);
-        var expires = Math.max(0, startTime - now + taskTimeout);
-        var ref = snapshot.ref;
-        owners[taskName] = snapshot.child('_owner').val();
-        expiryTimeouts[taskName] = setTimeout(
-          self._resetTask.bind(self),
-          expires,
-          ref, false);
-      };
-
-      processingTaskAddedListener = processingTasksRef.on('child_added',
-        setUpTimeout,
-        /* istanbul ignore next */ function(error) {
-          // errored listening to Firebase
-        });
-      processingTaskRemovedListener = processingTasksRef.on(
-        'child_removed',
-        function(snapshot) {
-          var taskName = snapshot.key;
-          clearTimeout(expiryTimeouts[taskName]);
-          delete expiryTimeouts[taskName];
-          delete owners[taskName];
-        }, /* istanbul ignore next */ function(error) {
-          // errored listening to Firebase
-        });
-      processingTasksRef.on('child_changed', function(snapshot) {
+      processingTaskAddedListener = processingTasksRef.on('child_added', setUpTimeout)
+      processingTaskRemovedListener = processingTasksRef.on('child_removed', ({ key }) => {
+        clearTimeout(expiryTimeouts[key])
+        delete expiryTimeouts[key]
+        delete owners[key]
+      })
+      // possible problem, this listener is never removed:
+      processingTasksRef.on('child_changed', snapshot => {
         // This catches de-duped events from the server - if the task was removed
         // and added in quick succession, the server may squash them into a
         // single update
-        var taskName = snapshot.key;
-        if (snapshot.child('_owner').val() !== owners[taskName]) {
-          setUpTimeout(snapshot);
-        }
-      }, /* istanbul ignore next */ function(error) {
-        // errored listening to Firebase
-      });
-    } else {
-      processingTasksRef = null;
+        if (snapshot.child('_owner').val() !== owners[snapshot.key]) 
+          setUpTimeout(snapshot)
+      })
     }
-  };
+
+    function setUpTimeout(snapshot) {
+      var taskName = snapshot.key
+      var now = new Date().getTime() // use server offset
+      var startTime = (snapshot.child('_state_changed').val() || now);
+      var expires = Math.max(0, startTime - now + taskTimeout);
+      owners[taskName] = snapshot.child('_owner').val();
+      expiryTimeouts[taskName] = setTimeout(
+        () => self._resetTask(snapshot.ref, false),
+        expires
+      )
+    }
+  }
 
   /**
    * Validates a task spec contains meaningful parameters.
