@@ -104,6 +104,19 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
   function inProgress({ _state }) { return _state === inProgressState }
   function isOwner({ _owner }) { return _owner === currentId() }
 
+  function done(deferred) {
+    deferred.resolve()
+    busy = false  // possible problem, resolve is called before this is set
+    self._tryToProcess()
+  }
+
+  function isInvalidTask(requestedTaskNumber) {
+    const notCurrentTask = taskNumber !== requestedTaskNumber
+    const noTask = currentTaskRef === null
+
+    return notCurrentTask || noTask
+  }
+
   /**
    * Returns the state of a task to the start state.
    * @param {firebase.database.Reference} taskRef Firebase Realtime Database
@@ -138,8 +151,8 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
         undefined,
         false
       )
-      .then((committed, snapshot) => { deferred.resolve() })
-      .catch(error => {
+      .then(_ => { deferred.resolve() })
+      .catch(_ => {
         // reset task errored, retrying
         if ((retries + 1) < MAX_TRANSACTION_ATTEMPTS) setImmediate(self._resetTask.bind(self), taskRef, immediate, deferred)
         else deferred.reject(new Error('reset task errored too many times, no longer retrying'))
@@ -166,10 +179,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
      */
     function resolve(newTask) {
 
-      const notCurrentTask = taskNumber !== requestedTaskNumber
-      const noTask = currentTaskRef === null
-      
-      if (notCurrentTask || noTask) done()
+      if (isInvalidTask(requestedTaskNumber)) done(deferred)
       else {
         currentTaskRef
           .transaction(
@@ -199,8 +209,8 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
             undefined,
             false
           )
-          .then((committed, snapshot) => { done() })
-          .catch(error => {
+          .then(_ => { done(deferred) })
+          .catch(_ => {
             // resolve task errored, retrying
             if (++retries < MAX_TRANSACTION_ATTEMPTS) setImmediate(resolve, newTask)
             else deferred.reject(new Error('resolve task errored too many times, no longer retrying'))
@@ -208,12 +218,6 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
       }
 
       return deferred.promise
-
-      function done() {
-        deferred.resolve()
-        busy = false  // possible problem, resolve is called before this is set
-        self._tryToProcess()
-      }
     }
   }
 
@@ -223,10 +227,10 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
    * @returns {Function} the reject callback function.
    */
   function _reject(requestedTaskNumber) {
-    var retries = 0;
-    var errorString = null;
-    var errorStack = null;
-    var deferred = createDeferred();
+    let retries = 0
+    const deferred = createDeferred()
+
+    return reject
 
     /**
      * Rejects the current task and changes the state to errorState,
@@ -234,86 +238,59 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
      * @param {Object} error The error message or object to be logged.
      * @returns {Promise} Whether the task was able to be rejected.
      */
-    var reject = function(error) {
-      if ((taskNumber !== requestedTaskNumber) || _.isNull(currentTaskRef)) {
-        if (_.isNull(currentTaskRef)) {
-          // Can't reject task - no task currently being processed
-        } else {
-          // Can't reject task - no longer processing current task
-        }
-        deferred.resolve();
-        busy = false;
-        self._tryToProcess();
-      } else {
-        if (_.isError(error)) {
-          errorString = error.message;
-        } else if (_.isString(error)) {
-          errorString = error;
-        } else if (!_.isUndefined(error) && !_.isNull(error)) {
-          errorString = error.toString();
-        }
+    function reject(error) {
+      if (isInvalidTask(requestedTaskNumber)) done(deferred)
+      else {
+        const errorString = 
+          _.isError(error) ? error.message
+          : typeof error === 'string' ? error
+          : error !== undefined && error !== null ? error.toString()
+          : null
 
-        if (!suppressStack) {
-          errorStack = _.get(error, 'stack', null);
-        }
+        const errorStack = (!suppressStack && error && error.stack) || null
 
-        var existedBefore;
-        currentTaskRef.transaction(function(task) {
-          existedBefore = true;
-          if (_.isNull(task)) {
-            existedBefore = false;
-            return task;
-          }
-          if (inProgress(task) && isOwner(task)) {
-            var attempts = 0;
-            var currentAttempts = _.get(task, '_error_details.attempts', 0);
-            var currentPrevState = _.get(task, '_error_details.previous_state');
-            if (currentAttempts > 0 &&
-                currentPrevState === inProgressState) {
-              attempts = currentAttempts;
-            }
-            if (attempts >= taskRetries) {
-              task._state = errorState;
-            } else {
-              task._state = startState;
-            }
-            task._state_changed = SERVER_TIMESTAMP;
-            task._owner = null;
-            task._error_details = {
-              previous_state: inProgressState,
-              error: errorString,
-              error_stack: errorStack,
-              attempts: attempts + 1
-            };
-            return task;
-          }
-          return undefined;
-        }, function(transactionError, committed, snapshot) {
-          /* istanbul ignore if */
-          if (transactionError) {
-            if (++retries < MAX_TRANSACTION_ATTEMPTS) {
-              // reject task errored, retrying
-              setImmediate(reject, error); // <-- shouldn't this be transactionError?
-            } else {
-              deferred.reject(new Error('reject task errored too many times, no longer retrying'));
-            }
-          } else {
-            if (committed && existedBefore) {
-              // 'errored while attempting to complete ' + snapshot.key
-            } else {
-              // Can't reject task - current task no longer owned by this process
-            }
-            deferred.resolve();
-            busy = false;
-            self._tryToProcess();
-          }
-        }, false);
+        currentTaskRef
+          .transaction(
+            task => {
+              if (task === null) return task
+
+              if (inProgress(task) && isOwner(task)) {
+
+                const { 
+                  attempts: previousAttempts = 0, 
+                  previous_state: previousState
+                } = task._error_details || {}
+
+                const attempts = previousState === inProgressState
+                  ? previousAttempts + 1
+                  : 1
+
+                task._state = attempts > taskRetries ? errorState : startState
+                task._state_changed = SERVER_TIMESTAMP;
+                task._owner = null;
+                task._error_details = {
+                  previous_state: inProgressState,
+                  error: errorString,
+                  error_stack: errorStack,
+                  attempts
+                }
+                return task
+              }
+            }, 
+            undefined,
+            false
+          )
+          .then(_ => { done(deferred) })
+          .catch(_ => {
+            // reject task errored, retrying
+            if (++retries < MAX_TRANSACTION_ATTEMPTS) setImmediate(reject, error)
+            else deferred.reject(new Error('reject task errored too many times, no longer retrying'))
+          })
       }
-      return deferred.promise;
-    };
 
-    return reject;
-  };
+      return deferred.promise
+    }
+  }
 
   /**
    * Creates an update callback function, storing the current task number.
@@ -333,7 +310,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
           progress > 100) {
         return Promise.reject(new Error('Invalid progress'));
       }
-      if ((taskNumber !== requestedTaskNumber)  || _.isNull(currentTaskRef)) {
+      if (isInvalidTask(requestedTaskNumber)) {
         return Promise.reject(new Error('Can\'t update progress - no task currently being processed'));
       }
       return new Promise(function(resolve, reject) {
