@@ -506,56 +506,42 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   function setTaskSpec(taskSpec) {
     // Increment the taskNumber so that a task being processed before the change
     // doesn't continue to use incorrect data
-    taskNumber += 1;
+    taskNumber += 1
 
-    if (!_.isNull(newTaskListener)) {
-      newTaskRef.off('child_added', newTaskListener);
-    }
+    if (newTaskListener !== null) newTaskRef.off('child_added', newTaskListener)
 
-    if (!_.isNull(currentTaskListener)) {
-      currentTaskRef.child('_owner').off(
-        'value',
-        currentTaskListener);
-      self._resetTask(currentTaskRef, true);
-      currentTaskRef = null;
-      currentTaskListener = null;
+    if (currentTaskListener !== null) {
+      currentTaskRef.child('_owner').off('value', currentTaskListener)
+      self._resetTask(currentTaskRef, true)
+      currentTaskRef = null
+      currentTaskListener = null
     }
 
     if (isValidTaskSpec(taskSpec)) {
-      startState = taskSpec.startState || null;
-      inProgressState = taskSpec.inProgressState;
-      finishedState = taskSpec.finishedState || null;
-      errorState = taskSpec.errorState || DEFAULT_ERROR_STATE;
-      taskTimeout = taskSpec.timeout || null;
-      taskRetries = taskSpec.retries || DEFAULT_RETRIES;
+      startState = taskSpec.startState || null
+      inProgressState = taskSpec.inProgressState
+      finishedState = taskSpec.finishedState || null
+      errorState = taskSpec.errorState || DEFAULT_ERROR_STATE
+      taskTimeout = taskSpec.timeout || null
+      taskRetries = taskSpec.retries || DEFAULT_RETRIES
 
-      newTaskRef = tasksRef
-                            .orderByChild('_state')
-                            .equalTo(startState)
-                            .limitToFirst(1);
-      // listening
-      newTaskListener = newTaskRef.on(
-        'child_added',
-        function() {
-          self._tryToProcess();
-        }, /* istanbul ignore next */ function(error) {
-          // errored listening to Firebase
-        });
+      newTaskRef = tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
+      newTaskListener = newTaskRef.on('child_added', () => { self._tryToProcess() })
     } else {
       // invalid task spec, not listening for new tasks
-      startState = null;
-      inProgressState = null;
-      finishedState = null;
-      errorState = DEFAULT_ERROR_STATE;
-      taskTimeout = null;
-      taskRetries = DEFAULT_RETRIES;
+      startState = null
+      inProgressState = null
+      finishedState = null
+      errorState = DEFAULT_ERROR_STATE
+      taskTimeout = null
+      taskRetries = DEFAULT_RETRIES
 
-      newTaskRef = null;
-      newTaskListener = null;
+      newTaskRef = null
+      newTaskListener = null
     }
 
-    self._setUpTimeouts();
-  };
+    self._setUpTimeouts()
+  }
 
   function shutdown() {
     if (shutdownDeferred) return shutdownDeferred.promise
