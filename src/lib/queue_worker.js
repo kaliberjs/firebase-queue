@@ -337,143 +337,111 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
   /**
    * Attempts to claim the next task in the queue.
    */
-  function _tryToProcess(deferred) {
-    var retries = 0;
-    var malformed = false;
+  function _tryToProcess(deferred = createDeferred()) {
+    let retries = 0
 
-    /* istanbul ignore else */
-    if (_.isUndefined(deferred)) {
-      deferred = createDeferred();
-    }
-
-    if (!busy) {
+    if (busy) deferred.resolve()
+    else {
       if (shutdownDeferred) {
-        deferred.reject(new Error('Shutting down - can no longer process new ' +
-          'tasks'));
-        self.setTaskSpec(null);
+        deferred.reject(new Error('Shutting down - can no longer process new tasks'))
+        setTaskSpec(null);
         // finished shutdown
         shutdownDeferred.resolve()
       } else {
-        if (!newTaskRef) {
-          deferred.resolve();
-        } else {
-          newTaskRef.once('value', function(taskSnap) {
-            if (!taskSnap.exists()) {
-              return deferred.resolve();
-            }
-            var nextTaskRef;
-            taskSnap.forEach(function(childSnap) {
-              nextTaskRef = childSnap.ref;
-            });
-            return nextTaskRef.transaction(function(task) {
-              /* istanbul ignore if */
-              if (_.isNull(task)) {
-                return task;
-              }
-              if (!_.isPlainObject(task)) {
-                malformed = true;
-                var error = new Error('Task was malformed');
-                var errorStack = null;
-                if (!suppressStack) {
-                  errorStack = error.stack;
-                }
-                return {
-                  _state: errorState,
-                  _state_changed: SERVER_TIMESTAMP,
-                  _error_details: {
-                    error: error.message,
-                    original_task: task,
-                    error_stack: errorStack
-                  }
-                };
-              }
-              if (_.isUndefined(task._state)) {
-                task._state = null;
-              }
-              if (task._state === startState) {
-                task._state = inProgressState;
-                task._state_changed = SERVER_TIMESTAMP;
-                task._owner = processId + ':' + (taskNumber + 1);
-                task._progress = 0;
-                return task;
-              }
-              // task no longer in correct state: expected ' + startState + ', got ' + task._state
-              return undefined;
-            }, function(error, committed, snapshot) {
-              /* istanbul ignore if */
-              if (error) {
-                if (++retries < MAX_TRANSACTION_ATTEMPTS) {
-                  // errored while attempting to claim a new task, retrying
-                  return setImmediate(self._tryToProcess.bind(self), deferred);
-                }
-                return deferred.reject(new Error('errored while attempting to claim a new task too many times, no longer retrying'));
-              } else if (committed && snapshot.exists()) {
-                if (malformed) {
-                  // found malformed entry ' + snapshot.key
-                } else {
-                  /* istanbul ignore if */
-                  if (busy) {
-                    // Worker has become busy while the transaction was processing
-                    // so give up the task for now so another worker can claim it
-                    self._resetTask(nextTaskRef, true);
-                  } else {
-                    busy = true;
-                    taskNumber += 1;
-                    // 'claimed ' + snapshot.key
-                    currentTaskRef = snapshot.ref;
-                    currentTaskListener = currentTaskRef
-                        .child('_owner').on('value', function(ownerSnapshot) {
-                          /* istanbul ignore else */
-                          if (ownerSnapshot.val() !== currentId() &&
-                              !_.isNull(currentTaskRef) &&
-                              !_.isNull(currentTaskListener)) {
-                            currentTaskRef.child('_owner').off(
-                              'value',
-                              currentTaskListener);
-                            currentTaskRef = null;
-                            currentTaskListener = null;
-                          }
-                        });
-                    var data = snapshot.val();
-                    if (sanitize) {
-                      [
-                        '_state',
-                        '_state_changed',
-                        '_owner',
-                        '_progress',
-                        '_error_details'
-                      ].forEach(function(reserved) {
-                        if (snapshot.hasChild(reserved)) {
-                          delete data[reserved];
-                        }
-                      });
-                    } else {
-                      data._id = snapshot.key;
+        if (!newTaskRef) deferred.resolve()
+        else newTaskRef.once('value')
+          .then(taskSnap => {
+            if (!taskSnap.exists()) return deferred.resolve()
+            
+            let nextTaskRef = null
+            taskSnap.forEach(childSnap => { nextTaskRef = childSnap.ref })
+
+            return nextTaskRef.transaction(
+              task => {
+                /* istanbul ignore if */
+                if (task === null) return task
+
+                if (!_.isPlainObject(task)) {
+                  const error = new Error('Task was malformed')
+                  const errorStack = suppressStack ? null : error.stack
+                  
+                  return {
+                    _state: errorState,
+                    _state_changed: SERVER_TIMESTAMP,
+                    _error_details: {
+                      error: error.message,
+                      original_task: task,
+                      error_stack: errorStack
                     }
-                    var progress = _updateProgress(taskNumber);
-                    var resolve = _resolve(taskNumber);
-                    var reject = _reject(taskNumber);
-                    setImmediate(function() {
-                      try {
-                        processingFunction.call(null, data, progress, resolve, reject);
-                      } catch (err) {
-                        reject(err);
-                      }
-                    });
                   }
                 }
-              }
-              return deferred.resolve();
-            }, false);
-          });
-        }
+                if ((task._state || null) === startState) {
+                  task._state = inProgressState;
+                  task._state_changed = SERVER_TIMESTAMP;
+                  task._owner = processId + ':' + (taskNumber + 1);
+                  task._progress = 0;
+                  return task;
+                }
+              },
+              undefined,
+              false
+            )
+          })
+          .then(({ committed, snapshot }) => {
+
+            if (committed && snapshot.exists() && snapshot.child('_state').val() !== errorState) {
+              // Worker has become busy while the transaction was processing
+              // so give up the task for now so another worker can claim it
+              /* istanbul ignore if */
+              if (busy) self._resetTask(nextTaskRef, true)
+              else {
+                busy = true
+                taskNumber += 1
+
+                currentTaskRef = snapshot.ref
+                currentTaskListener = currentTaskRef
+                    .child('_owner').on('value', ownerSnapshot => {
+                      /* istanbul ignore else */
+                      if (ownerSnapshot.val() !== currentId() &&
+                          currentTaskRef !== null &&
+                          currentTaskListener !== null) {
+                        currentTaskRef.child('_owner').off('value', currentTaskListener) // this is probably a bug, should be called when this worker does not own the task I think
+                        currentTaskRef = null
+                        currentTaskListener = null
+                      }
+                    })
+                const data = snapshot.val()
+                if (sanitize) {
+                  [
+                    '_state',
+                    '_state_changed',
+                    '_owner',
+                    '_progress',
+                    '_error_details'
+                  ].forEach(reserved => { delete data[reserved] });
+                } else { data._id = snapshot.key }
+
+                const progress = _updateProgress(taskNumber);
+                const resolve = _resolve(taskNumber);
+                const reject = _reject(taskNumber);
+                setImmediate(() => {
+                  try { processingFunction.call(null, data, progress, resolve, reject) }
+                  catch (err) { reject(err) }
+                })
+              }  
+            }
+            return deferred.resolve()
+          })
+          .catch(_ => {
+            // errored while attempting to claim a new task, retrying
+            if (++retries < MAX_TRANSACTION_ATTEMPTS) return setImmediate(self._tryToProcess.bind(self), deferred)
+            else return deferred.reject(new Error('errored while attempting to claim a new task too many times, no longer retrying'))
+          })
       }
-    } else {
-      deferred.resolve();
     }
 
-    return deferred.promise;
-  };
+    return deferred.promise
+  }
 
   /**
    * Sets up timeouts to reclaim tasks that fail due to taking too long.
