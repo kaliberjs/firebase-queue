@@ -203,7 +203,7 @@ describe('QueueWorker', () => {
         .then(done)
     })
 
-    function resolve({ task, taskNumber, newTask, currentTask }) {
+    function resolve({ task, taskNumber = qw._taskNumber(), newTask, currentTask }) {
       testRef = tasksRef.push()
       const currentTaskRef = currentTask === undefined ? testRef : currentTask
       return testRef.set(task)
@@ -214,7 +214,6 @@ describe('QueueWorker', () => {
     it('should resolve a task owned by the current worker and remove it when no finishedState is specified', done => {
       qw.setTaskSpec(th.validBasicTaskSpec)
       resolve({
-        taskNumber: qw._taskNumber(),
         task: {
           '_state': th.validBasicTaskSpec.inProgressState,
           '_owner': qw._currentId()
@@ -228,7 +227,6 @@ describe('QueueWorker', () => {
     it('should resolve a task owned by the current worker and change the state when a finishedState is specified and no object passed', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       resolve({
-        taskNumber: qw._taskNumber(),
         task: {
           '_state': th.validTaskSpecWithFinishedState.inProgressState,
           '_owner': qw._currentId()
@@ -247,7 +245,6 @@ describe('QueueWorker', () => {
       it('should resolve an task owned by the current worker and change the state when a finishedState is specified and an invalid object ' + nonPlainObject + ' passed', done => {
         qw.setTaskSpec(th.validTaskSpecWithFinishedState)
         resolve({
-          taskNumber: qw._taskNumber(),
           task: {
             '_state': th.validTaskSpecWithFinishedState.inProgressState,
             '_owner': qw._currentId()
@@ -267,7 +264,6 @@ describe('QueueWorker', () => {
     it('should resolve a task owned by the current worker and change the state when a finishedState is specified and a plain object passed', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       resolve({
-        taskNumber: qw._taskNumber(),
         task: {
           '_state': th.validTaskSpecWithFinishedState.inProgressState,
           '_owner': qw._currentId()
@@ -287,7 +283,6 @@ describe('QueueWorker', () => {
     it('should resolve a task owned by the current worker and change the state to a provided valid string _new_state', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState);
       resolve({
-        taskNumber: qw._taskNumber(),
         task: {
           '_state': th.validTaskSpecWithFinishedState.inProgressState,
           '_owner': qw._currentId()
@@ -311,7 +306,6 @@ describe('QueueWorker', () => {
     it('should resolve a task owned by the current worker and change the state to a provided valid null _new_state', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState);
       resolve({
-        taskNumber: qw._taskNumber(),
         task: {
           '_state': th.validTaskSpecWithFinishedState.inProgressState,
           '_owner': qw._currentId()
@@ -333,7 +327,6 @@ describe('QueueWorker', () => {
     it('should resolve a task owned by the current worker and remove the task when provided _new_state = false', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       resolve({
-        taskNumber: qw._taskNumber(),
         task: {
           '_state': th.validTaskSpecWithFinishedState.inProgressState,
           '_owner': qw._currentId()
@@ -351,7 +344,6 @@ describe('QueueWorker', () => {
     it('should resolve a task owned by the current worker and change the state to finishedState when provided an invalid _new_state', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       resolve({
-        taskNumber: qw._taskNumber(),
         task: {
           '_state': th.validTaskSpecWithFinishedState.inProgressState,
           '_owner': qw._currentId()
@@ -376,7 +368,6 @@ describe('QueueWorker', () => {
     it('should not resolve a task that no longer exists', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       resolve({
-        taskNumber: qw._taskNumber(),
         task: null
       }).then(snapshot => {
           expect(snapshot.val()).to.be.null
@@ -391,7 +382,6 @@ describe('QueueWorker', () => {
         '_owner': 'other_worker'
       };
       resolve({
-        taskNumber: qw._taskNumber(),
         task
       }).then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
@@ -406,7 +396,6 @@ describe('QueueWorker', () => {
         '_owner': qw._currentId()
       };
       resolve({
-        taskNumber: qw._taskNumber(),
         task
       }).then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
@@ -420,7 +409,6 @@ describe('QueueWorker', () => {
         '_owner': qw._processId + ':' + qw._taskNumber()
       }
       resolve({
-        taskNumber: qw._taskNumber(),
         task
       }).then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
@@ -435,7 +423,6 @@ describe('QueueWorker', () => {
         '_owner': qw._currentId()
       }
       resolve({
-        taskNumber: qw._taskNumber(),
         task,
         currentTask: null
       }).then(snapshot => {
@@ -460,7 +447,7 @@ describe('QueueWorker', () => {
     })
   })
 
-  describe.only('#_reject', function() {
+  describe('#_reject', function() {
     let qw
     let testRef
 
