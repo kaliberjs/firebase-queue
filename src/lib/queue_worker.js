@@ -32,7 +32,11 @@ function createDeferred() {
  *   task is claimed.
  * @return {Object}
  */
-module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processingFunction) {
+module.exports = QueueWorker
+
+QueueWorker.isValidTaskSpec = isValidTaskSpec
+
+function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processingFunction) {
 
   if (!tasksRef) throwError('No tasks reference provided.')
   if (typeof processIdBase !== 'string') throwError('Invalid process ID provided.')
@@ -77,7 +81,6 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
   this._setUpTimeouts = _setUpTimeouts
 
   // used in tests
-  this._isValidTaskSpec = _isValidTaskSpec
   this._resolve = _resolve
   this._updateProgress = _updateProgress
   this._reject = _reject
@@ -496,64 +499,6 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
   }
 
   /**
-   * Validates a task spec contains meaningful parameters.
-   * @param {Object} taskSpec The specification for the task.
-   * @returns {Boolean} Whether the taskSpec is valid.
-   */
-  function _isValidTaskSpec(taskSpec) {
-    if (!_.isPlainObject(taskSpec)) {
-      return false;
-    }
-    if (!_.isString(taskSpec.inProgressState)) {
-      return false;
-    }
-    if (!_.isUndefined(taskSpec.startState) &&
-        !_.isNull(taskSpec.startState) &&
-        (
-          !_.isString(taskSpec.startState) ||
-          taskSpec.startState === taskSpec.inProgressState
-        )) {
-      return false;
-    }
-    if (!_.isUndefined(taskSpec.finishedState) &&
-        !_.isNull(taskSpec.finishedState) &&
-        (
-          !_.isString(taskSpec.finishedState) ||
-          taskSpec.finishedState === taskSpec.inProgressState ||
-          taskSpec.finishedState === taskSpec.startState
-        )) {
-      return false;
-    }
-    if (!_.isUndefined(taskSpec.errorState) &&
-        !_.isNull(taskSpec.errorState) &&
-        (
-          !_.isString(taskSpec.errorState) ||
-          taskSpec.errorState === taskSpec.inProgressState
-        )) {
-      return false;
-    }
-    if (!_.isUndefined(taskSpec.timeout) &&
-        !_.isNull(taskSpec.timeout) &&
-        (
-          !_.isNumber(taskSpec.timeout) ||
-          taskSpec.timeout <= 0 ||
-          taskSpec.timeout % 1 !== 0
-        )) {
-      return false;
-    }
-    if (!_.isUndefined(taskSpec.retries) &&
-        !_.isNull(taskSpec.retries) &&
-        (
-          !_.isNumber(taskSpec.retries) ||
-          taskSpec.retries < 0 ||
-          taskSpec.retries % 1 !== 0
-        )) {
-      return false;
-    }
-    return true;
-  };
-
-  /**
    * Sets up the listeners to claim tasks and reset them if they timeout. Called
    *   any time the task spec changes.
    * @param {Object} taskSpec The specification for the task.
@@ -576,7 +521,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
       currentTaskListener = null;
     }
 
-    if (_isValidTaskSpec(taskSpec)) {
+    if (isValidTaskSpec(taskSpec)) {
       startState = taskSpec.startState || null;
       inProgressState = taskSpec.inProgressState;
       finishedState = taskSpec.finishedState || null;
@@ -629,4 +574,39 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
 
     return shutdownDeferred.promise;
   };
+}
+
+/**
+ * Validates a task spec contains meaningful parameters.
+ * @param {Object} taskSpec The specification for the task.
+ * @returns {Boolean} Whether the taskSpec is valid.
+ */
+function isValidTaskSpec(taskSpec) {
+  if (!_.isPlainObject(taskSpec)) return false
+
+  const {
+    inProgressState, startState, finishedState, errorState,
+    timeout, retries
+  } = taskSpec
+
+  return (
+    typeof inProgressState === 'string' &&
+    check(startState   , undefinedOrNull, stringAndNot(inProgressState)) &&
+    check(finishedState, undefinedOrNull, stringAndNot(inProgressState, startState)) &&
+    check(errorState   , undefinedOrNull, stringAndNot(inProgressState)) &&
+    check(timeout, undefinedOrNull, positiveInteger({ min: 1 })) &&
+    check(retries, undefinedOrNull, positiveInteger({ min: 0 }))
+  )
+
+  function check(val, ...checks) {
+    return checks.reduce((result, check) => result || check(val), false)
+  }
+  function undefinedOrNull(val) { return val === undefined || val === null }
+  function positiveInteger({ min }) {
+    return val => typeof val === 'number' && val >= min && val % 1 === 0
+  }
+  function stringAndNot(...vals) {
+    return val => typeof val === 'string' && 
+      vals.reduce((result, other) => result && val !== other, true)
+  }
 }
