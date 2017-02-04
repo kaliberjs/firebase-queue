@@ -146,7 +146,7 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
       })
 
     return deferred.promise
-  };
+  }
 
   /**
    * Creates a resolve callback function, storing the current task number.
@@ -154,81 +154,68 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
    * @returns {Function} the resolve callback function.
    */
   function _resolve(requestedTaskNumber) {
-    var retries = 0;
-    var deferred = createDeferred();
+    let retries = 0
+    const deferred = createDeferred()
+
+    return resolve
 
     /*
      * Resolves the current task and changes the state to the finished state.
      * @param {Object} newTask The new data to be stored at the location.
      * @returns {Promise} Whether the task was able to be resolved.
      */
-    var resolve = function(newTask) {
-      if ((taskNumber !== requestedTaskNumber) || _.isNull(currentTaskRef)) {
-        if (_.isNull(currentTaskRef)) {
-          // Can't resolve task - no task  currently being processed
-        } else {
-          // Can't resolve task - no longer processing current task
-        }
-        deferred.resolve();
-        busy = false;
-        self._tryToProcess();
-      } else {
-        var existedBefore;
-        currentTaskRef.transaction(function(task) {
-          existedBefore = true;
-          if (_.isNull(task)) {
-            existedBefore = false;
-            return task;
-          }
-          if (inProgress(task) && isOwner(task)) {
-            var outputTask = _.clone(newTask);
-            if (!_.isPlainObject(outputTask)) {
-              outputTask = {};
-            }
-            outputTask._state = _.get(outputTask, '_new_state');
-            delete outputTask._new_state;
-            if (!_.isNull(outputTask._state) && !_.isString(outputTask._state)) {
-              if (_.isNull(finishedState) || outputTask._state === false) {
-                // Remove the item if no `finished_state` set in the spec or
-                // _new_state is explicitly set to `false`.
-                return null;
+    function resolve(newTask) {
+
+      const notCurrentTask = taskNumber !== requestedTaskNumber
+      const noTask = currentTaskRef === null
+      
+      if (notCurrentTask || noTask) done()
+      else {
+        currentTaskRef
+          .transaction(
+            task => {
+              if (task === null) return task
+
+              if (inProgress(task) && isOwner(task)) {
+                let outputTask = _.clone(newTask)
+                if (!_.isPlainObject(outputTask)) outputTask = {}
+
+                const newState = outputTask._new_state
+                delete outputTask._new_state
+
+                const invalidNewState = newState !== null && typeof newState !== 'string'
+                const shouldRemove = (invalidNewState && finishedState === null) || newState === false
+
+                if (shouldRemove) return null
+
+                outputTask._state = invalidNewState ? finishedState : newState
+                outputTask._state_changed = SERVER_TIMESTAMP
+                outputTask._owner = null
+                outputTask._progress = 100
+                outputTask._error_details = null
+                return outputTask
               }
-              outputTask._state = finishedState;
-            }
-            outputTask._state_changed = SERVER_TIMESTAMP;
-            outputTask._owner = null;
-            outputTask._progress = 100;
-            outputTask._error_details = null;
-            return outputTask;
-          }
-          return undefined;
-        }, function(error, committed, snapshot) {
-          /* istanbul ignore if */
-          if (error) {
-            if (++retries < MAX_TRANSACTION_ATTEMPTS) {
-              // resolve task errored, retrying
-              setImmediate(resolve, newTask);
-            } else {
-              deferred.reject(new Error('resolve task errored too many times, no longer retrying'));
-            }
-          } else {
-            if (committed && existedBefore) {
-              // 'completed ' + snapshot.key
-            } else {
-              // Can't resolve task - current task no longer owned by this process
-            }
-            deferred.resolve();
-            busy = false;
-            self._tryToProcess();
-          }
-        }, false);
+            }, 
+            undefined,
+            false
+          )
+          .then((committed, snapshot) => { done() })
+          .catch(error => {
+            // resolve task errored, retrying
+            if (++retries < MAX_TRANSACTION_ATTEMPTS) setImmediate(resolve, newTask)
+            else deferred.reject(new Error('resolve task errored too many times, no longer retrying'))
+          })
       }
 
-      return deferred.promise;
-    };
+      return deferred.promise
 
-    return resolve;
-  };
+      function done() {
+        deferred.resolve()
+        busy = false  // possible problem, resolve is called before this is set
+        self._tryToProcess()
+      }
+    }
+  }
 
   /**
    * Creates a reject callback function, storing the current task number.
