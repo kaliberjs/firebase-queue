@@ -298,47 +298,41 @@ module.exports = function QueueWorker(tasksRef, processIdBase, sanitize, suppres
    * @returns {Function} the update callback function.
    */
   function _updateProgress(requestedTaskNumber) {
+
+    return updateProgress
+
     /**
      * Updates the progress state of the task.
      * @param {Number} progress The progress to report.
      * @returns {Promise} Whether the progress was updated.
      */
-    var updateProgress = function(progress) {
-      if (!_.isNumber(progress) ||
-          _.isNaN(progress) ||
-          progress < 0 ||
-          progress > 100) {
-        return Promise.reject(new Error('Invalid progress'));
-      }
-      if (isInvalidTask(requestedTaskNumber)) {
-        return Promise.reject(new Error('Can\'t update progress - no task currently being processed'));
-      }
-      return new Promise(function(resolve, reject) {
-        currentTaskRef.transaction(function(task) {
-          /* istanbul ignore if */
-          if (_.isNull(task)) {
-            return task;
-          }
-          if (inProgress(task) && isOwner(task)) {
-            task._progress = progress;
-            return task;
-          }
-          return undefined;
-        }, function(transactionError, committed, snapshot) {
-          /* istanbul ignore if */
-          if (transactionError) {
-            return reject(new Error('errored while attempting to update progress'));
-          }
-          if (committed && snapshot.exists()) {
-            return resolve();
-          }
-          return reject(new Error('Can\'t update progress - current task no longer owned by this process'));
-        }, false);
-      });
-    };
+    function updateProgress(progress) {
+      if (typeof progress !== 'number' || _.isNaN(progress) || progress < 0 || progress > 100) 
+        return Promise.reject(new Error('Invalid progress'))
 
-    return updateProgress;
-  };
+      if (isInvalidTask(requestedTaskNumber)) return Promise.reject(new Error('Can\'t update progress - no task currently being processed'))
+
+      return new Promise((resolve, reject) => {
+        currentTaskRef.transaction(
+          task => {
+            /* istanbul ignore if */
+            if (task === null) return task
+            if (inProgress(task) && isOwner(task)) {
+              task._progress = progress
+              return task
+            }
+          },
+          undefined, 
+          false
+        )
+        .then(({ committed, snapshot }) => { 
+          if (committed && snapshot.exists()) resolve()
+          else reject(new Error('Can\'t update progress - current task no longer owned by this process'))
+        })
+        .catch(_ => { reject(new Error('errored while attempting to update progress')) })
+      })
+    }
+  }
 
   /**
    * Attempts to claim the next task in the queue.
