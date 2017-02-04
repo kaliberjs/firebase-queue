@@ -125,12 +125,12 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
    * Returns the state of a task to the start state.
    * @param {firebase.database.Reference} taskRef Firebase Realtime Database
    *   reference to the Firebase location of the task that's timed out.
-   * @param {Boolean} ownedByMe Whether this is an immediate update to a task we
+   * @param {Boolean} forceReset Whether this is an immediate update to a task we
    *   expect this worker to own, or whether it's a timeout reset that we don't
    *   necessarily expect this worker to own.
    * @returns {Promise} Whether the task was able to be reset.
    */
-  function _resetTask(taskRef, ownedByMe, deferred = createDeferred()) {
+  function _resetTask(taskRef, forceReset, deferred = createDeferred()) {
     const retries = 0;
 
     taskRef
@@ -142,9 +142,9 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
           const timeSinceUpdate = /* use offset */ Date.now() - task._state_changed || 0
           const timedOut = (taskTimeout && timeSinceUpdate > taskTimeout)
           
-          const allowReset = inProgress(task) && ((isOwner(task) && ownedByMe) || (!ownedByMe && timedOut))
+          const allowReset = (forceReset && isOwner(task)) || timedOut
 
-          if (allowReset) {
+          if (inProgress(task) && allowReset) {
             task._state = startState
             task._state_changed = SERVER_TIMESTAMP
             task._owner = null
@@ -159,7 +159,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
       .then(_ => { deferred.resolve() })
       .catch(_ => {
         // reset task errored, retrying
-        if ((retries + 1) < MAX_TRANSACTION_ATTEMPTS) setImmediate(() => self._resetTask(taskRef, ownedByMe, deferred))
+        if ((retries + 1) < MAX_TRANSACTION_ATTEMPTS) setImmediate(() => self._resetTask(taskRef, forceReset, deferred))
         else deferred.reject(new Error('reset task errored too many times, no longer retrying'))
       })
 

@@ -79,130 +79,117 @@ describe('QueueWorker', () => {
         .then(done)
     })
 
-    function push(value) {
-      testRef = tasksRef.push(value)
-      return testRef
+    function resetTask({ task, forceReset }) {
+      testRef = tasksRef.push()
+      return testRef.set(task)
+        .then(_ => qw._resetTask(testRef, forceReset))
+        .then(_ => testRef.once('value'))
     }
 
     it('should reset a task that is currently in progress', done => {
       qw.setTaskSpec(th.validBasicTaskSpec)
-      push({
-        '_state': th.validBasicTaskSpec.inProgressState,
-        '_state_changed': now(),
-        '_owner': qw._currentId(),
-        '_progress': 10
-      }).then(_ => qw._resetTask(testRef, true))
-        .then(_ => testRef.once('value'))
-        .then(snapshot => {
+      resetTask({ 
+        forceReset: true,
+        task: {
+          '_state': th.validBasicTaskSpec.inProgressState,
+          '_state_changed': now(),
+          '_owner': qw._currentId(),
+          '_progress': 10
+        }
+      }).then(snapshot => {
           const task = snapshot.val()
           // I don't understand why the _state, _owner and _progress properties are not checked
           expect(task).to.have.all.keys(['_state_changed'])
           expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
         })
-        .then(done)
-        .catch(done)
+        .then(done).catch(done)
     })
 
-    it('should not reset a task if immediate set but no longer owned by current worker', done => {
+    it('should not reset a task if `forceReset` set but no longer owned by current worker', done => {
       qw.setTaskSpec(th.validBasicTaskSpec)
-      const originalTask = {
+      const task = {
         '_state': th.validBasicTaskSpec.inProgressState,
         '_state_changed': now(),
         '_owner': 'someone-else',
         '_progress': 0
       }
-      push(originalTask)
-        .then(_ => qw._resetTask(testRef, true))
-        .then(_ => testRef.once('value'))
+      resetTask({ task, forceReset: true })
         .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(originalTask)
+          expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done)
-        .catch(done)
+        .then(done).catch(done)
     })
 
-    it('should not reset a task if immediate not set and it is has changed state recently', done => {
+    it('should not reset a task if `forceReset` not set and it is has changed state recently', done => {
       qw.setTaskSpec(th.validBasicTaskSpec);
-      const originalTask = {
+      const task = {
         '_state': th.validBasicTaskSpec.inProgressState,
         '_state_changed': now(),
         '_owner': 'someone',
         '_progress': 0
       }
-      push(originalTask)
-        .then(_ => qw._resetTask(testRef, false))
-        .then(_ => testRef.once('value'))
+      resetTask({ task, forceReset: false })
         .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(originalTask)
+          expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done)
-        .catch(done)
+        .then(done).catch(done)
     })
 
     it('should reset a task that is currently in progress that has timed out', done => {
       qw.setTaskSpec(th.validTaskSpecWithTimeout)
-      push({
-        '_state': th.validBasicTaskSpec.inProgressState,
-        '_state_changed': now() - th.validTaskSpecWithTimeout.timeout,
-        '_owner': 'someone',
-        '_progress': 10
-      }).then(_ => qw._resetTask(testRef, false))
-        .then(_ => testRef.once('value'))
-        .then(snapshot => {
+      resetTask({
+        forceReset: false,
+        task: {
+          '_state': th.validBasicTaskSpec.inProgressState,
+          '_state_changed': now() - th.validTaskSpecWithTimeout.timeout,
+          '_owner': 'someone',
+          '_progress': 10
+        }
+      }).then(snapshot => {
           var task = snapshot.val()
           // we should probably check _state, _owner and _progress
           expect(task).to.have.all.keys(['_state_changed'])
           expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
         })
-        .then(done)
-        .catch(done)
+        .then(done).catch(done)
     })
 
     it('should not reset a task that no longer exists', done => {
       qw.setTaskSpec(th.validBasicTaskSpec)
-      push().ref.set(null)
-        .then(_ => qw._resetTask(testRef, true))
-        .then(_ => testRef.once('value'))
+      resetTask({ task: null, forceReset: true })
         .then(snapshot => {
           expect(snapshot.val()).to.be.null
         })
-        .then(done)
-        .catch(done)
+        .then(done).catch(done)
     })  
 
     it('should not reset a task if it is has already changed state', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      const originalTask = {
+      const task = {
         '_state': th.validTaskSpecWithFinishedState.finishedState,
         '_state_changed': now(),
         '_owner': qw._currentId(),
         '_progress': 0
       }
-      push(originalTask)
-        .then(_ => qw._resetTask(testRef, true))
-        .then(_ => testRef.once('value'))
+      resetTask({ task, forceReset: true })
         .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(originalTask)
+          expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done)
-        .catch(done)
+        .then(done).catch(done)
     })
 
     it('should not reset a task if it is has no state', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      const originalTask = {
+      const task = {
         '_state_changed': now(),
         '_owner': qw._currentId(),
         '_progress': 0
       }
-      push(originalTask)
-        .then(_ => qw._resetTask(testRef, true))
-        .then(_ => testRef.once('value'))
+      resetTask({ task, forceReset: true })
         .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(originalTask)
+          expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done)
-        .catch(done)
+        .then(done).catch(done)
     })
   })
 
