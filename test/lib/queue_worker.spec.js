@@ -792,7 +792,7 @@ describe('QueueWorker', () => {
     })
   })
 
-  describe('#_tryToProcess', () => {
+  describe.only('#_tryToProcess', () => {
     var qw;
 
     beforeEach(() => {
@@ -804,283 +804,196 @@ describe('QueueWorker', () => {
       tasksRef.set(null, done);
     });
 
-    it('should not try and process a task if busy', done => {
-      qw._startState(th.validTaskSpecWithStartState.startState);
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
-      qw._busy(true);
-      qw._newTaskRef(tasksRef);
-      tasksRef.push({
+    /*
+      Most of the specs here have extensive knowledge of the inner 
+      workings of tryToProcess. We have to eventually fix that
+    */
+
+    it('should not try and process a task if busy', () => {
+      qw._startState(th.validTaskSpecWithStartState.startState)
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._busy(true)
+      qw._newTaskRef(tasksRef)
+      return tasksRef.push({
         '_state': th.validTaskSpecWithStartState.startState
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        return qw._tryToProcess().then(() => {
-          try {
-            expect(qw._currentTaskRef()).to.be.null;
-            done();
-          } catch (errorB) {
-            done(errorB);
-          }
-        }).catch(done);
-      });
-    });
-
-    it('should try and process a task if not busy', done => {
-      qw._startState(th.validTaskSpecWithStartState.startState);
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
-      qw._newTaskRef(tasksRef);
-      tasksRef.push({
-        '_state': th.validTaskSpecWithStartState.startState
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        return qw._tryToProcess().then(() => {
-          try {
-            expect(qw._currentTaskRef()).to.not.be.null;
-            expect(qw._busy()).to.be.true;
-            done();
-          } catch (errorB) {
-            done(errorB);
-          }
-        }).catch(done);
-      });
-    });
-
-    it('should try and process a task if not busy, rejecting it if it throws', done => {
-      qw = new th.QueueWorker(tasksRef, '0', true, false, () => {
-        throw new Error('Error thrown in processingFunction');
-      });
-      qw._startState(th.validTaskSpecWithStartState.startState);
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
-      qw._finishedState(th.validTaskSpecWithFinishedState.finishedState);
-      qw._taskRetries(0);
-      qw._newTaskRef(tasksRef);
-      var testRef = tasksRef.push({
-        '_state': th.validTaskSpecWithStartState.startState
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        return qw._tryToProcess().then(() => {
-          try {
-            expect(qw._currentTaskRef()).to.not.be.null;
-            expect(qw._busy()).to.be.true;
-            var initial = true;
-            testRef.on('value', function(snapshot) {
-              if (initial) {
-                initial = false;
-              } else {
-                try {
-                  testRef.off();
-                  var task = snapshot.val();
-                  expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details']);
-                  expect(task._state).to.equal('error');
-                  expect(task._state_changed).to.be.closeTo(now() + th.offset, 250);
-                  expect(task._progress).to.equal(0);
-                  expect(task._error_details).to.have.all.keys(['previous_state', 'attempts', 'error', 'error_stack']);
-                  expect(task._error_details.previous_state).to.equal(th.validTaskSpecWithStartState.inProgressState);
-                  expect(task._error_details.attempts).to.equal(1);
-                  expect(task._error_details.error).to.equal('Error thrown in processingFunction');
-                  expect(task._error_details.error_stack).to.be.a.string;
-                  done();
-                } catch (errorC) {
-                  done(errorC);
-                }
-              }
-            });
-          } catch (errorB) {
-            done(errorB);
-          }
-        }).catch(done);
-      });
-    });
-
-    it('should try and process a task without a _state if not busy', done => {
-      qw._startState(null);
-      qw._inProgressState(th.validBasicTaskSpec.inProgressState);
-      qw._newTaskRef(tasksRef);
-      tasksRef.push({
-        foo: 'bar'
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        return qw._tryToProcess().then(() => {
-          try {
-            expect(qw._currentTaskRef()).to.not.be.null;
-            expect(qw._busy()).to.be.true;
-            done();
-          } catch (errorB) {
-            done(errorB);
-          }
-        }).catch(done);
-      });
-    });
-
-    it('should not try and process a task if not a plain object [1]', done => {
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
-      qw._suppressStack(true);
-      qw._newTaskRef(tasksRef);
-      var testRef = tasksRef.push('invalid', function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        return qw._tryToProcess().then(() => {
-          try {
-            expect(qw._currentTaskRef()).to.be.null;
-            expect(qw._busy()).to.be.false;
-            testRef.once('value', function(snapshot) {
-              try {
-                var task = snapshot.val();
-                expect(task).to.have.all.keys(['_error_details', '_state', '_state_changed']);
-                expect(task._error_details).to.have.all.keys(['error', 'original_task']);
-                expect(task._error_details.error).to.equal('Task was malformed');
-                expect(task._error_details.original_task).to.equal('invalid');
-                expect(task._state).to.equal('error');
-                expect(task._state_changed).to.be.closeTo(now() + th.offset, 250);
-                done();
-              } catch (errorB) {
-                done(errorB);
-              }
-            });
-          } catch (errorC) {
-            done(errorC);
-          }
-        }).catch(done);
-      });
-    });
-
-    it('should not try and process a task if not a plain object [2]', done => {
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
-      qw._newTaskRef(tasksRef);
-      var testRef = tasksRef.push('invalid', function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        return qw._tryToProcess().then(() => {
-          try {
-            expect(qw._currentTaskRef()).to.be.null;
-            expect(qw._busy()).to.be.false;
-            testRef.once('value', function(snapshot) {
-              try {
-                var task = snapshot.val();
-                expect(task).to.have.all.keys(['_error_details', '_state', '_state_changed']);
-                expect(task._error_details).to.have.all.keys(['error', 'original_task', 'error_stack']);
-                expect(task._error_details.error).to.equal('Task was malformed');
-                expect(task._error_details.original_task).to.equal('invalid');
-                expect(task._error_details.error_stack).to.be.a.string;
-                expect(task._state).to.equal('error');
-                expect(task._state_changed).to.be.closeTo(now() + th.offset, 250);
-                done();
-              } catch (errorB) {
-                done(errorB);
-              }
-            });
-          } catch (errorC) {
-            done(errorC);
-          }
-        }).catch(done);
-      });
-    });
-
-    it('should not try and process a task if no longer in correct startState', done => {
-      qw._startState(th.validTaskSpecWithStartState.startState);
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
-      qw._newTaskRef(tasksRef);
-      tasksRef.push({
-        '_state': th.validTaskSpecWithStartState.inProgressState
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        return qw._tryToProcess().then(() => {
-          try {
-            expect(qw._currentTaskRef()).to.be.null;
-            done();
-          } catch (errorB) {
-            done(errorB);
-          }
-        }).catch(done);
-      });
-    });
-
-    it('should not try and process a task if no task to process', done => {
-      qw._startState(th.validTaskSpecWithStartState.startState);
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
-      qw._newTaskRef(tasksRef);
-      qw._tryToProcess().then(() => {
-        try {
+      }).then(_ => qw._tryToProcess())
+        .then(_ => {
           expect(qw._currentTaskRef()).to.be.null;
-          done();
-        } catch (errorB) {
-          done(errorB);
-        }
-      }).catch(done);
-    });
+        })
+    })
 
-    it('should invalidate callbacks if another process times the task out', done => {
-      qw._startState(th.validTaskSpecWithStartState.startState);
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState);
-      qw._newTaskRef(tasksRef);
-      var testRef = tasksRef.push({
+    it('should try and process a task if not busy', () => {
+      qw._startState(th.validTaskSpecWithStartState.startState)
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._newTaskRef(tasksRef)
+      return tasksRef.push({
         '_state': th.validTaskSpecWithStartState.startState
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        return qw._tryToProcess().then(() => {
-          try {
-            expect(qw._currentTaskRef()).to.not.be.null;
-            expect(qw._busy()).to.be.true;
-            testRef.update({
-              '_owner': null
-            }, function(errorB) {
-              if (errorB) {
-                return done(errorB);
-              }
-              try {
-                expect(qw._currentTaskRef()).to.be.null;
-                done();
-              } catch (errorC) {
-                done(errorC);
-              }
-              return undefined;
-            });
-          } catch (errorD) {
-            done(errorD);
-          }
-        }).catch(done);
-      });
-    });
+      }).then(_ => qw._tryToProcess())
+        .then(_ => {
+          expect(qw._currentTaskRef()).to.not.be.null;
+          expect(qw._busy()).to.be.true;
+        })
+    })
+
+    it('should try and process a task if not busy, rejecting it if it throws', () => {
+      qw = new th.QueueWorker(tasksRef, '0', true, false, () => {
+        throw new Error('Error thrown in processingFunction')
+      })
+      qw._startState(th.validTaskSpecWithStartState.startState)
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._finishedState(th.validTaskSpecWithFinishedState.finishedState)
+      qw._taskRetries(0)
+      qw._newTaskRef(tasksRef)
+      const testRef = tasksRef.push()
+
+      return testRef.set({
+        '_state': th.validTaskSpecWithStartState.startState
+      }).then(_ => qw._tryToProcess())
+        .then(_ => {
+          expect(qw._currentTaskRef()).to.not.be.null;
+          expect(qw._busy()).to.be.true 
+        })
+        .then(_ => testRef.once('child_changed'))
+        .then(_ => testRef.once('value'))
+        .then(snapshot => {
+          var task = snapshot.val();
+          expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details']);
+          expect(task._state).to.equal('error');
+          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250);
+          expect(task._progress).to.equal(0);
+          expect(task._error_details).to.have.all.keys(['previous_state', 'attempts', 'error', 'error_stack']);
+          expect(task._error_details.previous_state).to.equal(th.validTaskSpecWithStartState.inProgressState);
+          expect(task._error_details.attempts).to.equal(1);
+          expect(task._error_details.error).to.equal('Error thrown in processingFunction');
+          expect(task._error_details.error_stack).to.be.a.string;
+        })
+    })
+
+    it('should try and process a task without a _state if not busy', () => {
+      qw._startState(null)
+      qw._inProgressState(th.validBasicTaskSpec.inProgressState)
+      qw._newTaskRef(tasksRef)
+      return tasksRef.push({
+        foo: 'bar'
+      }).then(_ => qw._tryToProcess())
+        .then(_ => {
+          expect(qw._currentTaskRef()).to.not.be.null;
+          expect(qw._busy()).to.be.true;
+        })
+    })
+
+    it('should not try and process a task if not a plain object [1]', () => {
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._suppressStack(true)
+      qw._newTaskRef(tasksRef)
+      const testRef = tasksRef.push('invalid')
+      return testRef
+        .then(_ => qw._tryToProcess())
+        .then(_ => {
+          expect(qw._currentTaskRef()).to.be.null;
+          expect(qw._busy()).to.be.false;
+        })
+        .then(_ => testRef.once('value'))
+        .then(snapshot => {
+          var task = snapshot.val();
+          expect(task).to.have.all.keys(['_error_details', '_state', '_state_changed']);
+          expect(task._error_details).to.have.all.keys(['error', 'original_task']);
+          expect(task._error_details.error).to.equal('Task was malformed');
+          expect(task._error_details.original_task).to.equal('invalid');
+          expect(task._state).to.equal('error');
+          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250);
+        })
+    })
+
+    it('should not try and process a task if not a plain object [2]', () => {
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._newTaskRef(tasksRef)
+      const testRef = tasksRef.push('invalid')
+      return testRef
+        .then(_ => qw._tryToProcess())
+        .then(_ => {
+          expect(qw._currentTaskRef()).to.be.null;
+          expect(qw._busy()).to.be.false;
+        })
+        .then(_ => testRef.once('value'))
+        .then(snapshot => {
+          var task = snapshot.val()
+          expect(task).to.have.all.keys(['_error_details', '_state', '_state_changed'])
+          expect(task._error_details).to.have.all.keys(['error', 'original_task', 'error_stack'])
+          expect(task._error_details.error).to.equal('Task was malformed')
+          expect(task._error_details.original_task).to.equal('invalid')
+          expect(task._error_details.error_stack).to.be.a.string
+          expect(task._state).to.equal('error')
+          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+        })
+    })
+
+    it('should not try and process a task if no longer in correct startState', () => {
+      qw._startState(th.validTaskSpecWithStartState.startState)
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._newTaskRef(tasksRef)
+      return tasksRef.push({
+        '_state': th.validTaskSpecWithStartState.inProgressState
+      }).then(_ => qw._tryToProcess())
+        .then(_ => {
+          expect(qw._currentTaskRef()).to.be.null
+        })
+    })
+
+    it('should not try and process a task if no task to process', () => {
+      qw._startState(th.validTaskSpecWithStartState.startState)
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._newTaskRef(tasksRef)
+      qw._tryToProcess().then(_ => {
+        expect(qw._currentTaskRef()).to.be.null
+      })
+    })
+
+    it('should invalidate callbacks if another process times the task out', () => {
+      qw._startState(th.validTaskSpecWithStartState.startState)
+      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._newTaskRef(tasksRef)
+      const testRef = tasksRef.push({
+        '_state': th.validTaskSpecWithStartState.startState
+      })
+      return testRef
+        .then(_ => qw._tryToProcess())
+        .then(_ => {
+          expect(qw._currentTaskRef()).to.not.be.null;
+          expect(qw._busy()).to.be.true;
+        })
+        .then(_ => testRef.update({ '_owner': null }))
+        .then(_ => {
+          expect(qw._currentTaskRef()).to.be.null;
+        })
+    })
 
     it('should sanitize data passed to the processing function when specified', done => {
-      qw = new th.QueueWorker(tasksRef, '0', true, false, function(data) {
+      qw = new th.QueueWorker(tasksRef, '0', true, false, data => {
         try {
-          expect(data).to.have.all.keys(['foo']);
-          done();
+          expect(data).to.have.all.keys(['foo'])
+          done()
         } catch (error) {
-          done(error);
+          done(error)
         }
-      });
-      qw.setTaskSpec(th.validBasicTaskSpec);
-      tasksRef.push({ foo: 'bar' });
+      })
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      tasksRef.push({ foo: 'bar' })
     });
 
     it('should not sanitize data passed to the processing function when specified', done => {
-      qw = new th.QueueWorker(tasksRef, '0', false, false, function(data) {
+      qw = new th.QueueWorker(tasksRef, '0', false, false, data => {
         try {
           expect(data).to.have.all.keys(['foo', '_owner', '_progress', '_state', '_state_changed', '_id']);
-          done();
+          done()
         } catch (error) {
-          done(error);
+          done(error)
         }
       });
-      qw.setTaskSpec(th.validBasicTaskSpec);
-      tasksRef.push({ foo: 'bar' });
-    });
-  });
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      tasksRef.push({ foo: 'bar' })
+    })
+  })
 
   describe('#_setUpTimeouts', () => {
     let qw

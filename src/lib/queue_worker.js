@@ -349,7 +349,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
         if (!newTaskRef) deferred.resolve()
         else newTaskRef.once('value')
           .then(taskSnap => {
-            if (!taskSnap.exists()) return deferred.resolve()
+            if (!taskSnap.exists()) return deferred.resolve() //<-- this is problematic
             
             let nextTaskRef = null
             taskSnap.forEach(childSnap => { nextTaskRef = childSnap.ref })
