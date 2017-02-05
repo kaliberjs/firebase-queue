@@ -15,11 +15,12 @@ const { expect } = chai
 const th = new Helpers()
 const tasksRef = th.testRef.child('tasks')
 
-const nonBooleans         = ['', 'foo', NaN, Infinity,              0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop         ]
-const nonStrings          = [           NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop         ]
-const nonFunctions        = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: 'bar' }, { foo: { bar: { baz: true } } }                 ]
-const nonPlainObjects     = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'],                 null,                                                  _.noop         ]
-const nonPositiveIntegers = ['', 'foo', NaN, Infinity, true, false, 0,    ['foo', 'bar'], { foo: 'bar' },       { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop, -1, 1.1]
+const nonBooleans             = ['', 'foo', NaN, Infinity,              0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: { bar: { baz: true } } }, _.noop                ]
+const nonStrings              = [           NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: { bar: { baz: true } } }, _.noop                ]
+const nonFunctions            = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: { bar: { baz: true } } }                        ]
+const nonPlainObjects         = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'],                 null,                                  _.noop                ]
+const nonPositiveIntegers     = ['', 'foo', NaN, Infinity, true, false, 0,    ['foo', 'bar'], { foo: 'bar' },       { foo: { bar: { baz: true } } }, _.noop, -1, 1.1       ]
+const invalidPercentageValues = ['', 'foo', NaN, Infinity, true, false,       ['foo', 'bar'], { foo: 'bar' },       { foo: { bar: { baz: true } } }, _.noop, -1,      100.1]
 
 const nonStringsWithoutNull = nonStrings.filter(x => x !== null)
 const nonPositiveIntegersWithout0 = nonPositiveIntegers.filter(x => x !== 0)
@@ -739,87 +740,100 @@ describe('QueueWorker', () => {
   })
 
   describe('#_updateProgress', () => {
-    var qw;
-
+    let qw
+    let testRef
+    
     beforeEach(() => {
       qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      qw._tryToProcess = _.noop;
-    });
+    })
 
     afterEach(done => {
-      qw.setTaskSpec();
-      tasksRef.set(null, done);
-    });
+      testRef.off()
+      qw.shutdown()
+        .then(_ => tasksRef.set(null))
+        .then(done)
+    })
 
-    ['', 'foo', NaN, Infinity, true, false, -1, 100.1, ['foo', 'bar'], { foo: 'bar' }, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(invalidPercentageValue) {
-      it('should ignore invalid input ' + invalidPercentageValue + ' to update the progress', () => {
-        qw._currentTaskRef(tasksRef.push());
-        return qw._updateProgress(qw._taskNumber())(invalidPercentageValue).should.eventually.be.rejectedWith('Invalid progress');
-      });
-    });
+    function updateProgress({ task, taskNumber = qw._taskNumber(), progress, currentTask }) {
+      testRef = tasksRef.push()
+      const currentTaskRef = currentTask === undefined ? testRef : currentTask
+      return testRef.set(task)
+        .then(_ => (qw._currentTaskRef(currentTaskRef), qw._updateProgress(taskNumber)(progress)))
+    }
 
-    it('should not update the progress of a task no longer owned by the current worker', done => {
+    invalidPercentageValues.forEach(invalidPercentageValue => 
+      it('should ignore invalid input ' + invalidPercentageValue + ' to update the progress', () => 
+        updateProgress({ task: null, progress: invalidPercentageValue })
+          .should.eventually.be.rejectedWith('Invalid progress')
+      )
+    )
+
+    it('should not update the progress of a task no longer owned by the current worker', () => {
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      return updateProgress({
+        task: { 
+          '_state': th.validBasicTaskSpec.inProgressState, 
+          '_owner': 'someone_else' 
+        },
+        progress: 10
+      }).should.eventually.be.rejectedWith('Can\'t update progress - current task no longer owned by this process')
+    })
+
+    it('should not update the progress of a task if the worker is no longer processing it', () => {
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      return updateProgress({
+        task: { 
+          '_state': th.validBasicTaskSpec.inProgressState, 
+          '_owner': qw._currentId() 
+        },
+        progress: 10,
+        currentTask: null
+      }).should.eventually.be.rejectedWith('Can\'t update progress - no task currently being processed')
+    })
+
+    it('should not update the progress of a task if the task is no longer in progress', () => {
+      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
+      return updateProgress({
+        task: { 
+          '_state': th.validTaskSpecWithFinishedState.finishedState, 
+          '_owner': qw._currentId() 
+        },
+        progress: 10
+      }).should.eventually.be.rejectedWith('Can\'t update progress - current task no longer owned by this process')
+    })
+
+    it('should not update the progress of a task if the task has no _state', () => {
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      return updateProgress({
+        task: { 
+          '_owner': qw._currentId() 
+        },
+        progress: 10
+      }).should.eventually.be.rejectedWith('Can\'t update progress - current task no longer owned by this process')
+    })
+
+    it('should update the progress of the current task', () => {
       qw.setTaskSpec(th.validBasicTaskSpec);
-      qw._currentTaskRef(tasksRef.push({ '_state': th.validBasicTaskSpec.inProgressState, '_owner': 'someone_else' }, function(error) {
-        if (error) {
-          return done(error);
-        }
-        return qw._updateProgress(qw._taskNumber())(10).should.eventually.be.rejectedWith('Can\'t update progress - current task no longer owned by this process').notify(done);
-      }));
-    });
+      return updateProgress({
+        task: { 
+          '_state': th.validBasicTaskSpec.inProgressState, 
+          '_owner': qw._currentId() 
+        },
+        progress: 10
+      }).should.eventually.be.fulfilled
+    })
 
-    it('should not update the progress of a task if the worker is no longer processing it', done => {
-      qw.setTaskSpec(th.validBasicTaskSpec);
-      tasksRef.push({ '_state': th.validBasicTaskSpec.inProgressState, '_owner': qw._processId + ':' + qw._taskNumber() }, function(error) {
-        if (error) {
-          return done(error);
-        }
-        return qw._updateProgress(qw._taskNumber())(10).should.eventually.be.rejectedWith('Can\'t update progress - no task currently being processed').notify(done);
-      });
-    });
-
-    it('should not update the progress of a task if the task is no longer in progress', done => {
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      qw._currentTaskRef(tasksRef.push({ '_state': th.validTaskSpecWithFinishedState.finishedState, '_owner': qw._processId + ':' + qw._taskNumber() }, function(error) {
-        if (error) {
-          return done(error);
-        }
-        return qw._updateProgress(qw._taskNumber())(10).should.eventually.be.rejectedWith('Can\'t update progress - current task no longer owned by this process').notify(done);
-      }));
-    });
-
-    it('should not update the progress of a task if the task has no _state', done => {
-      qw.setTaskSpec(th.validBasicTaskSpec);
-      qw._currentTaskRef(tasksRef.push({ '_owner': qw._processId + ':' + qw._taskNumber() }, function(error) {
-        if (error) {
-          return done(error);
-        }
-        return qw._updateProgress(qw._taskNumber())(10).should.eventually.be.rejectedWith('Can\'t update progress - current task no longer owned by this process').notify(done);
-      }));
-    });
-
-    it('should update the progress of the current task', done => {
-      qw.setTaskSpec(th.validBasicTaskSpec);
-      qw._currentTaskRef(tasksRef.push({ '_state': th.validBasicTaskSpec.inProgressState, '_owner': qw._processId + ':' + qw._taskNumber() }, function(error) {
-        if (error) {
-          return done(error);
-        }
-        return qw._updateProgress(qw._taskNumber())(10).should.eventually.be.fulfilled.notify(done);
-      }));
-    });
-
-    it('should not update the progress of a task if a new task is being processed', done => {
-      qw.setTaskSpec(th.validBasicTaskSpec);
-      qw._currentTaskRef(tasksRef.push({ '_owner': qw._processId + ':' + qw._taskNumber() }, function(error) {
-        if (error) {
-          return done(error);
-        }
-        var updateProgress = qw._updateProgress(qw._taskNumber());
-        qw._taskNumber(qw._taskNumber() + 1);
-        return updateProgress(10).should.eventually.be.rejectedWith('Can\'t update progress - no task currently being processed').notify(done);
-      }));
-    });
-  });
+    it('should not update the progress of a task if a new task is being processed', () => {
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      return updateProgress({
+        task: { 
+          '_owner': qw._currentId() 
+        },
+        taskNumber: qw._taskNumber() + 1,
+        progress: 10
+      }).should.eventually.be.rejectedWith('Can\'t update progress - no task currently being processed')
+    })
+  })
 
   describe('#_tryToProcess', () => {
     var qw;
