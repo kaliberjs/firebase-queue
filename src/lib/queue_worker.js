@@ -158,7 +158,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
       .then(_ => { deferred.resolve() })
       .catch(_ => {
         // reset task errored, retrying
-        if ((retries + 1) < MAX_TRANSACTION_ATTEMPTS) setImmediate(() => self._resetTask(taskRef, forceReset, deferred))
+        if ((retries + 1) < MAX_TRANSACTION_ATTEMPTS) setImmediate(() => _resetTask(taskRef, forceReset, deferred))
         else deferred.reject(new Error('reset task errored too many times, no longer retrying'))
       })
 
@@ -397,7 +397,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
               // Worker has become busy while the transaction was processing
               // so give up the task for now so another worker can claim it
               /* istanbul ignore if */
-              if (busy) self._resetTask(nextTaskRef, true)
+              if (busy) _resetTask(nextTaskRef, true)
               else {
                 busy = true
                 taskNumber += 1
@@ -493,7 +493,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
       var expires = Math.max(0, startTime - now + taskTimeout);
       owners[taskName] = snapshot.child('_owner').val();
       expiryTimeouts[taskName] = setTimeout(
-        () => self._resetTask(snapshot.ref, false),
+        () => _resetTask(snapshot.ref, false),
         expires
       )
     }
@@ -513,7 +513,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
     if (currentTaskListener !== null) {
       currentTaskRef.child('_owner').off('value', currentTaskListener)
-      self._resetTask(currentTaskRef, true)
+      _resetTask(currentTaskRef, true)
       currentTaskRef = null
       currentTaskListener = null
     }
