@@ -137,9 +137,9 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
         task => {
           /* istanbul ignore if */
           if (task === null) return task
-          
+
           const timeSinceUpdate = /* use offset */ Date.now() - task._state_changed || 0
-          const timedOut = (taskTimeout && timeSinceUpdate > taskTimeout)
+          const timedOut = (taskTimeout && timeSinceUpdate >= taskTimeout)
           
           const allowReset = (forceReset && isOwner(task)) || timedOut
 

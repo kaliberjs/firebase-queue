@@ -1083,270 +1083,186 @@ describe('QueueWorker', () => {
   });
 
   describe('#_setUpTimeouts', () => {
-    var qw;
-    var clock;
+    let qw
+    let clock
+    let setTimeoutSpy
+    let clearTimeoutSpy
+
+    before(done => {
+      // ensure firebase is up and running before we stop the clock 
+      // at individual specs
+      tasksRef.push().set(null).then(done)
+    })
 
     beforeEach(() => {
-      clock = sinon.useFakeTimers(now());
-      qw = new th.QueueWorkerWithoutProcessing(tasksRef, '0', true, false, _.noop);
-    });
+      qw = new th.QueueWorkerWithoutProcessing(tasksRef, '0', true, false, _.noop)
+      clock = sinon.useFakeTimers(now())
+      setTimeoutSpy = sinon.spy(global, 'setTimeout')
+      clearTimeoutSpy = sinon.spy(global, 'clearTimeout')
+    })
 
     afterEach(done => {
-      qw.setTaskSpec();
-      clock.restore();
-      tasksRef.set(null, done);
-    });
+      clock.restore()
+      setTimeoutSpy.restore()
+      clearTimeoutSpy.restore()
+      qw.shutdown()
+        .then(_ => tasksRef.set(null))
+        .then(done)
+    })
 
-    it('should not set up timeouts when no task timeout is set', done => {
-      qw.setTaskSpec(th.validBasicTaskSpec);
-      tasksRef.push({
+    it('should not set up timeouts when no task timeout is set', () => {
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      return tasksRef.push().set({
         '_state': th.validBasicTaskSpec.inProgressState,
         '_state_changed': now()
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        try {
-          expect(qw._expiryTimeouts).to.deep.equal({});
-          done();
-        } catch (errorB) {
-          done(errorB);
-        }
-        return undefined;
-      });
-    });
+      }).then(_ => {
+          expect(qw._expiryTimeouts).to.deep.equal({})
+        })
+    })
 
-    it('should not set up timeouts when a task not in progress is added and a task timeout is set', done => {
-      qw.setTaskSpec(th.validTaskSpecWithTimeout);
-      tasksRef.push({
+    it('should not set up timeouts when a task not in progress is added and a task timeout is set', () => {
+      qw.setTaskSpec(th.validTaskSpecWithTimeout)
+      return tasksRef.push({
         '_state': th.validTaskSpecWithFinishedState.finishedState,
         '_state_changed': now()
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        try {
-          expect(qw._expiryTimeouts).to.deep.equal({});
-          done();
-        } catch (errorB) {
-          done(errorB);
-        }
-        return undefined;
-      });
-    });
+      }).then(_ => {
+          expect(qw._expiryTimeouts).to.deep.equal({})
+        })
+    })
 
     it('should set up timeout listeners when a task timeout is set', () => {
-      expect(qw._expiryTimeouts).to.deep.equal({});
-      expect(qw._processingTasksRef()).to.be.null;
-      expect(qw._processingTaskAddedListener()).to.be.null;
-      expect(qw._processingTaskRemovedListener()).to.be.null;
+      expect(qw._expiryTimeouts).to.deep.equal({})
+      expect(qw._processingTasksRef()).to.be.null
+      expect(qw._processingTaskAddedListener()).to.be.null
+      expect(qw._processingTaskRemovedListener()).to.be.null
 
-      qw.setTaskSpec(th.validTaskSpecWithTimeout);
+      qw.setTaskSpec(th.validTaskSpecWithTimeout)
 
-      expect(qw._expiryTimeouts).to.deep.equal({});
-      expect(qw._processingTasksRef()).to.not.be.null;
-      expect(qw._processingTaskAddedListener()).to.not.be.null;
-      expect(qw._processingTaskRemovedListener()).to.not.be.null;
-    });
+      expect(qw._expiryTimeouts).to.deep.equal({})
+      expect(qw._processingTasksRef()).to.not.be.null
+      expect(qw._processingTaskAddedListener()).to.not.be.null
+      expect(qw._processingTaskRemovedListener()).to.not.be.null
+    })
 
     it('should remove timeout listeners when a task timeout is not specified after a previous task specified a timeout', () => {
+      qw.setTaskSpec(th.validTaskSpecWithTimeout)
+
+      expect(qw._expiryTimeouts).to.deep.equal({})
+      expect(qw._processingTasksRef()).to.not.be.null
+      expect(qw._processingTaskAddedListener()).to.not.be.null
+      expect(qw._processingTaskRemovedListener()).to.not.be.null
+
+      qw.setTaskSpec(th.validBasicTaskSpec)
+
+      expect(qw._expiryTimeouts).to.deep.equal({})
+      expect(qw._processingTasksRef()).to.be.null
+      expect(qw._processingTaskAddedListener()).to.be.null
+      expect(qw._processingTaskRemovedListener()).to.be.null
+    })
+
+    it('should set up a timeout when a task timeout is set and a task added', () => {
       qw.setTaskSpec(th.validTaskSpecWithTimeout);
-
-      expect(qw._expiryTimeouts).to.deep.equal({});
-      expect(qw._processingTasksRef()).to.not.be.null;
-      expect(qw._processingTaskAddedListener()).to.not.be.null;
-      expect(qw._processingTaskRemovedListener()).to.not.be.null;
-
-      qw.setTaskSpec(th.validBasicTaskSpec);
-
-      expect(qw._expiryTimeouts).to.deep.equal({});
-      expect(qw._processingTasksRef()).to.be.null;
-      expect(qw._processingTaskAddedListener()).to.be.null;
-      expect(qw._processingTaskRemovedListener()).to.be.null;
-    });
-
-    it('should set up a timeout when a task timeout is set and a task added', done => {
-      var spy = sinon.spy(global, 'setTimeout');
-      qw.setTaskSpec(th.validTaskSpecWithTimeout);
-      var testRef = tasksRef.push({
+      const testRef = tasksRef.push({
         '_state': th.validTaskSpecWithTimeout.inProgressState,
         '_state_changed': now() - 5
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        try {
-          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key]);
-          expect(setTimeout.getCall(0).args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5);
-          spy.restore();
-          done();
-        } catch (errorB) {
-          spy.restore();
-          done(errorB);
-        }
-        return undefined;
-      });
-    });
+      })
 
-    it('should set up a timeout when a task timeout is set and a task owner changed', done => {
-      qw.setTaskSpec(th.validTaskSpecWithTimeout);
-      var testRef = tasksRef.push({
+      return testRef.then(_ => {
+          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key])
+          expect(setTimeoutSpy.firstCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5)
+        })
+    })
+
+    it('should set up a timeout when a task timeout is set and a task owner changed', () => {
+      qw.setTaskSpec(th.validTaskSpecWithTimeout)
+      const testRef = tasksRef.push({
         '_owner': qw._processId + ':0',
         '_state': th.validTaskSpecWithTimeout.inProgressState,
         '_state_changed': now() - 10
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        try {
-          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key]);
-          var spy = sinon.spy(global, 'setTimeout');
-          testRef.update({
-            '_owner': qw._processId + ':1',
-            '_state_changed': now() - 5
-          }, function(errorB) {
-            if (errorB) {
-              return done(errorB);
-            }
-            try {
-              expect(qw._expiryTimeouts).to.have.all.keys([testRef.key]);
-              expect(setTimeout.getCall(setTimeout.callCount - 1).args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5);
-              spy.restore();
-              done();
-            } catch (errorC) {
-              spy.restore();
-              done(errorC);
-            }
-            return undefined;
-          });
-        } catch (errorB) {
-          done(errorB);
-        }
-        return undefined;
-      });
-    });
+      })
 
-    it('should not set up a timeout when a task timeout is set and a task updated', done => {
-      qw.setTaskSpec(th.validTaskSpecWithTimeout);
-      var spy = sinon.spy(global, 'setTimeout');
-      var testRef = tasksRef.push({
+      return testRef
+        .then(_ => {
+          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key])
+        })
+        .then(_ => testRef.update({ '_owner': qw._processId + ':1', '_state_changed': now() - 5 }))
+        .then(_ => {
+          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key])
+          expect(setTimeoutSpy.lastCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5)
+        })
+    })
+
+    it('should not set up a timeout when a task timeout is set and a task updated', () => {
+      qw.setTaskSpec(th.validTaskSpecWithTimeout)
+
+      const testRef = tasksRef.push({
         '_owner': qw._processId + ':0',
         '_progress': 0,
         '_state': th.validTaskSpecWithTimeout.inProgressState,
         '_state_changed': now() - 5
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        try {
-          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key]);
-          testRef.update({
-            '_progress': 1
-          }, function(errorB) {
-            if (errorB) {
-              return done(errorB);
-            }
-            try {
-              expect(qw._expiryTimeouts).to.have.all.keys([testRef.key]);
-              expect(setTimeout.getCall(0).args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5);
-              spy.restore();
-              done();
-            } catch (errorC) {
-              spy.restore();
-              done(errorC);
-            }
-            return undefined;
-          });
-        } catch (errorB) {
-          done(errorB);
-        }
-        return undefined;
-      });
-    });
+      })
 
-    it('should set up a timeout when a task timeout is set and a task added without a _state_changed time', done => {
-      var spy = sinon.spy(global, 'setTimeout');
-      qw.setTaskSpec(th.validTaskSpecWithTimeout);
-      var testRef = tasksRef.push({
+      return testRef
+        .then(_ => {
+          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key])
+        })
+        .then(_ => testRef.update({ '_progress': 1 }))
+        .then(_ => {
+          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key])
+          expect(setTimeoutSpy.firstCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5)
+        })
+    })
+
+    it('should set up a timeout when a task timeout is set and a task added without a _state_changed time', () => {
+      qw.setTaskSpec(th.validTaskSpecWithTimeout)
+
+      const testRef = tasksRef.push({
         '_state': th.validTaskSpecWithTimeout.inProgressState
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        try {
-          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key]);
-          expect(setTimeout.getCall(0).args[1]).to.equal(th.validTaskSpecWithTimeout.timeout);
-          spy.restore();
-          done();
-        } catch (errorB) {
-          spy.restore();
-          done(errorB);
-        }
-        return undefined;
-      });
-    });
+      })
 
-    it('should clear timeouts when a task timeout is not set and a timeout exists', done => {
-      qw.setTaskSpec(th.validTaskSpecWithTimeout);
-      var testRef = tasksRef.push({
+      return testRef
+        .then(_ => {
+          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key]);
+          expect(setTimeoutSpy.firstCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout);
+        })
+    })
+
+    it('should clear timeouts when a task timeout is not set and a timeout exists', () => {
+      qw.setTaskSpec(th.validTaskSpecWithTimeout)
+      const testRef = tasksRef.push({
         '_state': th.validTaskSpecWithTimeout.inProgressState,
         '_state_changed': now()
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        try {
-          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key]);
-          qw.setTaskSpec();
-          expect(qw._expiryTimeouts).to.deep.equal({});
-          done();
-        } catch (errorB) {
-          done(errorB);
-        }
-        return undefined;
-      });
-    });
+      })
 
-    it('should clear a timeout when a task is completed', done => {
-      var spy = sinon.spy(qw, '_resetTask');
-      var taskSpec = _.clone(th.validTaskSpecWithTimeout);
-      taskSpec.finishedState = th.validTaskSpecWithFinishedState.finishedState;
+      return testRef
+        .then(_ => {
+          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key])
+          qw.setTaskSpec()
+          expect(qw._expiryTimeouts).to.deep.equal({})
+        })
+    })
+
+    it('should clear a timeout when a task is completed', () => {
+      const taskSpec = _.clone(th.validTaskSpecWithTimeout)
+      taskSpec.finishedState = th.validTaskSpecWithFinishedState.finishedState
       qw.setTaskSpec(taskSpec);
-      var testRef = tasksRef.push({
+
+      const task = {
         '_state': taskSpec.inProgressState,
         '_state_changed': now()
-      }, function(errorA) {
-        if (errorA) {
-          spy.restore();
-          return done(errorA);
-        }
-        try {
-          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key]);
-          testRef.update({
-            '_state': taskSpec.finishedState
-          }, function(errorB) {
-            if (errorB) {
-              return done(errorB);
-            }
-            try {
-              expect(qw._expiryTimeouts).to.deep.equal({});
-              expect(qw._resetTask).to.not.have.been.called;
-              spy.restore();
-              done();
-            } catch (errorC) {
-              spy.restore();
-              done(errorC);
-            }
-            return undefined;
-          });
-        } catch (errorD) {
-          spy.restore();
-          done(errorD);
-        }
-        return undefined;
-      });
-    });
-  });
+      }
+
+      const testRef = tasksRef.push()
+      return testRef.set(task)
+        .then(_ => testRef.update({ '_state': taskSpec.finishedState }))
+        .then(_ => {
+          expect(setTimeoutSpy.callCount).to.equal(1, 'setTimeout was not called')
+          const clearId = setTimeoutSpy.firstCall.returnValue
+          expect(clearTimeoutSpy.callCount).to.equal(1, 'clearTimeout was not called')
+          expect(clearTimeoutSpy.firstCall.calledWith(clearId)).to.be.equal(true, 'clearTimeout was not called with correct Id')
+        })
+    })
+  })
 
   describe('#QueueWorker.isValidTaskSpec', () => {
 
