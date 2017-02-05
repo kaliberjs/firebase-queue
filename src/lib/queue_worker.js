@@ -87,7 +87,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   this._processId = processId
   this._expiryTimeouts = expiryTimeouts
   this._processingTasksRef = () => processingTasksRef
-  this._currentTaskRef = (val) => val ? (currentTaskRef = val, undefined) : currentTaskRef
+  this._currentTaskRef = () => currentTaskRef
   this._newTaskRef = (val) => val ? (newTaskRef = val, undefined) : newTaskRef
   this._busy = (val) => val ? (busy = val, undefined) : busy
   this._suppressStack = (val) => val ? (suppressStack = val, undefined) : suppressStack
@@ -116,9 +116,8 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
   function isInvalidTask(requestedTaskNumber) {
     const notCurrentTask = taskNumber !== requestedTaskNumber
-    const noTask = currentTaskRef === null
 
-    return notCurrentTask || noTask
+    return notCurrentTask
   }
 
   /**
@@ -171,7 +170,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
    * @param {Number} taskNumber the current task number
    * @returns {Function} the resolve callback function.
    */
-  function _resolve(requestedTaskNumber) {
+  function _resolve(taskRef, requestedTaskNumber) {
     let retries = 0
     const deferred = createDeferred()
 
@@ -186,7 +185,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
       if (isInvalidTask(requestedTaskNumber)) done(deferred)
       else {
-        currentTaskRef
+        taskRef
           .transaction(
             task => {
               if (task === null) return task
@@ -231,7 +230,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
    * @param {Number} taskNumber the current task number
    * @returns {Function} the reject callback function.
    */
-  function _reject(requestedTaskNumber) {
+  function _reject(taskRef, requestedTaskNumber) {
     let retries = 0
     const deferred = createDeferred()
 
@@ -254,7 +253,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
         const errorStack = (!suppressStack && error && error.stack) || null
 
-        currentTaskRef
+        taskRef
           .transaction(
             task => {
               if (task === null) return task
@@ -302,7 +301,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
    * @param {Number} taskNumber the current task number
    * @returns {Function} the update callback function.
    */
-  function _updateProgress(requestedTaskNumber) {
+  function _updateProgress(taskRef, requestedTaskNumber) {
 
     return updateProgress
 
@@ -318,7 +317,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
       if (isInvalidTask(requestedTaskNumber)) return Promise.reject(new Error('Can\'t update progress - no task currently being processed'))
 
       return new Promise((resolve, reject) => {
-        currentTaskRef.transaction(
+        taskRef.transaction(
           task => {
             /* istanbul ignore if */
             if (task === null) return task
@@ -426,9 +425,9 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
                   ].forEach(reserved => { delete data[reserved] });
                 } else { data._id = snapshot.key }
 
-                const progress = _updateProgress(taskNumber);
-                const resolve = _resolve(taskNumber);
-                const reject = _reject(taskNumber);
+                const progress = _updateProgress(currentTaskRef, taskNumber);
+                const resolve = _resolve(currentTaskRef, taskNumber);
+                const reject = _reject(currentTaskRef, taskNumber);
                 setImmediate(() => {
                   try { processingFunction.call(null, data, progress, resolve, reject) }
                   catch (err) { reject(err) }

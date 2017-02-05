@@ -212,7 +212,7 @@ describe('QueueWorker', () => {
       testRef = tasksRef.push()
       const currentTaskRef = currentTask === undefined ? testRef : currentTask
       return testRef.set(task)
-        .then(_ => (qw._currentTaskRef(currentTaskRef), qw._resolve(taskNumber)(newTask)))
+        .then(_ => qw._resolve(currentTaskRef, taskNumber)(newTask))
         .then(_ => testRef.once('value'))
     }
 
@@ -421,20 +421,22 @@ describe('QueueWorker', () => {
         .then(done).catch(done)
     })
 
-    it('should not resolve a task if it is no longer being processed', done => {
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      const task = {
-        '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_owner': qw._currentId()
-      }
-      resolve({
-        task,
-        currentTask: null
-      }).then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
-        })
-        .then(done).catch(done)
-    })
+    // If this happens the taskNumber will have changed too (next test) 
+    //
+    // it('should not resolve a task if it is no longer being processed', done => {
+    //   qw.setTaskSpec(th.validTaskSpecWithFinishedState);
+    //   const task = {
+    //     '_state': th.validTaskSpecWithFinishedState.inProgressState,
+    //     '_owner': qw._currentId()
+    //   }
+    //   resolve({
+    //     task,
+    //     currentTask: null
+    //   }).then(snapshot => {
+    //       expect(snapshot.val()).to.deep.equal(task)
+    //     })
+    //     .then(done).catch(done)
+    // })
 
     it('should not resolve a task if a new task is being processed', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
@@ -471,7 +473,7 @@ describe('QueueWorker', () => {
       testRef = tasksRef.push()
       const currentTaskRef = currentTask === undefined ? testRef : currentTask
       return testRef.set(task)
-        .then(_ => (qw._currentTaskRef(currentTaskRef), qw._reject(taskNumber)(error)))
+        .then(_ => qw._reject(currentTaskRef, taskNumber)(error))
         .then(_ => testRef.once('value'))
     }
 
@@ -712,18 +714,20 @@ describe('QueueWorker', () => {
         .then(done).catch(done)
     })
 
-    it('should not reject a task if it is no longer being processed', done => {
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
-      const task = {
-        '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_owner': qw._currentId()
-      }
-      reject({ task, currentTask: null })
-        .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
-        })
-        .then(done).catch(done)
-    })
+    // If this happens the taskNumber will have changed too (next test) 
+    //
+    // it('should not reject a task if it is no longer being processed', done => {
+    //   qw.setTaskSpec(th.validTaskSpecWithFinishedState)
+    //   const task = {
+    //     '_state': th.validTaskSpecWithFinishedState.inProgressState,
+    //     '_owner': qw._currentId()
+    //   }
+    //   reject({ task, currentTask: null })
+    //     .then(snapshot => {
+    //       expect(snapshot.val()).to.deep.equal(task)
+    //     })
+    //     .then(done).catch(done)
+    // })
 
     it('should not reject a task if a new task is being processed', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
@@ -758,7 +762,7 @@ describe('QueueWorker', () => {
       testRef = tasksRef.push()
       const currentTaskRef = currentTask === undefined ? testRef : currentTask
       return testRef.set(task)
-        .then(_ => (qw._currentTaskRef(currentTaskRef), qw._updateProgress(taskNumber)(progress)))
+        .then(_ => qw._updateProgress(currentTaskRef, taskNumber)(progress))
     }
 
     invalidPercentageValues.forEach(invalidPercentageValue => 
@@ -777,18 +781,6 @@ describe('QueueWorker', () => {
         },
         progress: 10
       }).should.eventually.be.rejectedWith('Can\'t update progress - current task no longer owned by this process')
-    })
-
-    it('should not update the progress of a task if the worker is no longer processing it', () => {
-      qw.setTaskSpec(th.validBasicTaskSpec)
-      return updateProgress({
-        task: { 
-          '_state': th.validBasicTaskSpec.inProgressState, 
-          '_owner': qw._currentId() 
-        },
-        progress: 10,
-        currentTask: null
-      }).should.eventually.be.rejectedWith('Can\'t update progress - no task currently being processed')
     })
 
     it('should not update the progress of a task if the task is no longer in progress', () => {
@@ -822,6 +814,20 @@ describe('QueueWorker', () => {
         progress: 10
       }).should.eventually.be.fulfilled
     })
+
+    // If this happens the taskNumber will have changed too (next test) 
+    //
+    // it('should not update the progress of a task if the worker is no longer processing it', () => {
+    //   qw.setTaskSpec(th.validBasicTaskSpec)
+    //   return updateProgress({
+    //     task: { 
+    //       '_state': th.validBasicTaskSpec.inProgressState, 
+    //       '_owner': qw._currentId() 
+    //     },
+    //     progress: 10,
+    //     currentTask: null
+    //   }).should.eventually.be.rejectedWith('Can\'t update progress - no task currently being processed')
+    // })
 
     it('should not update the progress of a task if a new task is being processed', () => {
       qw.setTaskSpec(th.validBasicTaskSpec)
