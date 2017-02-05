@@ -108,12 +108,6 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   function inProgress({ _state }) { return _state === inProgressState }
   function isOwner({ _owner }) { return _owner === currentId() }
 
-  function done(deferred) {
-    deferred.resolve()
-    busy = false  // possible problem, resolve is called before this is set
-    self._tryToProcess()
-  }
-
   function isInvalidTask(requestedTaskNumber) {
     const notCurrentTask = taskNumber !== requestedTaskNumber
 
@@ -174,7 +168,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
     let retries = 0
     const deferred = createDeferred()
 
-    return resolve
+    return [resolve, deferred.promise]
 
     /*
      * Resolves the current task and changes the state to the finished state.
@@ -183,7 +177,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
      */
     function resolve(newTask) {
 
-      if (isInvalidTask(requestedTaskNumber)) done(deferred)
+      if (isInvalidTask(requestedTaskNumber)) deferred.resolve()
       else {
         taskRef
           .transaction(
@@ -213,7 +207,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
             undefined,
             false
           )
-          .then(_ => { done(deferred) })
+          .then(_ => { deferred.resolve() })
           .catch(_ => {
             // resolve task errored, retrying
             if (++retries < MAX_TRANSACTION_ATTEMPTS) setImmediate(resolve, newTask)
@@ -234,7 +228,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
     let retries = 0
     const deferred = createDeferred()
 
-    return reject
+    return [reject, deferred.promise]
 
     /**
      * Rejects the current task and changes the state to errorState,
@@ -243,7 +237,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
      * @returns {Promise} Whether the task was able to be rejected.
      */
     function reject(error) {
-      if (isInvalidTask(requestedTaskNumber)) done(deferred)
+      if (isInvalidTask(requestedTaskNumber)) deferred.resolve()
       else {
         const errorString = 
           _.isError(error) ? error.message
@@ -284,7 +278,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
             undefined,
             false
           )
-          .then(_ => { done(deferred) })
+          .then(_ => { deferred.resolve() })
           .catch(_ => {
             // reject task errored, retrying
             if (++retries < MAX_TRANSACTION_ATTEMPTS) setImmediate(reject, error)
@@ -426,8 +420,20 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
                 } else { data._id = snapshot.key }
 
                 const progress = _updateProgress(currentTaskRef, taskNumber);
-                const resolve = _resolve(currentTaskRef, taskNumber);
-                const reject = _reject(currentTaskRef, taskNumber);
+                const [resolve, resolvePromise] = _resolve(currentTaskRef, taskNumber);
+                const [reject, rejectPromise] = _reject(currentTaskRef, taskNumber);
+
+                Promise.race([resolvePromise, rejectPromise])
+                  .then(_ => {
+                    busy = false
+                    self._tryToProcess()
+                  })
+                  .catch(_ => {
+                    // the original implementation did not handle this situation
+                    // we should probably set the error and free ourselves:
+                    // busy = false and _tryToProcess
+                  })
+
                 setImmediate(() => {
                   try { processingFunction.call(null, data, progress, resolve, reject) }
                   catch (err) { reject(err) }

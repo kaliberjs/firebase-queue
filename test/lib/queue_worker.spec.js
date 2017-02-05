@@ -211,7 +211,7 @@ describe('QueueWorker', () => {
     function resolve({ task, taskNumber = qw._taskNumber(), newTask }) {
       testRef = tasksRef.push()
       return testRef.set(task)
-        .then(_ => qw._resolve(testRef, taskNumber)(newTask))
+        .then(_ => qw._resolve(testRef, taskNumber)[0](newTask))
         .then(_ => testRef.once('value'))
     }
 
@@ -454,7 +454,7 @@ describe('QueueWorker', () => {
     function reject({ task, taskNumber = qw._taskNumber(), error }) {
       testRef = tasksRef.push()
       return testRef.set(task)
-        .then(_ => qw._reject(testRef, taskNumber)(error))
+        .then(_ => qw._reject(testRef, taskNumber)[0](error))
         .then(_ => testRef.once('value'))
     }
 
