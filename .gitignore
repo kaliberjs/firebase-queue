@@ -8,3 +8,5 @@ node_modules/
 
 test/key.json
 test/url.js
+
+npm-debug.log

@@ -15,12 +15,13 @@ const { expect } = chai
 const th = new Helpers()
 const tasksRef = th.testRef.child('tasks')
 
-const nonBooleans             = ['', 'foo', NaN, Infinity,              0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: { bar: { baz: true } } }, _.noop                ]
-const nonStrings              = [           NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: { bar: { baz: true } } }, _.noop                ]
-const nonFunctions            = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, { foo: { bar: { baz: true } } }                        ]
-const nonPlainObjects         = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'],                 null,                                  _.noop                ]
-const nonPositiveIntegers     = ['', 'foo', NaN, Infinity, true, false, 0,    ['foo', 'bar'], { foo: 'bar' },       { foo: { bar: { baz: true } } }, _.noop, -1, 1.1       ]
-const invalidPercentageValues = ['', 'foo', NaN, Infinity, true, false,       ['foo', 'bar'], { foo: 'bar' },       { foo: { bar: { baz: true } } }, _.noop, -1,      100.1]
+const nonBooleans             = ['', 'foo', NaN, Infinity,              0, 1, ['foo', 'bar'], { foo: 'bar' }, null,            { foo: { bar: { baz: true } } }, _.noop                ]
+const nonStrings              = [           NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null,            { foo: { bar: { baz: true } } }, _.noop                ]
+const nonFunctions            = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null,            { foo: { bar: { baz: true } } }                        ]
+const nonPlainObjects         = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'],                 null,                                             _.noop                ]
+const nonPositiveIntegers     = ['', 'foo', NaN, Infinity, true, false, 0,    ['foo', 'bar'], { foo: 'bar' },                  { foo: { bar: { baz: true } } }, _.noop, -1, 1.1       ]
+const invalidPercentageValues = ['', 'foo', NaN, Infinity, true, false,       ['foo', 'bar'], { foo: 'bar' },                  { foo: { bar: { baz: true } } }, _.noop, -1,      100.1]
+const invalidTaskSpecs        = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, undefined, { foo: { bar: { baz: true } } }, _.noop, -1            ]
 
 const nonStringsWithoutNull = nonStrings.filter(x => x !== null)
 const nonPositiveIntegersWithout0 = nonPositiveIntegers.filter(x => x !== 0)
@@ -792,7 +793,7 @@ describe('QueueWorker', () => {
     })
   })
 
-  describe.only('#_tryToProcess', () => {
+  describe('#_tryToProcess', () => {
     var qw;
 
     beforeEach(() => {
@@ -1321,192 +1322,170 @@ describe('QueueWorker', () => {
     })
   })
 
-  describe('#setTaskSpec', () => {
-    var qw;
+  describe.only('#setTaskSpec', () => {
+    let qw
+
+    beforeEach(() => {
+      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop)
+    })
 
     afterEach(done => {
-      qw.setTaskSpec();
-      tasksRef.set(null, done);
-    });
+      qw.shutdown()
+        .then(_ => tasksRef.set(null))
+        .then(done)
+    })
 
-    it('should reset the worker when called with an invalid task spec', () => {
-      ['', 'foo', NaN, Infinity, true, false, null, undefined, 0, -1, 10, ['foo', 'bar'], { foo: 'bar' }, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(invalidTaskSpec) {
-        qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-        var oldTaskNumber = qw._taskNumber();
-        qw.setTaskSpec(invalidTaskSpec);
-        expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-        expect(qw._startState()).to.be.null;
-        expect(qw._inProgressState()).to.be.null;
-        expect(qw._finishedState()).to.be.null;
-        expect(qw._taskTimeout()).to.be.null;
-        expect(qw._newTaskRef()).to.be.null;
-        expect(qw._newTaskListener()).to.be.null;
-        expect(qw._expiryTimeouts).to.deep.equal({});
-      });
-    });
+    /*
+      These are quite problematic, the code inhere it very much tied to 
+      the implementation.
 
-    it('should reset the worker when called with an invalid task spec after a valid task spec', () => {
-      ['', 'foo', NaN, Infinity, true, false, null, undefined, 0, -1, 10, ['foo', 'bar'], { foo: 'bar' }, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(invalidTaskSpec) {
-        qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-        qw.setTaskSpec(th.validBasicTaskSpec);
-        var oldTaskNumber = qw._taskNumber();
-        qw.setTaskSpec(invalidTaskSpec);
-        expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-        expect(qw._startState()).to.be.null;
-        expect(qw._inProgressState()).to.be.null;
-        expect(qw._finishedState()).to.be.null;
-        expect(qw._taskTimeout()).to.be.null;
-        expect(qw._newTaskRef()).to.be.null;
-        expect(qw._newTaskListener()).to.be.null;
-        expect(qw._expiryTimeouts).to.deep.equal({});
-      });
-    });
+      My guess is that these were created after the fact and have been copied
+      and pasted. It will be rough to dig through them and turn them into specs
+      that test the behaviour or effect of a certain call.
+    */
 
-    it('should reset the worker when called with an invalid task spec after a valid task spec with everythin', () => {
-      ['', 'foo', NaN, Infinity, true, false, null, undefined, 0, -1, 10, ['foo', 'bar'], { foo: 'bar' }, { foo: 'bar' }, { foo: { bar: { baz: true } } }, _.noop].forEach(function(invalidTaskSpec) {
-        qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-        qw.setTaskSpec(th.validTaskSpecWithEverything);
-        var oldTaskNumber = qw._taskNumber();
-        qw.setTaskSpec(invalidTaskSpec);
-        expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-        expect(qw._startState()).to.be.null;
-        expect(qw._inProgressState()).to.be.null;
-        expect(qw._finishedState()).to.be.null;
-        expect(qw._taskTimeout()).to.be.null;
-        expect(qw._newTaskRef()).to.be.null;
-        expect(qw._newTaskListener()).to.be.null;
-        expect(qw._expiryTimeouts).to.deep.equal({});
-      });
-    });
+    it('should reset the worker when called with an invalid task spec', () => 
+      invalidTaskSpecs.forEach(invalidTaskSpec => {
+        const oldTaskNumber = qw._taskNumber()
+        qw.setTaskSpec(invalidTaskSpec)
+        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+        expect(qw._startState()).to.be.null
+        expect(qw._inProgressState()).to.be.null
+        expect(qw._finishedState()).to.be.null
+        expect(qw._taskTimeout()).to.be.null
+        expect(qw._newTaskRef()).to.be.null
+        expect(qw._newTaskListener()).to.be.null
+        expect(qw._expiryTimeouts).to.deep.equal({})
+      })
+    )
+
+    it('should reset the worker when called with an invalid task spec after a valid task spec', () =>
+      invalidTaskSpecs.forEach(invalidTaskSpec => {
+        qw.setTaskSpec(th.validBasicTaskSpec)
+        const oldTaskNumber = qw._taskNumber()
+        qw.setTaskSpec(invalidTaskSpec)
+        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+        expect(qw._startState()).to.be.null
+        expect(qw._inProgressState()).to.be.null
+        expect(qw._finishedState()).to.be.null
+        expect(qw._taskTimeout()).to.be.null
+        expect(qw._newTaskRef()).to.be.null
+        expect(qw._newTaskListener()).to.be.null
+        expect(qw._expiryTimeouts).to.deep.equal({})
+      })
+    )
+
+    it('should reset the worker when called with an invalid task spec after a valid task spec with everythin', () => 
+      invalidTaskSpecs.forEach(invalidTaskSpec => {
+        qw.setTaskSpec(th.validTaskSpecWithEverything)
+        const oldTaskNumber = qw._taskNumber()
+        qw.setTaskSpec(invalidTaskSpec)
+        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+        expect(qw._startState()).to.be.null
+        expect(qw._inProgressState()).to.be.null
+        expect(qw._finishedState()).to.be.null
+        expect(qw._taskTimeout()).to.be.null
+        expect(qw._newTaskRef()).to.be.null
+        expect(qw._newTaskListener()).to.be.null
+        expect(qw._expiryTimeouts).to.deep.equal({})
+      })
+    )
 
     it('should reset a worker when called with a basic valid task spec', () => {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      var oldTaskNumber = qw._taskNumber();
-      qw.setTaskSpec(th.validBasicTaskSpec);
-      expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-      expect(qw._startState()).to.be.null;
-      expect(qw._inProgressState()).to.equal(th.validBasicTaskSpec.inProgressState);
-      expect(qw._finishedState()).to.be.null;
-      expect(qw._taskTimeout()).to.be.null;
-      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function');
-      expect(qw._newTaskListener()).to.be.a('function');
-      expect(qw._expiryTimeouts).to.deep.equal({});
-    });
+      const oldTaskNumber = qw._taskNumber()
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+      expect(qw._startState()).to.be.null
+      expect(qw._inProgressState()).to.equal(th.validBasicTaskSpec.inProgressState)
+      expect(qw._finishedState()).to.be.null
+      expect(qw._taskTimeout()).to.be.null
+      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
+      expect(qw._newTaskListener()).to.be.a('function')
+      expect(qw._expiryTimeouts).to.deep.equal({})
+    })
 
     it('should reset a worker when called with a valid task spec with a startState', () => {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      var oldTaskNumber = qw._taskNumber();
-      qw.setTaskSpec(th.validTaskSpecWithStartState);
-      expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-      expect(qw._startState()).to.equal(th.validTaskSpecWithStartState.startState);
-      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithStartState.inProgressState);
-      expect(qw._finishedState()).to.be.null;
-      expect(qw._taskTimeout()).to.be.null;
-      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function');
-      expect(qw._newTaskListener()).to.be.a('function');
-      expect(qw._expiryTimeouts).to.deep.equal({});
-    });
+      const oldTaskNumber = qw._taskNumber()
+      qw.setTaskSpec(th.validTaskSpecWithStartState)
+      expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+      expect(qw._startState()).to.equal(th.validTaskSpecWithStartState.startState)
+      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithStartState.inProgressState)
+      expect(qw._finishedState()).to.be.null
+      expect(qw._taskTimeout()).to.be.null
+      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
+      expect(qw._newTaskListener()).to.be.a('function')
+      expect(qw._expiryTimeouts).to.deep.equal({})
+    })
 
     it('should reset a worker when called with a valid task spec with a finishedState', () => {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      var oldTaskNumber = qw._taskNumber();
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-      expect(qw._startState()).to.be.null;
-      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithFinishedState.inProgressState);
-      expect(qw._finishedState()).to.equal(th.validTaskSpecWithFinishedState.finishedState);
-      expect(qw._taskTimeout()).to.be.null;
-      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function');
-      expect(qw._newTaskListener()).to.be.a('function');
-      expect(qw._expiryTimeouts).to.deep.equal({});
-    });
+      const oldTaskNumber = qw._taskNumber()
+      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
+      expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+      expect(qw._startState()).to.be.null
+      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithFinishedState.inProgressState)
+      expect(qw._finishedState()).to.equal(th.validTaskSpecWithFinishedState.finishedState)
+      expect(qw._taskTimeout()).to.be.null
+      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
+      expect(qw._newTaskListener()).to.be.a('function')
+      expect(qw._expiryTimeouts).to.deep.equal({})
+    })
 
     it('should reset a worker when called with a valid task spec with a timeout', () => {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      var oldTaskNumber = qw._taskNumber();
-      qw.setTaskSpec(th.validTaskSpecWithTimeout);
-      expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-      expect(qw._startState()).to.be.null;
-      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithTimeout.inProgressState);
-      expect(qw._finishedState()).to.be.null;
-      expect(qw._taskTimeout()).to.equal(th.validTaskSpecWithTimeout.timeout);
-      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function');
-      expect(qw._newTaskListener()).to.be.a('function');
-      expect(qw._expiryTimeouts).to.deep.equal({});
-    });
+      const oldTaskNumber = qw._taskNumber()
+      qw.setTaskSpec(th.validTaskSpecWithTimeout)
+      expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+      expect(qw._startState()).to.be.null
+      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithTimeout.inProgressState)
+      expect(qw._finishedState()).to.be.null
+      expect(qw._taskTimeout()).to.equal(th.validTaskSpecWithTimeout.timeout)
+      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
+      expect(qw._newTaskListener()).to.be.a('function')
+      expect(qw._expiryTimeouts).to.deep.equal({})
+    })
 
     it('should reset a worker when called with a valid task spec with everything', () => {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      var oldTaskNumber = qw._taskNumber();
-      qw.setTaskSpec(th.validTaskSpecWithEverything);
-      expect(qw._taskNumber()).to.not.equal(oldTaskNumber);
-      expect(qw._startState()).to.equal(th.validTaskSpecWithEverything.startState);
-      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithEverything.inProgressState);
-      expect(qw._finishedState()).to.equal(th.validTaskSpecWithEverything.finishedState);
-      expect(qw._taskTimeout()).to.equal(th.validTaskSpecWithEverything.timeout);
-      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function');
-      expect(qw._newTaskListener()).to.be.a('function');
-      expect(qw._expiryTimeouts).to.deep.equal({});
-    });
+      const oldTaskNumber = qw._taskNumber()
+      qw.setTaskSpec(th.validTaskSpecWithEverything)
+      expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+      expect(qw._startState()).to.equal(th.validTaskSpecWithEverything.startState)
+      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithEverything.inProgressState)
+      expect(qw._finishedState()).to.equal(th.validTaskSpecWithEverything.finishedState)
+      expect(qw._taskTimeout()).to.equal(th.validTaskSpecWithEverything.timeout)
+      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
+      expect(qw._newTaskListener()).to.be.a('function')
+      expect(qw._expiryTimeouts).to.deep.equal({})
+    })
 
-    it('should not pick up tasks on the queue not for the current task', done => {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      qw.setTaskSpec(th.validBasicTaskSpec);
-      var spy = sinon.spy(qw, '_tryToProcess');
-      tasksRef.once('child_added', () => {
-        try {
-          expect(qw._tryToProcess).to.not.have.been.called;
-          spy.restore();
-          done();
-        } catch (error) {
-          spy.restore();
-          done(error);
-        }
-      });
-      tasksRef.push({ '_state': 'other' }, function(error) {
-        if (error) {
-          return done(error);
-        }
-        return undefined;
-      });
-    });
+    it('should not pick up tasks on the queue not for the current task', () => {
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      sinon.spy(qw, '_tryToProcess')
+      return tasksRef.push({ '_state': 'other' })
+        .then(_ => tasksRef.once('child_added'))
+        .then(_ => {
+          expect(qw._tryToProcess).to.not.have.been.called
+        })
+    })
 
-    it('should pick up tasks on the queue with no "_state" when a task is specified without a startState', done => {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      qw.setTaskSpec(th.validBasicTaskSpec);
-      var spy = sinon.spy(qw, '_tryToProcess');
-      var ref = tasksRef.push();
-      tasksRef.once('child_added', () => {
-        try {
-          expect(qw._tryToProcess).to.have.been.calledOnce;
-          spy.restore();
-          done();
-        } catch (error) {
-          spy.restore();
-          done(error);
-        }
-      });
-      ref.set({ 'foo': 'bar' });
-    });
+    it.only('should pick up tasks on the queue with no "_state" when a task is specified without a startState', () => {
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      sinon.spy(qw, '_tryToProcess')
+      return tasksRef.push( 'foo': 'bar' })
+        .then(_ => tasksRef.once('child_added'))
+        .then({
+          expect(qw._tryToProcess).to.have.been.calledOnce
+        })
+    })
 
-    it('should pick up tasks on the queue with the corresponding "_state" when a task is specifies a startState', done => {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop);
-      qw.setTaskSpec(th.validTaskSpecWithStartState);
-      var spy = sinon.spy(qw, '_tryToProcess');
-      var ref = tasksRef.push();
-      tasksRef.once('child_added', () => {
-        try {
-          expect(qw._tryToProcess).to.have.been.calledOnce;
-          spy.restore();
-          done();
-        } catch (error) {
-          spy.restore();
-          done(error);
-        }
-      });
-      ref.set({ '_state': th.validTaskSpecWithStartState.startState });
-    });
-  });
+    it('should pick up tasks on the queue with the corresponding "_state" when a task is specifies a startState', () => {
+      qw.setTaskSpec(th.validTaskSpecWithStartState)
+      sinon.spy(qw, '_tryToProcess')
+      return tasksRef.push({ '_state': th.validTaskSpecWithStartState.startState })
+        .then(_ => tasksRef.once('child_added'))
+        .then(_ => {
+          expect(qw._tryToProcess).to.have.been.calledOnce
+        })
+    })
+  })
 
   describe('#shutdown', () => {
     let qw
