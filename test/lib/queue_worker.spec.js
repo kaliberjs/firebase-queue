@@ -1102,9 +1102,9 @@ describe('QueueWorker', () => {
     })
 
     afterEach(done => {
-      clock.restore()
       setTimeoutSpy.restore()
       clearTimeoutSpy.restore()
+      clock.restore()
       qw.shutdown()
         .then(_ => tasksRef.set(null))
         .then(done)
@@ -1596,69 +1596,54 @@ describe('QueueWorker', () => {
   });
 
   describe('#shutdown', () => {
-    var qw;
-    var callbackStarted;
-    var callbackComplete;
+    let qw
+    let callbackStarted
+    let callbackComplete
 
-    beforeEach(() => {
-      callbackStarted = false;
-      callbackComplete = false;
+    beforeEach((done) => {
+      callbackStarted = false
+      callbackComplete = false
       qw = new th.QueueWorker(tasksRef, '0', true, false, function(data, progress, resolve) {
-        callbackStarted = true;
+        callbackStarted = true
         setTimeout(() => {
-          callbackComplete = true;
-          resolve();
-        }, 500);
-      });
-    });
+          callbackComplete = true
+          resolve()
+        }, 500)
+      })
 
-    afterEach(() => {
-      qw.setTaskSpec();
-    });
+      tasksRef.push().set(null).then(done)
+    })
 
     it('should shutdown a worker not processing any tasks', () => {
       return qw.shutdown().should.eventually.be.fulfilled;
-    });
+    })
 
-    it('should shutdown a worker after the current task has finished', done => {
-      qw.setTaskSpec(th.validBasicTaskSpec);
-      tasksRef.push({
+    it('should shutdown a worker after the current task has finished', () => {
+      expect(callbackStarted).to.be.false
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      return tasksRef.push({
         foo: 'bar'
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        return setTimeout(() => {
-          try {
-            expect(callbackStarted).to.be.true;
-            expect(callbackComplete).to.be.false;
-            qw.shutdown().then(() => {
-              expect(callbackComplete).to.be.true;
-            }).should.eventually.be.fulfilled.notify(done);
-          } catch (errorB) {
-            done(errorB);
-          }
-        }, 500);
-      });
-    });
+      }).then(_ => new Promise(r => setTimeout(r, 400)))
+        .then(_ => {
+          expect(callbackStarted).to.be.true
+          expect(callbackComplete).to.be.false
+          return qw.shutdown()
+        })
+        .then(_ => {
+          expect(callbackComplete).to.be.true;
+        })
+    })
 
-    it('should return the same shutdown promise if shutdown is called twice', done => {
-      qw.setTaskSpec(th.validBasicTaskSpec);
-      tasksRef.push({
+    it('should return the same shutdown promise if shutdown is called twice', () => {
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      return tasksRef.push({
         foo: 'bar'
-      }, function(errorA) {
-        if (errorA) {
-          return done(errorA);
-        }
-        try {
-          var firstPromise = qw.shutdown();
-          var secondPromise = qw.shutdown();
-          expect(firstPromise).to.deep.equal(secondPromise);
-          return done();
-        } catch (errorB) {
-          return done(errorB);
-        }
-      });
-    });
-  });
-});
+      }).then(_ => {
+          const firstPromise = qw.shutdown()
+          const secondPromise = qw.shutdown()
+          expect(firstPromise).to.deep.equal(secondPromise)
+          return firstPromise
+      })
+    })
+  })
+})
