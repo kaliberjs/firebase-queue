@@ -208,11 +208,10 @@ describe('QueueWorker', () => {
         .then(done)
     })
 
-    function resolve({ task, taskNumber = qw._taskNumber(), newTask, currentTask }) {
+    function resolve({ task, taskNumber = qw._taskNumber(), newTask }) {
       testRef = tasksRef.push()
-      const currentTaskRef = currentTask === undefined ? testRef : currentTask
       return testRef.set(task)
-        .then(_ => qw._resolve(currentTaskRef, taskNumber)(newTask))
+        .then(_ => qw._resolve(testRef, taskNumber)(newTask))
         .then(_ => testRef.once('value'))
     }
 
@@ -421,23 +420,6 @@ describe('QueueWorker', () => {
         .then(done).catch(done)
     })
 
-    // If this happens the taskNumber will have changed too (next test) 
-    //
-    // it('should not resolve a task if it is no longer being processed', done => {
-    //   qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-    //   const task = {
-    //     '_state': th.validTaskSpecWithFinishedState.inProgressState,
-    //     '_owner': qw._currentId()
-    //   }
-    //   resolve({
-    //     task,
-    //     currentTask: null
-    //   }).then(snapshot => {
-    //       expect(snapshot.val()).to.deep.equal(task)
-    //     })
-    //     .then(done).catch(done)
-    // })
-
     it('should not resolve a task if a new task is being processed', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       const task = {
@@ -469,11 +451,10 @@ describe('QueueWorker', () => {
         .then(done)
     })
 
-    function reject({ task, taskNumber = qw._taskNumber(), error, currentTask }) {
+    function reject({ task, taskNumber = qw._taskNumber(), error }) {
       testRef = tasksRef.push()
-      const currentTaskRef = currentTask === undefined ? testRef : currentTask
       return testRef.set(task)
-        .then(_ => qw._reject(currentTaskRef, taskNumber)(error))
+        .then(_ => qw._reject(testRef, taskNumber)(error))
         .then(_ => testRef.once('value'))
     }
 
@@ -714,21 +695,6 @@ describe('QueueWorker', () => {
         .then(done).catch(done)
     })
 
-    // If this happens the taskNumber will have changed too (next test) 
-    //
-    // it('should not reject a task if it is no longer being processed', done => {
-    //   qw.setTaskSpec(th.validTaskSpecWithFinishedState)
-    //   const task = {
-    //     '_state': th.validTaskSpecWithFinishedState.inProgressState,
-    //     '_owner': qw._currentId()
-    //   }
-    //   reject({ task, currentTask: null })
-    //     .then(snapshot => {
-    //       expect(snapshot.val()).to.deep.equal(task)
-    //     })
-    //     .then(done).catch(done)
-    // })
-
     it('should not reject a task if a new task is being processed', done => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       const task = {
@@ -758,11 +724,10 @@ describe('QueueWorker', () => {
         .then(done)
     })
 
-    function updateProgress({ task, taskNumber = qw._taskNumber(), progress, currentTask }) {
+    function updateProgress({ task, taskNumber = qw._taskNumber(), progress }) {
       testRef = tasksRef.push()
-      const currentTaskRef = currentTask === undefined ? testRef : currentTask
       return testRef.set(task)
-        .then(_ => qw._updateProgress(currentTaskRef, taskNumber)(progress))
+        .then(_ => qw._updateProgress(testRef, taskNumber)(progress))
     }
 
     invalidPercentageValues.forEach(invalidPercentageValue => 
@@ -814,20 +779,6 @@ describe('QueueWorker', () => {
         progress: 10
       }).should.eventually.be.fulfilled
     })
-
-    // If this happens the taskNumber will have changed too (next test) 
-    //
-    // it('should not update the progress of a task if the worker is no longer processing it', () => {
-    //   qw.setTaskSpec(th.validBasicTaskSpec)
-    //   return updateProgress({
-    //     task: { 
-    //       '_state': th.validBasicTaskSpec.inProgressState, 
-    //       '_owner': qw._currentId() 
-    //     },
-    //     progress: 10,
-    //     currentTask: null
-    //   }).should.eventually.be.rejectedWith('Can\'t update progress - no task currently being processed')
-    // })
 
     it('should not update the progress of a task if a new task is being processed', () => {
       qw.setTaskSpec(th.validBasicTaskSpec)
