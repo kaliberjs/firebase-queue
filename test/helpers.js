@@ -65,5 +65,22 @@ module.exports = function() {
     retries: 4
   };
 
+  this.waitForState = function waitForState(ref, state) {
+    return new Promise(resolve => {
+      const handler = ref.on('value', snapshot => {
+        if (snapshot.exists() && snapshot.val()._state === state) {
+          ref.off('value', handler)
+          resolve(snapshot)
+        }
+      })
+    })
+  }
+
+  this.echo = function echo(data, _, resolve) { resolve(data) }
+
+  this.timeout = function timeout(time) { 
+    return new Promise(r => setTimeout(r, time, 'timeout')) 
+  }
+
   return this;
 };

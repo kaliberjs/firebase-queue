@@ -353,7 +353,6 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
             
             let nextTaskRef = null
             taskSnap.forEach(childSnap => { nextTaskRef = childSnap.ref })
-
             return nextTaskRef.transaction(
               task => {
                 /* istanbul ignore if */
@@ -385,13 +384,14 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
               false
             )
           })
-          .then(({ committed, snapshot }) => {
-
+          .then(result => {
+            if (!result) return
+            const { committed, snapshot } = result
             if (committed && snapshot.exists() && snapshot.child('_state').val() !== errorState) {
               // Worker has become busy while the transaction was processing
               // so give up the task for now so another worker can claim it
               /* istanbul ignore if */
-              if (busy) _resetTask(nextTaskRef, true)
+              if (busy) _resetTask(snapshot.ref, true)
               else {
                 busy = true
                 taskNumber += 1

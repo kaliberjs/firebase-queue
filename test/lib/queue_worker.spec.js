@@ -1322,8 +1322,12 @@ describe('QueueWorker', () => {
     })
   })
 
-  describe.only('#setTaskSpec', () => {
+  describe('#setTaskSpec', () => {
     let qw
+
+    before(done => {
+      tasksRef.set(null).then(done)
+    })
 
     beforeEach(() => {
       qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop)
@@ -1456,22 +1460,36 @@ describe('QueueWorker', () => {
       expect(qw._expiryTimeouts).to.deep.equal({})
     })
 
-    it('should not pick up tasks on the queue not for the current task', () => {
-      qw.setTaskSpec(th.validBasicTaskSpec)
-      sinon.spy(qw, '_tryToProcess')
-      return tasksRef.push({ '_state': 'other' })
-        .then(_ => tasksRef.once('child_added'))
-        .then(_ => {
-          expect(qw._tryToProcess).to.not.have.been.called
-        })
+    it('should not pick up tasks on the queue not for the current worker', () => {
+      // This current version of the spec shows that it causes the worker to stall.
+      // A different implementation of the worker might make this spec succeed,
+      // in that case this spec should be written differently:
+      //
+      // Make 2 queues where one contains [b1, b2] and the other [c, c, c, b3]
+      // Both queues respond to `b` tasks. If the implementation is correct, b3
+      // will be faster, if incorrect b2 will be faster
+
+      qw = new th.QueueWorker(tasksRef, '0', true, false, th.echo)
+      return Promise.all([
+        tasksRef.push({ '_state': '1.start' }),
+        tasksRef.push({ '_state': '2.start', test: 'check' })
+      ]).then(([_, ref]) => {
+        qw.setTaskSpec({ startState: '2.start', inProgressState: 'in_progress', finishedState: 'done'})
+        return Promise.race([
+          th.waitForState(ref, 'done').then(snapshot => snapshot.val()),
+          th.timeout(1000)
+        ])
+      }).then(val => {
+        expect(val).to.have.a.property('test').that.equals('check')
+      })
     })
 
-    it.only('should pick up tasks on the queue with no "_state" when a task is specified without a startState', () => {
+    it('should pick up tasks on the queue with no "_state" when a task is specified without a startState', () => {
       qw.setTaskSpec(th.validBasicTaskSpec)
       sinon.spy(qw, '_tryToProcess')
-      return tasksRef.push( 'foo': 'bar' })
+      return tasksRef.push({ 'foo': 'bar' })
         .then(_ => tasksRef.once('child_added'))
-        .then({
+        .then(_ => {
           expect(qw._tryToProcess).to.have.been.calledOnce
         })
     })
