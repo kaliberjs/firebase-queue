@@ -426,7 +426,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
                 Promise.race([resolvePromise, rejectPromise])
                   .then(_ => {
                     busy = false
-                    self._tryToProcess()
+                    _tryToProcess()
                   })
                   .catch(_ => {
                     // the original implementation did not handle this situation
@@ -444,7 +444,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
           })
           .catch(_ => {
             // errored while attempting to claim a new task, retrying
-            if (++retries < MAX_TRANSACTION_ATTEMPTS) return setImmediate(self._tryToProcess.bind(self), deferred)
+            if (++retries < MAX_TRANSACTION_ATTEMPTS) return setImmediate(_tryToProcess, deferred)
             else return deferred.reject(new Error('errored while attempting to claim a new task too many times, no longer retrying'))
           })
       }
