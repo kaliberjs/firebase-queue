@@ -558,7 +558,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
     // We can report success immediately if we're not busy
     if (!busy) {
-      self.setTaskSpec(null);
+      setTaskSpec(null);
       // finished shutdown
       shutdownDeferred.resolve()
     }
