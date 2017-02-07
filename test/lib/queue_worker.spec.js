@@ -1485,22 +1485,27 @@ describe('QueueWorker', () => {
     })
 
     it('should pick up tasks on the queue with no "_state" when a task is specified without a startState', () => {
+      let result = null
+      qw = new th.QueueWorker(tasksRef, '0', true, false, th.withData(data => { result = data }))
       qw.setTaskSpec(th.validBasicTaskSpec)
-      sinon.spy(qw, '_tryToProcess')
-      return tasksRef.push({ 'foo': 'bar' })
-        .then(_ => tasksRef.once('child_added'))
+      const task = { foo: 'bar' }
+      return tasksRef.push(task)
+        .then(_ => th.waitFor(() => !!result, 500))
         .then(_ => {
-          expect(qw._tryToProcess).to.have.been.calledOnce
+          expect(result).to.deep.equal(task)
         })
     })
 
     it('should pick up tasks on the queue with the corresponding "_state" when a task is specifies a startState', () => {
+      let result = null
+      qw = new th.QueueWorker(tasksRef, '0', true, false, th.withData(data => { result = data }))
       qw.setTaskSpec(th.validTaskSpecWithStartState)
-      sinon.spy(qw, '_tryToProcess')
-      return tasksRef.push({ '_state': th.validTaskSpecWithStartState.startState })
-        .then(_ => tasksRef.once('child_added'))
+      const task = { foo: 'bar', '_state': th.validTaskSpecWithStartState.startState }
+      return tasksRef.push(task)
+        .then(_ => th.waitFor(() => !!result, 500))
         .then(_ => {
-          expect(qw._tryToProcess).to.have.been.calledOnce
+          delete task._state
+          expect(result).to.deep.equal(task)
         })
     })
   })

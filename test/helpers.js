@@ -76,9 +76,28 @@ module.exports = function() {
     })
   }
 
+  this.waitFor = function waitFor(check, time) {
+    return Promise.race([
+      new Promise(resolve => {
+        performCheck()
+        function performCheck() {
+          if (check()) resolve()
+          else setTimeout(performCheck, 100)
+        }
+      }),
+      timeout(time)
+    ])
+  }
+
   this.echo = function echo(data, _, resolve) { resolve(data) }
 
-  this.timeout = function timeout(time) { 
+  this.withData = function withData(callback) {
+    return (data, _, resolve) => { callback(data); resolve() }
+  }
+
+  this.timeout = timeout
+
+  function timeout(time) { 
     return new Promise(r => setTimeout(r, time, 'timeout')) 
   }
 
