@@ -13,7 +13,8 @@ chai
 const { expect } = chai
 
 const th = new Helpers()
-const tasksRef = th.testRef.child('tasks')
+const { withTasksRef, withEchoQueueWorkerFor, validTaskSpecWithFinishedState, chain, pushTasks, waitForState, waitForStates } = th
+const tasksRef = th.tasksRef
 const _tasksRef = tasksRef
 
 const nonBooleans             = ['', 'foo', NaN, Infinity,              0, 1, ['foo', 'bar'], { foo: 'bar' }, null,            { foo: { bar: { baz: true } } }, _.noop                ]
@@ -76,6 +77,24 @@ describe('QueueWorker', () => {
     it('should not create a QueueWorker with a non-boolean suppressStack option specified', () =>
       nonBooleans.forEach(nonBooleanObject =>
         expect(() => initialize({ suppressStack: nonBooleanObject })).to.throw('Invalid suppressStack option.')
+      )
+    )
+  })
+
+  describe('# Resetting tasks', () => {
+
+    it('should reset a task when another task is being processed', () =>
+      withTasksRef(tasksRef => 
+        withEchoQueueWorkerFor(tasksRef, qw => {
+          qw.setTaskSpec(validTaskSpecWithFinishedState)
+          const { startState, inProgressState, finishedState } = validTaskSpecWithFinishedState
+          return chain(
+            pushTasks(tasksRef, { task: 1 }, { task: 2 }),
+            ([task1, task2]) => waitForState([task1, task2], inProgressState),
+            ([task1, task2]) => waitForStates([task1, finishedState], [task2, startState]),
+            ([_    , task2]) => expect(task2.val()).to.have.property('task').that.equals(2)
+          )
+        })
       )
     )
   })
