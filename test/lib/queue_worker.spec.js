@@ -14,6 +14,7 @@ const { expect } = chai
 
 const th = new Helpers()
 const tasksRef = th.testRef.child('tasks')
+const _tasksRef = tasksRef
 
 const nonBooleans             = ['', 'foo', NaN, Infinity,              0, 1, ['foo', 'bar'], { foo: 'bar' }, null,            { foo: { bar: { baz: true } } }, _.noop                ]
 const nonStrings              = [           NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null,            { foo: { bar: { baz: true } } }, _.noop                ]
@@ -29,7 +30,15 @@ const nonPositiveIntegersWithout0 = nonPositiveIntegers.filter(x => x !== 0)
 function now() { return new Date().getTime() }
 
 describe('QueueWorker', () => {
+  
   describe('initialize', () => {
+
+    function initialize({ tasksRef = _tasksRef, processId = '0', sanitize = true, suppressStack = false, processingFunction = _.noop } = {}) {
+      return new th.QueueWorker(tasksRef, processId, sanitize, suppressStack, processingFunction)
+    }
+
+    // we should probably replace the `throws(strings)` with `throws(CONSTANT)`
+
     it('should not create a QueueWorker with no parameters', () => 
       expect(() => new th.QueueWorker()).to.throw('No tasks reference provided.')
     )
@@ -44,29 +53,29 @@ describe('QueueWorker', () => {
 
     it('should not create a QueueWorker with a tasksRef, processId, sanitize option and an invalid processing function', () => 
       nonFunctions.forEach(nonFunctionObject =>
-        expect(() => new th.QueueWorker(tasksRef, '0', true, false, nonFunctionObject)).to.throw('No processing function provided.')
+        expect(() => initialize({ processingFunction: nonFunctionObject })).to.throw('No processing function provided.')
       )
     )
 
     it('should create a QueueWorker with a tasksRef, processId, sanitize option and a processing function', () =>
-      new th.QueueWorker(tasksRef, '0', true, false, _.noop)
+      expect(() => initialize()).to.not.throw(Error)
     )
 
     it('should not create a QueueWorker with a non-string processId specified', () => 
       nonStrings.forEach(nonStringObject =>
-        expect(() => new th.QueueWorker(tasksRef, nonStringObject, true, false, _.noop)).to.throw('Invalid process ID provided.')
+        expect(() => initialize({ processId: nonStringObject })).to.throw('Invalid process ID provided.')
       )
     )
 
     it('should not create a QueueWorker with a non-boolean sanitize option specified', () =>
       nonBooleans.forEach(nonBooleanObject =>
-        expect(() => new th.QueueWorker(tasksRef, '0', nonBooleanObject, false, _.noop)).to.throw('Invalid sanitize option.')
+        expect(() => initialize({ sanitize: nonBooleanObject })).to.throw('Invalid sanitize option.')
       )
     )
 
     it('should not create a QueueWorker with a non-boolean suppressStack option specified', () =>
       nonBooleans.forEach(nonBooleanObject =>
-        expect(() => new th.QueueWorker(tasksRef, '0', true, nonBooleanObject, _.noop)).to.throw('Invalid suppressStack option.')
+        expect(() => initialize({ suppressStack: nonBooleanObject })).to.throw('Invalid suppressStack option.')
       )
     )
   })
@@ -93,9 +102,9 @@ describe('QueueWorker', () => {
         .then(_ => testRef.once('value'))
     }
 
-    it('should reset a task that is currently in progress', done => {
+    it('should reset a task that is currently in progress', () => {
       qw.setTaskSpec(th.validBasicTaskSpec)
-      resetTask({ 
+      return resetTask({ 
         forceReset: true,
         task: {
           '_state': th.validBasicTaskSpec.inProgressState,
@@ -108,40 +117,37 @@ describe('QueueWorker', () => {
           expect(task).to.have.all.keys(['_state_changed'])
           expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
         })
-        .then(done).catch(done)
     })
 
-    it('should not reset a task if `forceReset` set but no longer owned by current worker', done => {
+    it('should not reset a task if `forceReset` set but no longer owned by current worker', () => {
       qw.setTaskSpec(th.validBasicTaskSpec)
       const task = {
         '_state': th.validBasicTaskSpec.inProgressState,
         '_state_changed': now(),
         '_owner': 'someone-else'
       }
-      resetTask({ task, forceReset: true })
+      return resetTask({ task, forceReset: true })
         .then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done).catch(done)
     })
 
-    it('should not reset a task if `forceReset` not set and it is has changed state recently', done => {
+    it('should not reset a task if `forceReset` not set and it is has changed state recently', () => {
       qw.setTaskSpec(th.validBasicTaskSpec);
       const task = {
         '_state': th.validBasicTaskSpec.inProgressState,
         '_state_changed': now(),
         '_owner': 'someone'
       }
-      resetTask({ task, forceReset: false })
+      return resetTask({ task, forceReset: false })
         .then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done).catch(done)
     })
 
-    it('should reset a task that is currently in progress that has timed out', done => {
+    it('should reset a task that is currently in progress that has timed out', () => {
       qw.setTaskSpec(th.validTaskSpecWithTimeout)
-      resetTask({
+      return resetTask({
         forceReset: false,
         task: {
           '_state': th.validBasicTaskSpec.inProgressState,
@@ -154,43 +160,39 @@ describe('QueueWorker', () => {
           expect(task).to.have.all.keys(['_state_changed'])
           expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
         })
-        .then(done).catch(done)
     })
 
-    it('should not reset a task that no longer exists', done => {
+    it('should not reset a task that no longer exists', () => {
       qw.setTaskSpec(th.validBasicTaskSpec)
-      resetTask({ task: null, forceReset: true })
+      return resetTask({ task: null, forceReset: true })
         .then(snapshot => {
           expect(snapshot.val()).to.be.null
         })
-        .then(done).catch(done)
     })  
 
-    it('should not reset a task if it is has already changed state', done => {
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
+    it('should not reset a task if it is has already changed state', () => {
+      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       const task = {
         '_state': th.validTaskSpecWithFinishedState.finishedState,
         '_state_changed': now(),
         '_owner': qw._currentId()
       }
-      resetTask({ task, forceReset: true })
+      return resetTask({ task, forceReset: true })
         .then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done).catch(done)
     })
 
-    it('should not reset a task if it is has no state', done => {
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState);
+    it('should not reset a task if it is has no state', () => {
+      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       const task = {
         '_state_changed': now(),
         '_owner': qw._currentId()
       }
-      resetTask({ task, forceReset: true })
+      return resetTask({ task, forceReset: true })
         .then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done).catch(done)
     })
   })
 
@@ -216,9 +218,9 @@ describe('QueueWorker', () => {
         .then(_ => testRef.once('value'))
     }
 
-    it('should resolve a task owned by the current worker and remove it when no finishedState is specified', done => {
+    it('should resolve a task owned by the current worker and remove it when no finishedState is specified', () => {
       qw.setTaskSpec(th.validBasicTaskSpec)
-      resolve({
+      return resolve({
         task: {
           '_state': th.validBasicTaskSpec.inProgressState,
           '_owner': qw._currentId()
@@ -226,12 +228,11 @@ describe('QueueWorker', () => {
       }).then(snapshot => {
           expect(snapshot.val()).to.be.null
         })
-        .then(done).catch(done)
     })
 
-    it('should resolve a task owned by the current worker and change the state when a finishedState is specified and no object passed', done => {
+    it('should resolve a task owned by the current worker and change the state when a finishedState is specified and no object passed', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
-      resolve({
+      return resolve({
         task: {
           '_state': th.validTaskSpecWithFinishedState.inProgressState,
           '_owner': qw._currentId()
@@ -243,13 +244,12 @@ describe('QueueWorker', () => {
           expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState)
           expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
         })
-        .then(done).catch(done)
     })
 
     nonPlainObjects.forEach(nonPlainObject => 
-      it('should resolve an task owned by the current worker and change the state when a finishedState is specified and an invalid object ' + nonPlainObject + ' passed', done => {
+      it('should resolve an task owned by the current worker and change the state when a finishedState is specified and an invalid object ' + nonPlainObject + ' passed', () => {
         qw.setTaskSpec(th.validTaskSpecWithFinishedState)
-        resolve({
+        return resolve({
           task: {
             '_state': th.validTaskSpecWithFinishedState.inProgressState,
             '_owner': qw._currentId()
@@ -262,13 +262,12 @@ describe('QueueWorker', () => {
             expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState)
             expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
           })
-          .then(done).catch(done)
       })
     )
 
-    it('should resolve a task owned by the current worker and change the state when a finishedState is specified and a plain object passed', done => {
+    it('should resolve a task owned by the current worker and change the state when a finishedState is specified and a plain object passed', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
-      resolve({
+      return resolve({
         task: {
           '_state': th.validTaskSpecWithFinishedState.inProgressState,
           '_owner': qw._currentId()
@@ -282,12 +281,11 @@ describe('QueueWorker', () => {
           expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
           expect(task.foo).to.equal('bar')
         })
-        .then(done).catch(done)
     })
 
-    it('should resolve a task owned by the current worker and change the state to a provided valid string _new_state', done => {
+    it('should resolve a task owned by the current worker and change the state to a provided valid string _new_state', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      resolve({
+      return resolve({
         task: {
           '_state': th.validTaskSpecWithFinishedState.inProgressState,
           '_owner': qw._currentId()
@@ -305,12 +303,11 @@ describe('QueueWorker', () => {
           expect(task.foo).to.equal('bar')
           // _new_state should be gone right?
         })
-        .then(done).catch(done)
     })
 
-    it('should resolve a task owned by the current worker and change the state to a provided valid null _new_state', done => {
+    it('should resolve a task owned by the current worker and change the state to a provided valid null _new_state', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState);
-      resolve({
+      return resolve({
         task: {
           '_state': th.validTaskSpecWithFinishedState.inProgressState,
           '_owner': qw._currentId()
@@ -326,12 +323,11 @@ describe('QueueWorker', () => {
           expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
           expect(task.foo).to.equal('bar')
         })
-        .then(done).catch(done)
     })
 
-    it('should resolve a task owned by the current worker and remove the task when provided _new_state = false', done => {
+    it('should resolve a task owned by the current worker and remove the task when provided _new_state = false', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
-      resolve({
+      return resolve({
         task: {
           '_state': th.validTaskSpecWithFinishedState.inProgressState,
           '_owner': qw._currentId()
@@ -343,12 +339,11 @@ describe('QueueWorker', () => {
       }).then(snapshot => {
           expect(snapshot.val()).to.be.null
         })
-        .then(done).catch(done)
     })
 
-    it('should resolve a task owned by the current worker and change the state to finishedState when provided an invalid _new_state', done => {
+    it('should resolve a task owned by the current worker and change the state to finishedState when provided an invalid _new_state', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
-      resolve({
+      return resolve({
         task: {
           '_state': th.validTaskSpecWithFinishedState.inProgressState,
           '_owner': qw._currentId()
@@ -367,73 +362,67 @@ describe('QueueWorker', () => {
           expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
           expect(task.foo).to.equal('bar')
         })
-        .then(done).catch(done)
     })
 
-    it('should not resolve a task that no longer exists', done => {
+    it('should not resolve a task that no longer exists', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
-      resolve({
+      return resolve({
         task: null
       }).then(snapshot => {
           expect(snapshot.val()).to.be.null
         })
-        .then(done).catch(done)
     })
 
-    it('should not resolve a task if it is no longer owned by the current worker', done => {
+    it('should not resolve a task if it is no longer owned by the current worker', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       const task = {
         '_state': th.validTaskSpecWithFinishedState.inProgressState,
         '_owner': 'other_worker'
       };
-      resolve({
+      return resolve({
         task
       }).then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done).catch(done)
     })
 
-    it('should not resolve a task if it is has already changed state', done => {
+    it('should not resolve a task if it is has already changed state', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       const task = {
         '_state': th.validTaskSpecWithFinishedState.finishedState,
         '_owner': qw._currentId()
       };
-      resolve({
+      return resolve({
         task
       }).then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done).catch(done)
     })
 
-    it('should not resolve a task if it is has no state', done => {
+    it('should not resolve a task if it is has no state', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       const task = {
         '_owner': qw._processId + ':' + qw._taskNumber()
       }
-      resolve({
+      return resolve({
         task
       }).then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done).catch(done)
     })
 
-    it('should not resolve a task if a new task is being processed', done => {
+    it('should not resolve a task if a new task is being processed', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       const task = {
         '_state': th.validTaskSpecWithFinishedState.inProgressState,
         '_owner': qw._currentId()
       }
-      resolve({
+      return resolve({
         taskNumber: qw._taskNumber() + 1,
         task
       }).then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done).catch(done)
     })
   })
 
@@ -459,9 +448,9 @@ describe('QueueWorker', () => {
         .then(_ => testRef.once('value'))
     }
 
-    it('should reject a task owned by the current worker', done => {
+    it('should reject a task owned by the current worker', () => {
       qw.setTaskSpec(th.validBasicTaskSpec)
-      reject({
+      return reject({
         task: {
           '_state': th.validBasicTaskSpec.inProgressState,
           '_owner': qw._currentId(),
@@ -477,12 +466,11 @@ describe('QueueWorker', () => {
           expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
           expect(task._error_details.attempts).to.equal(1)
         })
-        .then(done).catch(done)
     })
 
-    it('should reject a task owned by the current worker and reset if more retries are specified', done => {
+    it('should reject a task owned by the current worker and reset if more retries are specified', () => {
       qw.setTaskSpec(th.validTaskSpecWithRetries)
-      reject({
+      return reject({
         task: {
           '_state': th.validTaskSpecWithRetries.inProgressState,
           '_owner': qw._currentId(),
@@ -501,12 +489,11 @@ describe('QueueWorker', () => {
           expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
           expect(task._error_details.attempts).to.equal(2)
         })
-        .then(done).catch(done)
     })
 
-    it('should reject a task owned by the current worker and reset the attempts count if chaning error handlers', done => {
+    it('should reject a task owned by the current worker and reset the attempts count if chaning error handlers', () => {
       qw.setTaskSpec(th.validTaskSpecWithRetries)
-      reject({
+      return reject({
         task: {
           '_state': th.validTaskSpecWithRetries.inProgressState,
           '_owner': qw._currentId(),
@@ -525,12 +512,11 @@ describe('QueueWorker', () => {
           expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
           expect(task._error_details.attempts).to.equal(1)
         })
-        .then(done).catch(done)
     })
 
-    it('should reject a task owned by the current worker and a non-standard error state', done => {
+    it('should reject a task owned by the current worker and a non-standard error state', () => {
       qw.setTaskSpec(th.validTaskSpecWithErrorState)
-      reject({
+      return reject({
         task: {
           '_state': th.validBasicTaskSpec.inProgressState,
           '_owner': qw._currentId(),
@@ -546,13 +532,12 @@ describe('QueueWorker', () => {
           expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
           expect(task._error_details.attempts).to.equal(1)
         })
-        .then(done).catch(done)
     })
 
     nonStringsWithoutNull.forEach(nonStringObject =>
-      it('should reject a task owned by the current worker and convert the error to a string if not a string: ' + nonStringObject, done => {
+      it('should reject a task owned by the current worker and convert the error to a string if not a string: ' + nonStringObject, () => {
         qw.setTaskSpec(th.validBasicTaskSpec)
-        reject({
+        return reject({
           task: {
             '_state': th.validBasicTaskSpec.inProgressState,
             '_owner': qw._currentId(),
@@ -570,14 +555,13 @@ describe('QueueWorker', () => {
             expect(task._error_details.error).to.equal(nonStringObject.toString())
             expect(task._error_details.attempts).to.equal(1)
           })
-          .then(done).catch(done)
       })
     )
 
-    it('should reject a task owned by the current worker and append the error string to the _error_details', done => {
+    it('should reject a task owned by the current worker and append the error string to the _error_details', () => {
       qw.setTaskSpec(th.validBasicTaskSpec)
       const error = 'My error message'
-      reject({
+      return reject({
         task: {
           '_state': th.validBasicTaskSpec.inProgressState,
           '_owner': qw._currentId(),
@@ -595,13 +579,12 @@ describe('QueueWorker', () => {
           expect(task._error_details.attempts).to.equal(1)
           expect(task._error_details.error).to.equal(error)
         })
-        .then(done).catch(done)
     })
 
-    it('should reject a task owned by the current worker and append the error string and stack to the _error_details', done => {
+    it('should reject a task owned by the current worker and append the error string and stack to the _error_details', () => {
       qw.setTaskSpec(th.validBasicTaskSpec)
       const error = new Error('My error message')
-      reject({
+      return reject({
         task: {
           '_state': th.validBasicTaskSpec.inProgressState,
           '_owner': qw._currentId(),
@@ -620,14 +603,13 @@ describe('QueueWorker', () => {
           expect(task._error_details.error).to.equal(error.message)
           expect(task._error_details.error_stack).to.be.a.string
         })
-        .then(done).catch(done)
     })
 
-    it('should reject a task owned by the current worker and append the error string to the _error_details', done => {
+    it('should reject a task owned by the current worker and append the error string to the _error_details', () => {
       qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, true, _.noop)
       qw.setTaskSpec(th.validBasicTaskSpec)
       const error = new Error('My error message')
-      reject({
+      return reject({
         task: {
           '_state': th.validBasicTaskSpec.inProgressState,
           '_owner': qw._currentId(),
@@ -645,68 +627,62 @@ describe('QueueWorker', () => {
           expect(task._error_details.attempts).to.equal(1)
           expect(task._error_details.error).to.equal(error.message)
         })
-        .then(done).catch(done)
     })
 
-    it('should not reject a task that no longer exists', done => {
+    it('should not reject a task that no longer exists', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
-      reject({ task: null })
+      return reject({ task: null })
         .then(snapshot => {
           expect(snapshot.val()).to.be.null
         })
-        .then(done).catch(done)
     })
 
-    it('should not reject a task if it is no longer owned by the current worker', done => {
+    it('should not reject a task if it is no longer owned by the current worker', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState);
       const task = {
         '_state': th.validTaskSpecWithFinishedState.inProgressState,
         '_owner': 'other_worker'
       }
-      reject({ task })
+      return reject({ task })
         .then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done).catch(done)
     })
 
-    it('should not reject a task if it is has already changed state', done => {
+    it('should not reject a task if it is has already changed state', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       const task = {
         '_state': th.validTaskSpecWithFinishedState.finishedState,
         '_owner': qw._currentId(),
         '_progress': 0
       }
-      reject({ task })
+      return reject({ task })
         .then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done).catch(done)
     })
 
-    it('should not reject a task if it is has no state', done => {
+    it('should not reject a task if it is has no state', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       const task = {
         '_owner': qw._currentId()
       }
-      reject({ task })
+      return reject({ task })
         .then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done).catch(done)
     })
 
-    it('should not reject a task if a new task is being processed', done => {
+    it('should not reject a task if a new task is being processed', () => {
       qw.setTaskSpec(th.validTaskSpecWithFinishedState)
       const task = {
         '_state': th.validTaskSpecWithFinishedState.inProgressState,
         '_owner': qw._currentId()
       }
-      reject({ task, taskNumber: qw._taskNumber() + 1 })
+      return reject({ task, taskNumber: qw._taskNumber() + 1 })
         .then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
         })
-        .then(done).catch(done)
     })
   })
 
@@ -945,7 +921,7 @@ describe('QueueWorker', () => {
       qw._startState(th.validTaskSpecWithStartState.startState)
       qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
       qw._newTaskRef(tasksRef)
-      qw._tryToProcess().then(_ => {
+      return qw._tryToProcess().then(_ => {
         expect(qw._currentTaskRef()).to.be.null
       })
     })
