@@ -82,29 +82,31 @@ describe('QueueWorker', () => {
     )
   })
 
-  describe.only('# Resetting tasks', () => {
+  describe('# Resetting tasks', () => {
 
-    it('should reset a task when another task is being processed', () =>
-      withTasksRef(tasksRef => 
-        withEchoQueueWorkerFor(tasksRef, qw => {
-          qw.setTaskSpec(validTaskSpecWithFinishedState)
-          const { startState, inProgressState, finishedState } = validTaskSpecWithFinishedState
-          return chain(
-            pushTasks(tasksRef, { task: 1 }, { task: 2 }),
-            ([task1, task2]) => waitForState([task1, task2], inProgressState),
-            ([task1, task2]) => waitForStates([task1, finishedState], [task2, startState]),
-            ([_    , task2]) => {
-              const task = task2.val()
-              expect(task).to.not.have.property('_owner')
-              expect(task).to.not.have.property('_progress')
-              expect(task).to.not.have.property('_state')
-              expect(task).to.have.property('task').that.equals(2)
-              expect(task).to.have.property('_state_changed').that.is.closeTo(serverNow(), 250)
-            }
-          )
-        })
+    describe('Two situations where a task is reset when not timed out', () => {
+
+      it('should reset a task when another task is currently being processed', () =>
+        withTasksRef(tasksRef => 
+          withEchoQueueWorkerFor(tasksRef, qw => {
+            qw.setTaskSpec(validTaskSpecWithFinishedState)
+            const { startState, inProgressState, finishedState } = validTaskSpecWithFinishedState
+            return chain(
+              pushTasks(tasksRef, { task: 1 }, { task: 2 }),
+              ([task1, task2]) => waitForState([task1, task2], inProgressState),
+              ([task1, task2]) => waitForStates([task1, finishedState], [task2, startState]),
+              ([_    , task2]) => {
+                const task = task2.val()
+                expect(task).to.not.have.any.keys('_owner', '_progress', '_state')
+                expect(task).to.have.property('task').that.equals(2)
+                expect(task).to.have.property('_state_changed').that.is.closeTo(serverNow(), 250)
+              }
+            )
+          })
+        )
       )
-    )
+
+    })
   })
 
   describe('#_resetTask', () => {

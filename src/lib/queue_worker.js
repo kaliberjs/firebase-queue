@@ -51,10 +51,10 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   const owners = {}
 
   let processingTasksRef = null
-  let currentTaskRef = null
+  let currentTaskRef = null // this can be removed as soon as we have converted the _tryToProcess unit tests
   let newTaskRef = null
 
-  let currentTaskListener = null
+  let stopWatchingOwnerAndReset = null
   let newTaskListener = null
   let processingTaskAddedListener = null
   let processingTaskRemovedListener = null
@@ -396,18 +396,10 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
                 busy = true
                 taskNumber += 1
 
-                currentTaskRef = snapshot.ref
-                currentTaskListener = currentTaskRef
-                    .child('_owner').on('value', ownerSnapshot => {
-                      /* istanbul ignore else */
-                      if (ownerSnapshot.val() !== currentId() &&
-                          currentTaskRef !== null &&
-                          currentTaskListener !== null) {
-                        currentTaskRef.child('_owner').off('value', currentTaskListener) // this is probably a bug, should be called when this worker does not own the task I think
-                        currentTaskRef = null
-                        currentTaskListener = null
-                      }
-                    })
+                /* const */ currentTaskRef = snapshot.ref
+
+                startWatchingOwner(currentTaskRef)
+
                 const data = snapshot.val()
                 if (sanitize) {
                   [
@@ -417,7 +409,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
                     '_progress',
                     '_error_details'
                   ].forEach(reserved => { delete data[reserved] });
-                } else { data._id = snapshot.key }
+                } else { data._id = snapshot.key } // this should be independent of `sanitize` and behind the flag `includeKey` or similar
 
                 const progress = _updateProgress(currentTaskRef, taskNumber);
                 const [resolve, resolvePromise] = _resolve(currentTaskRef, taskNumber);
@@ -452,6 +444,30 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
     return deferred.promise
   }
+
+  function startWatchingOwner(taskRef) {
+    const ownerRef = taskRef.child('_owner')
+    const ownerChanged = ownerRef.on('value', snapshot => {
+      /* istanbul ignore else */
+      if (snapshot.val() !== currentId()) {
+        ownerRef.off('value', ownerChanged)
+        stopWatchingOwnerAndReset = null
+        currentTaskRef = null
+        // should this also reset? original implementation did not, might be a bug
+      }
+    })
+
+    stopWatchingOwnerAndReset = () => {
+      // This function should probably be named 'stopProcessing', problem is: we're not doing that.
+      // This also highlights a problematic scenario. When we are already processing using the 
+      // `processingFunction` which we can not cancel. So when we reset here, the `processingFunction`
+      // will most likely process the task a second time
+      stopWatchingOwnerAndReset = null
+      currentTaskRef = null
+      ownerRef.off('value', ownerChanged)
+      _resetTask(taskRef, true)
+    }
+  } 
 
   /**
    * Sets up timeouts to reclaim tasks that fail due to taking too long.
@@ -517,12 +533,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
     if (newTaskListener !== null) newTaskRef.off('child_added', newTaskListener)
 
-    if (currentTaskListener !== null) {
-      currentTaskRef.child('_owner').off('value', currentTaskListener)
-      _resetTask(currentTaskRef, true)
-      currentTaskRef = null
-      currentTaskListener = null
-    }
+    if (stopWatchingOwnerAndReset !== null) stopWatchingOwnerAndReset()
 
     if (isValidTaskSpec(taskSpec)) {
       startState = taskSpec.startState || null
