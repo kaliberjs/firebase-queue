@@ -29,6 +29,7 @@ const nonStringsWithoutNull = nonStrings.filter(x => x !== null)
 const nonPositiveIntegersWithout0 = nonPositiveIntegers.filter(x => x !== 0)
 
 function now() { return new Date().getTime() }
+function serverNow() { return now() + th.offset }
 
 describe('QueueWorker', () => {
   
@@ -81,7 +82,7 @@ describe('QueueWorker', () => {
     )
   })
 
-  describe('# Resetting tasks', () => {
+  describe.only('# Resetting tasks', () => {
 
     it('should reset a task when another task is being processed', () =>
       withTasksRef(tasksRef => 
@@ -92,7 +93,14 @@ describe('QueueWorker', () => {
             pushTasks(tasksRef, { task: 1 }, { task: 2 }),
             ([task1, task2]) => waitForState([task1, task2], inProgressState),
             ([task1, task2]) => waitForStates([task1, finishedState], [task2, startState]),
-            ([_    , task2]) => expect(task2.val()).to.have.property('task').that.equals(2)
+            ([_    , task2]) => {
+              const task = task2.val()
+              expect(task).to.not.have.property('_owner')
+              expect(task).to.not.have.property('_progress')
+              expect(task).to.not.have.property('_state')
+              expect(task).to.have.property('task').that.equals(2)
+              expect(task).to.have.property('_state_changed').that.is.closeTo(serverNow(), 250)
+            }
           )
         })
       )
@@ -120,23 +128,6 @@ describe('QueueWorker', () => {
         .then(_ => qw._resetTask(testRef, forceReset))
         .then(_ => testRef.once('value'))
     }
-
-    it('should reset a task that is currently in progress', () => {
-      qw.setTaskSpec(th.validBasicTaskSpec)
-      return resetTask({ 
-        forceReset: true,
-        task: {
-          '_state': th.validBasicTaskSpec.inProgressState,
-          '_state_changed': now(),
-          '_owner': qw._currentId()
-        }
-      }).then(snapshot => {
-          const task = snapshot.val()
-          // I don't understand why the _state, _owner and _progress properties are not checked
-          expect(task).to.have.all.keys(['_state_changed'])
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
-        })
-    })
 
     it('should not reset a task if `forceReset` set but no longer owned by current worker', () => {
       qw.setTaskSpec(th.validBasicTaskSpec)
@@ -177,7 +168,7 @@ describe('QueueWorker', () => {
           var task = snapshot.val()
           // we should probably check _state, _owner and _progress
           expect(task).to.have.all.keys(['_state_changed'])
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
         })
     })
 
@@ -261,7 +252,7 @@ describe('QueueWorker', () => {
           expect(task).to.have.all.keys(['_state', '_state_changed', '_progress'])
           expect(task._progress).to.equal(100)
           expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState)
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
         })
     })
 
@@ -279,7 +270,7 @@ describe('QueueWorker', () => {
             expect(task).to.have.all.keys(['_state', '_state_changed', '_progress'])
             expect(task._progress).to.equal(100)
             expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState)
-            expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+            expect(task._state_changed).to.be.closeTo(serverNow(), 250)
           })
       })
     )
@@ -297,7 +288,7 @@ describe('QueueWorker', () => {
           expect(task).to.have.all.keys(['_state', '_state_changed', '_progress', 'foo'])
           expect(task._progress).to.equal(100)
           expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState)
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
           expect(task.foo).to.equal('bar')
         })
     })
@@ -318,7 +309,7 @@ describe('QueueWorker', () => {
           expect(task).to.have.all.keys(['_state', '_state_changed', '_progress', 'foo'])
           expect(task._progress).to.equal(100)
           expect(task._state).to.equal('valid_new_state')
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
           expect(task.foo).to.equal('bar')
           // _new_state should be gone right?
         })
@@ -339,7 +330,7 @@ describe('QueueWorker', () => {
           var task = snapshot.val()
           expect(task).to.have.all.keys(['_state_changed', '_progress', 'foo'])
           expect(task._progress).to.equal(100)
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
           expect(task.foo).to.equal('bar')
         })
     })
@@ -378,7 +369,7 @@ describe('QueueWorker', () => {
           expect(task).to.have.all.keys(['_state', '_state_changed', '_progress', 'foo'])
           expect(task._progress).to.equal(100)
           expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState)
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
           expect(task.foo).to.equal('bar')
         })
     })
@@ -479,7 +470,7 @@ describe('QueueWorker', () => {
           var task = snapshot.val()
           expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details'])
           expect(task._state).to.equal('error')
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
           expect(task._progress).to.equal(0)
           expect(task._error_details).to.have.all.keys(['previous_state', 'attempts'])
           expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
@@ -502,7 +493,7 @@ describe('QueueWorker', () => {
       }).then(snapshot => {
           var task = snapshot.val()
           expect(task).to.have.all.keys(['_progress', '_state_changed', '_error_details'])
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
           expect(task._progress).to.equal(0)
           expect(task._error_details).to.have.all.keys(['previous_state', 'attempts'])
           expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
@@ -525,7 +516,7 @@ describe('QueueWorker', () => {
       }).then(snapshot => {
           var task = snapshot.val()
           expect(task).to.have.all.keys(['_progress', '_state_changed', '_error_details'])
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
           expect(task._progress).to.equal(0)
           expect(task._error_details).to.have.all.keys(['previous_state', 'attempts'])
           expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
@@ -545,7 +536,7 @@ describe('QueueWorker', () => {
           var task = snapshot.val()
           expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details'])
           expect(task._state).to.equal(th.validTaskSpecWithErrorState.errorState)
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
           expect(task._progress).to.equal(0)
           expect(task._error_details).to.have.all.keys(['previous_state', 'attempts'])
           expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
@@ -567,7 +558,7 @@ describe('QueueWorker', () => {
             var task = snapshot.val()
             expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details'])
             expect(task._state).to.equal('error')
-            expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+            expect(task._state_changed).to.be.closeTo(serverNow(), 250)
             expect(task._progress).to.equal(0)
             expect(task._error_details).to.have.all.keys(['previous_state', 'error', 'attempts'])
             expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
@@ -591,7 +582,7 @@ describe('QueueWorker', () => {
           var task = snapshot.val()
           expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details'])
           expect(task._state).to.equal('error')
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
           expect(task._progress).to.equal(0)
           expect(task._error_details).to.have.all.keys(['previous_state', 'error', 'attempts'])
           expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
@@ -614,7 +605,7 @@ describe('QueueWorker', () => {
           var task = snapshot.val()
           expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details'])
           expect(task._state).to.equal('error')
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
           expect(task._progress).to.equal(0)
           expect(task._error_details).to.have.all.keys(['previous_state', 'error', 'attempts', 'error_stack'])
           expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
@@ -639,7 +630,7 @@ describe('QueueWorker', () => {
           var task = snapshot.val()
           expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details'])
           expect(task._state).to.equal('error')
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
           expect(task._progress).to.equal(0)
           expect(task._error_details).to.have.all.keys(['previous_state', 'error', 'attempts'])
           expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
@@ -855,7 +846,7 @@ describe('QueueWorker', () => {
           var task = snapshot.val();
           expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details']);
           expect(task._state).to.equal('error');
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250);
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250);
           expect(task._progress).to.equal(0);
           expect(task._error_details).to.have.all.keys(['previous_state', 'attempts', 'error', 'error_stack']);
           expect(task._error_details.previous_state).to.equal(th.validTaskSpecWithStartState.inProgressState);
@@ -897,7 +888,7 @@ describe('QueueWorker', () => {
           expect(task._error_details.error).to.equal('Task was malformed');
           expect(task._error_details.original_task).to.equal('invalid');
           expect(task._state).to.equal('error');
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250);
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250);
         })
     })
 
@@ -920,7 +911,7 @@ describe('QueueWorker', () => {
           expect(task._error_details.original_task).to.equal('invalid')
           expect(task._error_details.error_stack).to.be.a.string
           expect(task._state).to.equal('error')
-          expect(task._state_changed).to.be.closeTo(now() + th.offset, 250)
+          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
         })
     })
 
