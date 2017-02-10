@@ -398,8 +398,6 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
                 /* const */ currentTaskRef = snapshot.ref
 
-                startWatchingOwner(currentTaskRef)
-
                 const data = snapshot.val()
                 if (sanitize) {
                   [
@@ -414,6 +412,8 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
                 const progress = _updateProgress(currentTaskRef, taskNumber);
                 const [resolve, resolvePromise] = _resolve(currentTaskRef, taskNumber);
                 const [reject, rejectPromise] = _reject(currentTaskRef, taskNumber);
+
+                startWatchingOwner(currentTaskRef)
 
                 Promise.race([resolvePromise, rejectPromise])
                   .then(_ => {
@@ -447,24 +447,26 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
   function startWatchingOwner(taskRef) {
     const ownerRef = taskRef.child('_owner')
-    const ownerChanged = ownerRef.on('value', snapshot => {
+    ownerRef.on('value', onOwnerChanged)
+
+    function onOwnerChanged(snapshot) {
       /* istanbul ignore else */
       if (snapshot.val() !== currentId()) {
-        ownerRef.off('value', ownerChanged)
+        ownerRef.off('value', onOwnerChanged)
         stopWatchingOwnerAndReset = null
         currentTaskRef = null
         // should this also reset? original implementation did not, might be a bug
       }
-    })
+    }
 
     stopWatchingOwnerAndReset = () => {
       // This function should probably be named 'stopProcessing', problem is: we're not doing that.
       // This also highlights a problematic scenario. When we are already processing using the 
       // `processingFunction` which we can not cancel. So when we reset here, the `processingFunction`
       // will most likely process the task a second time
+      ownerRef.off('value', onOwnerChanged)
       stopWatchingOwnerAndReset = null
       currentTaskRef = null
-      ownerRef.off('value', ownerChanged)
       _resetTask(taskRef, true)
     }
   } 

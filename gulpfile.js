@@ -46,18 +46,20 @@ gulp.task('build', function() {
 
 // Runs the Mocha test suite
 gulp.task('test', function() {
-  return gulp.src(paths.js.srcFiles)
+  return (
+    //gulp.src(paths.js.srcFiles)
     //.pipe(istanbul())
     //.pipe(istanbul.hookRequire())
-    .on('finish', function() {
+    //.on('finish', function() {
       gulp.src(paths.tests)
         .pipe(mocha({
           reporter: 'spec',
           timeout: 10000
         }))
-      //  .pipe(istanbul.writeReports())
-        .pipe(exit());
-    });
+        //.pipe(istanbul.writeReports())
+        .pipe(exit())
+    //})
+  )
 });
 
 // Default task

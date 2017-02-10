@@ -105,7 +105,6 @@ describe('QueueWorker', () => {
           })
         )
       )
-
     })
   })
 
@@ -206,7 +205,7 @@ describe('QueueWorker', () => {
           expect(snapshot.val()).to.deep.equal(task)
         })
     })
-  })
+  });
 
   describe('#_resolve', () => {
     let qw
@@ -782,16 +781,16 @@ describe('QueueWorker', () => {
   })
 
   describe('#_tryToProcess', () => {
-    var qw;
+    let qw
 
     beforeEach(() => {
       qw = new th.QueueWorker(tasksRef, '0', true, false, _.noop);
-    });
+    })
 
     afterEach(done => {
       qw.setTaskSpec();
       tasksRef.set(null, done);
-    });
+    })
 
     /*
       Most of the specs here have extensive knowledge of the inner 

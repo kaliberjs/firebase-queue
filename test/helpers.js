@@ -3,12 +3,14 @@
 const _ = require('lodash')
 const path = require('path')
 const util = require('util')
-const admin = require('firebase-admin')
 
-admin.initializeApp({
-  credential: admin.credential.cert(require('./key.json')),
-  databaseURL: require('./url.js')
-})
+const [admin, config] = process.env.NODE_ENV === 'local'
+  ? [require('firebase'), _ => { apiKey: 'api key not needed' }]
+  : [require('firebase-admin'), admin => ({ credential: admin.credential.cert(require('./key.json')) })]
+
+admin.initializeApp(Object.assign({
+  databaseURL: require('./url')
+}, config(admin)))
 
 module.exports = function() {
   var self = this;

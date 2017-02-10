@@ -28,7 +28,10 @@
     "package.json"
   ],
   "dependencies": {
+    "firebase": "^3.6.9",
+    "firebase-server": "^0.9.0",
     "lodash": "^4.6.1",
+    "mocha": "^3.2.0",
     "uuid": "^3.0.0"
   },
   "devDependencies": {
@@ -46,6 +49,8 @@
   },
   "scripts": {
     "test": "gulp test",
-    "travis": "gulp"
+    "test-local": "NODE_ENV=local gulp test",
+    "travis": "gulp",
+    "start": "firebase-server"
   }
 }
