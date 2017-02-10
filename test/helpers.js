@@ -81,12 +81,13 @@ module.exports = function() {
   this.pushTasks = pushTasks
   this.chain = chain
   this.withTasksRef = withTasksRef
-  this.withEchoQueueWorkerFor = withEchoQueueWorkerFor
+  this.withQueueWorkerFor = withQueueWorkerFor
   this.sideEffect = sideEffect
   this.waitFor = waitFor
   this.echo = echo
   this.withData = withData
   this.timeout = timeout
+  this.allways = allways
 
   function waitForState(valOrVals, state, time = 500) {
     if (Array.isArray(valOrVals)) return waitForStateMultiple(valOrVals, state, time) 
@@ -129,7 +130,7 @@ module.exports = function() {
   }
 
   function sideEffect(execute) {
-    return val => execute().then(_ => val)
+    return val => new Promise(resolve => resolve(execute())).then(_ => val)
   }
 
   function echo(data, _, resolve) { resolve(data) }
@@ -150,8 +151,8 @@ module.exports = function() {
     return Promise.all(tasks.map(task => ref.push(task))) // if libraries stopped using `this` internally we could have used `.map(ref.push)`
   }
 
-  function withEchoQueueWorkerFor(tasksRef, f) {
-    const qw = new QueueWorker(tasksRef, '0', true, false, echo)
+  function withQueueWorkerFor(tasksRef, processFunction, f) {
+    const qw = new QueueWorker(tasksRef, '0', true, false, processFunction)
     return allways(f(qw), () => qw.shutdown()) /* as soon as we removed all `this` references in QueueWorker we can simplify to `qw.shutdown` */
   }
 
@@ -162,16 +163,17 @@ module.exports = function() {
 
   function allways(promise, f) {
     return promise
-      .then(val => f().then(_ => val))
-      .catch(e => f().then(_ => Promise.reject(e)))
+      .then(val => new Promise(r => r(f())).then(_ => val))
+      .catch(e => new Promise(r => r(f())).then(_ => Promise.reject(e)))
   }
 
   function toString(val) {
-    return val.val
+    return JSON.stringify(val.val
       ? val.val()
       : val.key
       ? val.key
       : val.toString()
+    )
   }
 
   return this

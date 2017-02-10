@@ -54,7 +54,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   let currentTaskRef = null // this can be removed as soon as we have converted the _tryToProcess unit tests
   let newTaskRef = null
 
-  let stopWatchingOwnerAndReset = null
+  let stopWatchingOwner = null
   let newTaskListener = null
   let processingTaskAddedListener = null
   let processingTaskRemovedListener = null
@@ -451,23 +451,13 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
     function onOwnerChanged(snapshot) {
       /* istanbul ignore else */
-      if (snapshot.val() !== currentId()) {
-        ownerRef.off('value', onOwnerChanged)
-        stopWatchingOwnerAndReset = null
-        currentTaskRef = null
-        // should this also reset? original implementation did not, might be a bug
-      }
+      if (snapshot.val() !== currentId() && stopWatchingOwner) stopWatchingOwner()
     }
 
-    stopWatchingOwnerAndReset = () => {
-      // This function should probably be named 'stopProcessing', problem is: we're not doing that.
-      // This also highlights a problematic scenario. When we are already processing using the 
-      // `processingFunction` which we can not cancel. So when we reset here, the `processingFunction`
-      // will most likely process the task a second time
+    stopWatchingOwner = () => {
       ownerRef.off('value', onOwnerChanged)
-      stopWatchingOwnerAndReset = null
+      stopWatchingOwner = null
       currentTaskRef = null
-      _resetTask(taskRef, true)
     }
   } 
 
@@ -531,11 +521,13 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   function setTaskSpec(taskSpec) {
     // Increment the taskNumber so that a task being processed before the change
     // doesn't continue to use incorrect data
-    taskNumber += 1
+    taskNumber += 1 // <-- this is problematic in the following scenario: 
+      // processing has started (inProgress), setTaskSpec is called, taskNumber is changed, resolve is called, 
+      // resolve does not mark task as done, task times out, task is processed again 
 
     if (newTaskListener !== null) newTaskRef.off('child_added', newTaskListener)
 
-    if (stopWatchingOwnerAndReset !== null) stopWatchingOwnerAndReset()
+    if (stopWatchingOwner !== null) stopWatchingOwner()
 
     if (isValidTaskSpec(taskSpec)) {
       startState = taskSpec.startState || null
