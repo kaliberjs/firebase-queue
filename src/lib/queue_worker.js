@@ -84,6 +84,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   this._resolve = _resolve
   this._updateProgress = _updateProgress
   this._reject = _reject
+  this._setTaskSpec = _setTaskSpec
   this._processId = processId
   this._expiryTimeouts = expiryTimeouts
   this._processingTasksRef = () => processingTasksRef
@@ -529,6 +530,20 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
     if (stopWatchingOwner !== null) stopWatchingOwner()
 
+    _setTaskSpec(taskSpec)
+
+    if (isValidTaskSpec(taskSpec)) {
+      newTaskRef = tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
+      newTaskListener = newTaskRef.on('child_added', () => { self._tryToProcess() })
+    } else {
+      newTaskRef = null
+      newTaskListener = null
+    }
+
+    self._setUpTimeouts()
+  }
+
+  function _setTaskSpec(taskSpec) {
     if (isValidTaskSpec(taskSpec)) {
       startState = taskSpec.startState || null
       inProgressState = taskSpec.inProgressState
@@ -536,23 +551,15 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
       errorState = taskSpec.errorState || DEFAULT_ERROR_STATE
       taskTimeout = taskSpec.timeout || null
       taskRetries = taskSpec.retries || DEFAULT_RETRIES
-
-      newTaskRef = tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
-      newTaskListener = newTaskRef.on('child_added', () => { self._tryToProcess() })
     } else {
-      // invalid task spec, not listening for new tasks
       startState = null
       inProgressState = null
       finishedState = null
       errorState = DEFAULT_ERROR_STATE
       taskTimeout = null
       taskRetries = DEFAULT_RETRIES
-
-      newTaskRef = null
-      newTaskListener = null
     }
 
-    self._setUpTimeouts()
   }
 
   function shutdown() {
