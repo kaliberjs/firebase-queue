@@ -92,8 +92,8 @@ describe('QueueWorker', () => {
           return chain(
             pushTasks(tasksRef, { task: 1 }, { task: 2 }),
             ([task1, task2]) => waitForState([task1, task2], inProgressState),
-            ([task1, task2]) => waitForStates([task1, finishedState], [task2, startState]),
-            ([_    , task2]) => {
+            ([_, task2]) => waitForState(task2, startState),
+            task2 => {
               const task = task2.val()
               expect(task).to.not.have.any.keys('_owner', '_progress', '_state')
               expect(task).to.have.property('task').that.equals(2)
