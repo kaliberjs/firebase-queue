@@ -2,7 +2,7 @@
 
 const uuid = require('uuid')
 const _ = require('lodash')
-const TaskWorker = require('./task_worker')
+const DefaultTaskWorker = require('./task_worker')
 
 const MAX_TRANSACTION_ATTEMPTS = 10
 const DEFAULT_ERROR_STATE = 'error'
@@ -37,7 +37,7 @@ module.exports = QueueWorker
 
 QueueWorker.isValidTaskSpec = isValidTaskSpec
 
-function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processingFunction) {
+function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processingFunction, TaskWorker = DefaultTaskWorker) {
 
   if (!tasksRef) throwError('No tasks reference provided.')
   if (typeof processIdBase !== 'string') throwError('Invalid process ID provided.')

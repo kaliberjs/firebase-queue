@@ -13,7 +13,7 @@ chai
 const { expect } = chai
 
 const th = new Helpers()
-const { now, serverNow, allways, sideEffect, withTasksRef, withQueueWorkerFor, validBasicTaskSpec, validTaskSpecWithFinishedState, chain, pushTasks, waitForState, waitForStates, echo, nonPlainObjects } = th
+const { now, serverNow, allways, sideEffect, withTasksRef, withTestRefFor, withQueueWorkerFor, validBasicTaskSpec, validTaskSpecWithFinishedState, chain, pushTasks, waitForState, waitForStates, echo, nonPlainObjects } = th
 const tasksRef = th.tasksRef
 const _tasksRef = tasksRef
 
@@ -82,7 +82,7 @@ describe('QueueWorker', () => {
 
     it('should reset a task when another task is currently being processed', () =>
       withTasksRef(tasksRef => 
-        withQueueWorkerFor(tasksRef, echo, qw => {
+        withQueueWorkerFor({ tasksRef }, qw => {
           qw.setTaskSpec(validTaskSpecWithFinishedState)
           const { startState, inProgressState, finishedState } = validTaskSpecWithFinishedState
           return chain(
@@ -102,83 +102,27 @@ describe('QueueWorker', () => {
   })
 
   describe('#_resetTask', () => {
-    let qw
-    let testRef
 
-    beforeEach(() => {
-      qw = new th.QueueWorker(tasksRef, '0', true, false, _.noop)
-    })
+    it('should use TaskWorker in the transaction', () => 
+      withTasksRef(tasksRef => {
+        const tasks = []
+        function TaskWorker() { this.reset = task => (tasks.push(task), task) }
 
-    afterEach(done => {
-      testRef.off()
-      qw.shutdown()
-        .then(_ => tasksRef.set(null))
-        .then(done)
-    })
-
-    function resetTask({ task, spec = th.validBasicTaskSpec }) {
-      qw._setTaskSpec(spec)
-      testRef = tasksRef.push()
-      return testRef.set(task)
-        .then(_ => qw._resetTask(testRef))
-        .then(_ => testRef.once('value'))
-    }
-
-    it('should reset a task that is currently in progress', () => {
-      return resetTask({
-        task: {
-          '_state': th.validBasicTaskSpec.inProgressState,
-          '_state_changed': now(),
-          '_owner': qw._currentId()
-        }
-      }).then(snapshot => {
-          const task = snapshot.val()
-          expect(task).to.not.have.any.keys('_owner', '_progress', '_state')
-          expect(task).to.have.property('_state_changed').that.is.closeTo(serverNow(), 250)
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          const task = { foo: 'bar' }
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set(task)
+              .then(_ => qw._resetTask(testRef))
+              .then(_ => {
+                expect(tasks).to.deep.equal([null, task])
+              })
+          )
         })
-    })
+      })
+    )
 
-    it('should not reset a task if it is no longer owned by current worker', () => {
-      const task = {
-        '_state': th.validBasicTaskSpec.inProgressState,
-        '_state_changed': now(),
-        '_owner': 'someone-else'
-      }
-      return resetTask({ task })
-        .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
-        })
-    })
-
-    it('should not reset a task that no longer exists', () => {
-      return resetTask({ task: null })
-        .then(snapshot => {
-          expect(snapshot.val()).to.be.null
-        })
-    })  
-
-    it('should not reset a task if it is has already changed state', () => {
-      const task = {
-        '_state': th.validTaskSpecWithFinishedState.finishedState,
-        '_state_changed': now(),
-        '_owner': qw._currentId()
-      }
-      return resetTask({ task, spec: th.validTaskSpecWithFinishedState })
-        .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
-        })
-    })
-
-    it('should not reset a task if it is has no state', () => {
-      const task = {
-        '_state_changed': now(),
-        '_owner': qw._currentId()
-      }
-      return resetTask({ task, spec: th.validTaskSpecWithFinishedState })
-        .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
-        })
-    })
+    it.skip('should correctly handle transaction retries', () => {})
   })
 
   describe('#_resetTaskIfTimedOut', () => {

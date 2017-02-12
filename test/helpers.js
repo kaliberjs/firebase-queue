@@ -86,6 +86,7 @@ module.exports = function() {
   this.pushTasks = pushTasks
   this.chain = chain
   this.withTasksRef = withTasksRef
+  this.withTestRefFor = withTestRefFor
   this.withQueueWorkerFor = withQueueWorkerFor
   this.sideEffect = sideEffect
   this.waitFor = waitFor
@@ -162,14 +163,20 @@ module.exports = function() {
     return Promise.all(tasks.map(task => ref.push(task))) // if libraries stopped using `this` internally we could have used `.map(ref.push)`
   }
 
-  function withQueueWorkerFor(tasksRef, processFunction, f) {
-    const qw = new QueueWorker(tasksRef, '0', true, false, processFunction)
+  function withQueueWorkerFor({ tasksRef, processFunction = echo, TaskWorker }, f) {
+    const qw = new QueueWorker(tasksRef, '0', true, false, processFunction, TaskWorker)
     return allways(f(qw), () => qw.shutdown()) /* as soon as we removed all `this` references in QueueWorker we can simplify to `qw.shutdown` */
   }
 
   function withTasksRef(f) {
     const clear = () => tasksRef.set(null)
     return allways(f(tasksRef), clear)
+  }
+
+  function withTestRefFor(tasksRef, f) {
+    const testRef = tasksRef.push()
+    const off = () => testRef.off()
+    return allways(f(testRef), off)
   }
 
   function allways(promise, f) {
