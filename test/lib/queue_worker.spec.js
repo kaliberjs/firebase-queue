@@ -128,6 +128,21 @@ describe('QueueWorker', () => {
         .then(_ => testRef.once('value'))
     }
 
+    it('should reset a task that is currently in progress', () => {
+      return resetTask({
+        forceReset: true,
+        task: {
+          '_state': th.validBasicTaskSpec.inProgressState,
+          '_state_changed': now(),
+          '_owner': qw._currentId()
+        }
+      }).then(snapshot => {
+          const task = snapshot.val()
+          expect(task).to.not.have.any.keys('_owner', '_progress', '_state')
+          expect(task).to.have.property('_state_changed').that.is.closeTo(serverNow(), 250)
+        })
+    })
+
     it('should not reset a task if `forceReset` set but no longer owned by current worker', () => {
       const task = {
         '_state': th.validBasicTaskSpec.inProgressState,
