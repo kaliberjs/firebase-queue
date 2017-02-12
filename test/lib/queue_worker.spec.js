@@ -387,8 +387,7 @@ describe('QueueWorker', () => {
     */
 
     it('should not try and process a task if busy', () => {
-      qw._startState(th.validTaskSpecWithStartState.startState)
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._setTaskSpec(th.validTaskSpecWithStartState)
       qw._busy(true)
       qw._newTaskRef(tasksRef)
       return tasksRef.push({
@@ -400,8 +399,7 @@ describe('QueueWorker', () => {
     })
 
     it('should try and process a task if not busy', () => {
-      qw._startState(th.validTaskSpecWithStartState.startState)
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._setTaskSpec(th.validTaskSpecWithStartState)
       qw._newTaskRef(tasksRef)
       return tasksRef.push({
         '_state': th.validTaskSpecWithStartState.startState
@@ -416,10 +414,12 @@ describe('QueueWorker', () => {
       qw = new th.QueueWorker(tasksRef, '0', true, false, () => {
         throw new Error('Error thrown in processingFunction')
       })
-      qw._startState(th.validTaskSpecWithStartState.startState)
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
-      qw._finishedState(th.validTaskSpecWithFinishedState.finishedState)
-      qw._taskRetries(0)
+      qw._setTaskSpec({ 
+        startState: th.validTaskSpecWithStartState.startState,
+        inProgressState: th.validTaskSpecWithStartState.inProgressState,
+        finishedState: th.validTaskSpecWithFinishedState.finishedState,
+        retries: 0
+      })
       qw._newTaskRef(tasksRef)
       const testRef = tasksRef.push()
 
@@ -447,8 +447,7 @@ describe('QueueWorker', () => {
     })
 
     it('should try and process a task without a _state if not busy', () => {
-      qw._startState(null)
-      qw._inProgressState(th.validBasicTaskSpec.inProgressState)
+      qw._setTaskSpec(th.validBasicTaskSpec)
       qw._newTaskRef(tasksRef)
       return tasksRef.push({
         foo: 'bar'
@@ -460,7 +459,7 @@ describe('QueueWorker', () => {
     })
 
     it('should not try and process a task if not a plain object [1]', () => {
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._setTaskSpec(th.validBasicTaskSpec)
       qw._suppressStack(true)
       qw._newTaskRef(tasksRef)
       const testRef = tasksRef.push('invalid')
@@ -483,7 +482,7 @@ describe('QueueWorker', () => {
     })
 
     it('should not try and process a task if not a plain object [2]', () => {
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._setTaskSpec(th.validBasicTaskSpec)
       qw._newTaskRef(tasksRef)
       const testRef = tasksRef.push('invalid')
       return testRef
@@ -506,8 +505,7 @@ describe('QueueWorker', () => {
     })
 
     it('should not try and process a task if no longer in correct startState', () => {
-      qw._startState(th.validTaskSpecWithStartState.startState)
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._setTaskSpec(th.validTaskSpecWithStartState)
       qw._newTaskRef(tasksRef)
       return tasksRef.push({
         '_state': th.validTaskSpecWithStartState.inProgressState
@@ -518,8 +516,7 @@ describe('QueueWorker', () => {
     })
 
     it('should not try and process a task if no task to process', () => {
-      qw._startState(th.validTaskSpecWithStartState.startState)
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._setTaskSpec(th.validTaskSpecWithStartState)
       qw._newTaskRef(tasksRef)
       return qw._tryToProcess().then(_ => {
         expect(qw._currentTaskRef()).to.be.null
@@ -527,8 +524,7 @@ describe('QueueWorker', () => {
     })
 
     it('should invalidate callbacks if another process times the task out', () => {
-      qw._startState(th.validTaskSpecWithStartState.startState)
-      qw._inProgressState(th.validTaskSpecWithStartState.inProgressState)
+      qw._setTaskSpec(th.validTaskSpecWithStartState)
       qw._newTaskRef(tasksRef)
       const testRef = tasksRef.push({
         '_state': th.validTaskSpecWithStartState.startState

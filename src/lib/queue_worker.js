@@ -46,11 +46,11 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   if (typeof processingFunction !== 'function') throwError('No processing function provided.')
 
   const processId = processIdBase + ':' + uuid.v4()
-  let shutdownDeferred = null
 
   const expiryTimeouts = {}
   const owners = {}
 
+  let shutdownDeferred = null
   let taskWorker = null
   let processingTasksRef = null
   let currentTaskRef = null // this can be removed as soon as we have converted the _tryToProcess unit tests
@@ -63,7 +63,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
   let busy = false
   let taskNumber = 0
-  let errorState = DEFAULT_ERROR_STATE;
+  let errorState = DEFAULT_ERROR_STATE
 
   let taskTimeout = null
   let inProgressState = null
@@ -78,12 +78,12 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   // we can not remove usage of `self` here because
   // the tests either override or spy on these methods 
   const self = this
-  this._resetTask = _resetTask
-  this._resetTaskIfTimedOut = _resetTaskIfTimedOut
   this._tryToProcess = _tryToProcess
   this._setUpTimeouts = _setUpTimeouts
 
   // used in tests
+  this._resetTask = _resetTask
+  this._resetTaskIfTimedOut = _resetTaskIfTimedOut
   this._resolve = _resolve
   this._updateProgress = _updateProgress
   this._reject = _reject
@@ -100,17 +100,14 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   this._processingTaskRemovedListener = () => processingTaskRemovedListener
   this._taskNumber = () => taskNumber
   this._taskTimeout = () => taskTimeout
-  this._inProgressState = (val) => val ? (inProgressState = val, undefined) : inProgressState
-  this._finishedState = (val) => val ? (finishedState = val, undefined) : finishedState
-  this._taskRetries = (val) => { taskRetries = val }
-  this._startState = (val) => val !== undefined ? (startState = val, undefined) : startState
+  this._inProgressState = () => inProgressState
+  this._finishedState = () => finishedState
+  this._startState = () => startState
   this._currentId = currentId
 
   return this
 
   function currentId() { return processId + ':' + taskNumber }
-  function inProgress({ _state }) { return _state === inProgressState }
-  function isOwner({ _owner }) { return _owner === currentId() }
 
   function isInvalidTask(requestedTaskNumber) {
     const notCurrentTask = taskNumber !== requestedTaskNumber
@@ -419,7 +416,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
     if (!taskTimeout) processingTasksRef = null
     else {
-      processingTasksRef = tasksRef.orderByChild('_state').equalTo(inProgressState);
+      processingTasksRef = tasksRef.orderByChild('_state').equalTo(inProgressState)
 
       processingTaskAddedListener = processingTasksRef.on('child_added', setUpTimeout)
       processingTaskRemovedListener = processingTasksRef.on('child_removed', ({ key }) => {
