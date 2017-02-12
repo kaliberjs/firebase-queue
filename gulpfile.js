@@ -26,8 +26,7 @@ var paths = {
   },
 
   tests: [
-    'test/queue.spec.js',
-    'test/lib/queue_worker.spec.js'
+    'test/**/*.spec.js'
   ]
 };
 

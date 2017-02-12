@@ -1,13 +1,14 @@
 'use strict';
 
-var uuid = require('uuid');
-var _ = require('lodash');
+const uuid = require('uuid')
+const _ = require('lodash')
+const TaskWorker = require('./task_worker')
 
-var MAX_TRANSACTION_ATTEMPTS = 10;
-var DEFAULT_ERROR_STATE = 'error';
-var DEFAULT_RETRIES = 0;
+const MAX_TRANSACTION_ATTEMPTS = 10
+const DEFAULT_ERROR_STATE = 'error'
+const DEFAULT_RETRIES = 0
 
-var SERVER_TIMESTAMP = {'.sv': 'timestamp'};
+const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
 
 function throwError(message) { throw new Error(message) }
 
@@ -50,6 +51,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   const expiryTimeouts = {}
   const owners = {}
 
+  let taskWorker = null
   let processingTasksRef = null
   let currentTaskRef = null // this can be removed as soon as we have converted the _tryToProcess unit tests
   let newTaskRef = null
@@ -77,6 +79,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   // the tests either override or spy on these methods 
   const self = this
   this._resetTask = _resetTask
+  this._resetTaskIfTimedOut = _resetTaskIfTimedOut
   this._tryToProcess = _tryToProcess
   this._setUpTimeouts = _setUpTimeouts
 
@@ -95,7 +98,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   this._newTaskListener = () => newTaskListener
   this._processingTaskAddedListener = () => processingTaskAddedListener
   this._processingTaskRemovedListener = () => processingTaskRemovedListener
-  this._taskNumber = (val) => val ? (taskNumber = val, undefined) : taskNumber
+  this._taskNumber = () => taskNumber
   this._taskTimeout = () => taskTimeout
   this._inProgressState = (val) => val ? (inProgressState = val, undefined) : inProgressState
   this._finishedState = (val) => val ? (finishedState = val, undefined) : finishedState
@@ -119,41 +122,38 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
    * Returns the state of a task to the start state.
    * @param {firebase.database.Reference} taskRef Firebase Realtime Database
    *   reference to the Firebase location of the task that's timed out.
-   * @param {Boolean} forceReset Whether this is an immediate update to a task we
-   *   expect this worker to own, or whether it's a timeout reset that we don't
-   *   necessarily expect this worker to own.
    * @returns {Promise} Whether the task was able to be reset.
    */
-  function _resetTask(taskRef, forceReset, deferred = createDeferred()) {
+  function _resetTask(taskRef, deferred = createDeferred()) {
     const retries = 0;
 
     taskRef
-      .transaction(
-        task => {
-          /* istanbul ignore if */
-          if (task === null) return task
-
-          const timeSinceUpdate = /* use offset */ Date.now() - task._state_changed || 0
-          const timedOut = (taskTimeout && timeSinceUpdate >= taskTimeout)
-          
-          const allowReset = (forceReset && isOwner(task)) || timedOut
-
-          if (inProgress(task) && allowReset) {
-            task._state = startState
-            task._state_changed = SERVER_TIMESTAMP
-            task._owner = null
-            task._progress = null
-            task._error_details = null
-            return task
-          }
-        }, 
-        undefined,
-        false
-      )
+      .transaction(taskWorker.reset, undefined, false)
       .then(_ => { deferred.resolve() })
       .catch(_ => {
         // reset task errored, retrying
-        if ((retries + 1) < MAX_TRANSACTION_ATTEMPTS) setImmediate(() => _resetTask(taskRef, forceReset, deferred))
+        if ((retries + 1) < MAX_TRANSACTION_ATTEMPTS) setImmediate(() => _resetTask(taskRef, deferred))
+        else deferred.reject(new Error('reset task errored too many times, no longer retrying'))
+      })
+
+    return deferred.promise
+  }
+
+  /**
+   * Returns the state of a task to the start state if timedout.
+   * @param {firebase.database.Reference} taskRef Firebase Realtime Database
+   *   reference to the Firebase location of the task that's timed out.
+   * @returns {Promise} Whether the task was able to be reset.
+   */
+  function _resetTaskIfTimedOut(taskRef, deferred = createDeferred()) {
+    const retries = 0;
+
+    taskRef
+      .transaction(taskWorker.resetIfTimedOut, undefined, false)
+      .then(_ => { deferred.resolve() })
+      .catch(_ => {
+        // reset task errored, retrying
+        if ((retries + 1) < MAX_TRANSACTION_ATTEMPTS) setImmediate(() => _resetTaskIfTimedOut(taskRef, deferred))
         else deferred.reject(new Error('reset task errored too many times, no longer retrying'))
       })
 
@@ -392,10 +392,12 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
               // Worker has become busy while the transaction was processing
               // so give up the task for now so another worker can claim it
               /* istanbul ignore if */
-              if (busy) _resetTask(snapshot.ref, true)
+              if (busy) _resetTask(snapshot.ref)
               else {
                 busy = true
                 taskNumber += 1
+
+                _updateTaskWorker()
 
                 /* const */ currentTaskRef = snapshot.ref
 
@@ -508,7 +510,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
       var expires = Math.max(0, startTime - now + taskTimeout);
       owners[taskName] = snapshot.child('_owner').val();
       expiryTimeouts[taskName] = setTimeout(
-        () => _resetTask(snapshot.ref, false),
+        () => _resetTaskIfTimedOut(snapshot.ref),
         expires
       )
     }
@@ -559,7 +561,15 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
       taskTimeout = null
       taskRetries = DEFAULT_RETRIES
     }
+    _updateTaskWorker()
+  }
 
+  function _updateTaskWorker() {
+    taskWorker = new TaskWorker({
+      serverOffset: 0,
+      owner: currentId(), 
+      spec: { startState, inProgressState, finishedState, errorState, timeout: taskTimeout, retries: taskRetries } 
+    })
   }
 
   function shutdown() {

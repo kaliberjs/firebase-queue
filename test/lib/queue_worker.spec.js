@@ -1,7 +1,7 @@
 'use strict';
 
 const _ = require('lodash')
-const Helpers = require('../helpers.js')
+const Helpers = require('../helpers')
 const chai = require('chai')
 const sinon = require('sinon')
 
@@ -13,7 +13,7 @@ chai
 const { expect } = chai
 
 const th = new Helpers()
-const { allways, sideEffect, withTasksRef, withQueueWorkerFor, validBasicTaskSpec, validTaskSpecWithFinishedState, chain, pushTasks, waitForState, waitForStates, echo } = th
+const { now, serverNow, allways, sideEffect, withTasksRef, withQueueWorkerFor, validBasicTaskSpec, validTaskSpecWithFinishedState, chain, pushTasks, waitForState, waitForStates, echo } = th
 const tasksRef = th.tasksRef
 const _tasksRef = tasksRef
 
@@ -27,9 +27,6 @@ const invalidTaskSpecs        = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['
 
 const nonStringsWithoutNull = nonStrings.filter(x => x !== null)
 const nonPositiveIntegersWithout0 = nonPositiveIntegers.filter(x => x !== 0)
-
-function now() { return new Date().getTime() }
-function serverNow() { return now() + th.offset }
 
 describe('QueueWorker', () => {
   
@@ -120,17 +117,16 @@ describe('QueueWorker', () => {
         .then(done)
     })
 
-    function resetTask({ task, forceReset, spec = th.validBasicTaskSpec }) {
+    function resetTask({ task, spec = th.validBasicTaskSpec }) {
       qw._setTaskSpec(spec)
       testRef = tasksRef.push()
       return testRef.set(task)
-        .then(_ => qw._resetTask(testRef, forceReset))
+        .then(_ => qw._resetTask(testRef))
         .then(_ => testRef.once('value'))
     }
 
     it('should reset a task that is currently in progress', () => {
       return resetTask({
-        forceReset: true,
         task: {
           '_state': th.validBasicTaskSpec.inProgressState,
           '_state_changed': now(),
@@ -143,33 +139,86 @@ describe('QueueWorker', () => {
         })
     })
 
-    it('should not reset a task if `forceReset` set but no longer owned by current worker', () => {
+    it('should not reset a task if it is no longer owned by current worker', () => {
       const task = {
         '_state': th.validBasicTaskSpec.inProgressState,
         '_state_changed': now(),
         '_owner': 'someone-else'
       }
-      return resetTask({ task, forceReset: true })
+      return resetTask({ task })
         .then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
         })
     })
 
-    it('should not reset a task if `forceReset` not set and it is has changed state recently', () => {
+    it('should not reset a task that no longer exists', () => {
+      return resetTask({ task: null })
+        .then(snapshot => {
+          expect(snapshot.val()).to.be.null
+        })
+    })  
+
+    it('should not reset a task if it is has already changed state', () => {
+      const task = {
+        '_state': th.validTaskSpecWithFinishedState.finishedState,
+        '_state_changed': now(),
+        '_owner': qw._currentId()
+      }
+      return resetTask({ task, spec: th.validTaskSpecWithFinishedState })
+        .then(snapshot => {
+          expect(snapshot.val()).to.deep.equal(task)
+        })
+    })
+
+    it('should not reset a task if it is has no state', () => {
+      const task = {
+        '_state_changed': now(),
+        '_owner': qw._currentId()
+      }
+      return resetTask({ task, spec: th.validTaskSpecWithFinishedState })
+        .then(snapshot => {
+          expect(snapshot.val()).to.deep.equal(task)
+        })
+    })
+  })
+
+  describe('#_resetTaskIfTimedOut', () => {
+    let qw
+    let testRef
+
+    beforeEach(() => {
+      qw = new th.QueueWorker(tasksRef, '0', true, false, _.noop)
+    })
+
+    afterEach(done => {
+      testRef.off()
+      qw.shutdown()
+        .then(_ => tasksRef.set(null))
+        .then(done)
+    })
+
+    function resetTaskIfTimedOut({ task, spec = th.validBasicTaskSpec }) {
+      qw._setTaskSpec(spec)
+      testRef = tasksRef.push()
+      return testRef.set(task)
+        .then(_ => qw._resetTaskIfTimedOut(testRef))
+        .then(_ => testRef.once('value'))
+    }
+
+    it('should not reset a task if it is has changed state recently', () => {
       const task = {
         '_state': th.validBasicTaskSpec.inProgressState,
         '_state_changed': now(),
         '_owner': 'someone'
       }
-      return resetTask({ task, forceReset: false })
+      return resetTaskIfTimedOut({ task })
         .then(snapshot => {
           expect(snapshot.val()).to.deep.equal(task)
         })
     })
 
     it('should reset a task that is currently in progress that has timed out', () => {
-      return resetTask({
-        forceReset: false,
+      return resetTaskIfTimedOut({
         task: {
           '_state': th.validBasicTaskSpec.inProgressState,
           '_state_changed': now() - th.validTaskSpecWithTimeout.timeout,
@@ -183,37 +232,7 @@ describe('QueueWorker', () => {
           expect(task._state_changed).to.be.closeTo(serverNow(), 250)
         })
     })
-
-    it('should not reset a task that no longer exists', () => {
-      return resetTask({ task: null, forceReset: true })
-        .then(snapshot => {
-          expect(snapshot.val()).to.be.null
-        })
-    })  
-
-    it('should not reset a task if it is has already changed state', () => {
-      const task = {
-        '_state': th.validTaskSpecWithFinishedState.finishedState,
-        '_state_changed': now(),
-        '_owner': qw._currentId()
-      }
-      return resetTask({ task, forceReset: true, spec: th.validTaskSpecWithFinishedState })
-        .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
-        })
-    })
-
-    it('should not reset a task if it is has no state', () => {
-      const task = {
-        '_state_changed': now(),
-        '_owner': qw._currentId()
-      }
-      return resetTask({ task, forceReset: true, spec: th.validTaskSpecWithFinishedState })
-        .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
-        })
-    })
-  });
+  })
 
   describe('#_resolve', () => {
     let qw

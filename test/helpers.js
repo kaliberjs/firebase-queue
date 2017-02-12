@@ -27,9 +27,11 @@ module.exports = function() {
 
   const Queue = require('../src/queue.js')
   const QueueWorker = require('../src/lib/queue_worker.js')
+  const TaskWorker = require('../src/lib/task_worker.js')
 
   this.Queue = Queue
   this.QueueWorker = QueueWorker
+  this.TaskWorker = TaskWorker
 
   this.QueueWorkerWithoutProcessingOrTimeouts = function() {
     self.QueueWorker.apply(this, arguments);
@@ -76,6 +78,7 @@ module.exports = function() {
     retries: 4
   };
 
+
   this.waitForState = waitForState
   this.waitForStates = waitForStates
   this.pushTasks = pushTasks
@@ -88,6 +91,12 @@ module.exports = function() {
   this.withData = withData
   this.timeout = timeout
   this.allways = allways
+  this.now = now
+  this.serverNow = serverNow
+  this.serverOffset = self.offset
+
+  function now() { return new Date().getTime() }
+  function serverNow() { return now() + self.offset }
 
   function waitForState(valOrVals, state, time = 500) {
     if (Array.isArray(valOrVals)) return waitForStateMultiple(valOrVals, state, time) 
