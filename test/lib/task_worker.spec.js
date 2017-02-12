@@ -120,6 +120,16 @@ describe('TaskWorker', () => {
 
   describe('#resolveWith', () => {
 
+    function basicResolveResult({ finishedState }) {
+      return {
+        _progress: 100,
+        _state: finishedState,
+        _state_changed: SERVER_TIMESTAMP,
+        _error_details: null,
+        _owner: null
+      }
+    }
+
     it('should not reset a task that no longer exists and explicitly return null', () => {
       const tw = new TaskWorker({ spec: {} })
       const result = tw.resolveWith(undefined)(null)
@@ -138,11 +148,7 @@ describe('TaskWorker', () => {
       const tw = new TaskWorker({ owner: 'owner', spec })
       const result = tw.resolveWith(undefined)({ _owner: 'owner', _state: spec.inProgressState, _error_details: {} })
 
-      expect(result).to.have.property('_progress').that.equals(100)
-      expect(result).to.have.property('_state').that.equals(spec.finishedState)
-      expect(result).to.have.property('_state_changed').that.deep.equals(SERVER_TIMESTAMP)
-      expect(result).to.have.property('_error_details').that.is.null
-      expect(result).to.have.property('_owner').that.is.null
+      expect(result).to.deep.equal(basicResolveResult({ finishedState: spec.finishedState }))
     })
 
 
@@ -152,11 +158,7 @@ describe('TaskWorker', () => {
         const tw = new TaskWorker({ owner: 'owner', spec })
         const result = tw.resolveWith(nonPlainObject)({ _state: spec.inProgressState, _owner: 'owner' })
 
-        expect(result).to.have.property('_progress').that.equals(100)
-        expect(result).to.have.property('_state').that.equals(spec.finishedState)
-        expect(result).to.have.property('_state_changed').that.deep.equals(SERVER_TIMESTAMP)
-        expect(result).to.have.property('_error_details').that.is.null
-        expect(result).to.have.property('_owner').that.is.null
+        expect(result).to.deep.equal(basicResolveResult({ finishedState: spec.finishedState }))
       })
     )
 
@@ -166,12 +168,10 @@ describe('TaskWorker', () => {
       const newTask = { foo: 'bar' }
       const result = tw.resolveWith(newTask)({ _state: spec.inProgressState, _owner: 'owner' })
 
-      expect(result).to.have.property('_progress').that.equals(100)
-      expect(result).to.have.property('_state').that.equals(spec.finishedState)
-      expect(result).to.have.property('_state_changed').that.deep.equals(SERVER_TIMESTAMP)
-      expect(result).to.have.property('_error_details').that.is.null
-      expect(result).to.have.property('_owner').that.is.null
-      expect(result).to.have.property('foo').that.equals('bar')
+      const expected = basicResolveResult({ finishedState: spec.finishedState })
+      expected.foo = 'bar'
+
+      expect(result).to.deep.equal(expected)
 
       expect(newTask).to.deep.equal({ foo: 'bar' })
     })
@@ -181,13 +181,10 @@ describe('TaskWorker', () => {
       const tw = new TaskWorker({ owner: 'owner', spec })
       const result = tw.resolveWith({ foo: 'bar', _new_state: 'valid_new_state' })({ _state: spec.inProgressState, _owner: 'owner' })
 
-      expect(result).to.have.property('_progress').that.equals(100)
-      expect(result).to.have.property('_state').that.equals('valid_new_state')
-      expect(result).to.have.property('_state_changed').that.deep.equals(SERVER_TIMESTAMP)
-      expect(result).to.have.property('_error_details').that.is.null
-      expect(result).to.have.property('_owner').that.is.null
-      expect(result).to.have.property('foo').that.equals('bar')
-      expect(result).to.not.have.property('_new_state')
+      const expected = basicResolveResult({ finishedState: 'valid_new_state' })
+      expected.foo = 'bar'
+
+      expect(result).to.deep.equal(expected)
     })
 
     it('should resolve a task owned by the current worker and change the state to a provided valid null _new_state for a spec with finishedState', () => {
@@ -195,13 +192,10 @@ describe('TaskWorker', () => {
       const tw = new TaskWorker({ owner: 'owner', spec })
       const result = tw.resolveWith({ foo: 'bar', _new_state: null })({ _state: spec.inProgressState, _owner: 'owner' })
 
-      expect(result).to.have.property('_progress').that.equals(100)
-      expect(result).to.have.property('_state').that.is.null
-      expect(result).to.have.property('_state_changed').that.deep.equals(SERVER_TIMESTAMP)
-      expect(result).to.have.property('_error_details').that.is.null
-      expect(result).to.have.property('_owner').that.is.null
-      expect(result).to.have.property('foo').that.equals('bar')
-      expect(result).to.not.have.property('_new_state')
+      const expected = basicResolveResult({ finishedState: null })
+      expected.foo = 'bar'
+
+      expect(result).to.deep.equal(expected)
     })
 
     it('should resolve a task owned by the current worker and change the state to a provided valid null _new_state for a spec without finishedState', () => {
@@ -209,13 +203,10 @@ describe('TaskWorker', () => {
       const tw = new TaskWorker({ owner: 'owner', spec })
       const result = tw.resolveWith({ foo: 'bar', _new_state: null })({ _state: spec.inProgressState, _owner: 'owner' })
 
-      expect(result).to.have.property('_progress').that.equals(100)
-      expect(result).to.have.property('_state').that.is.null
-      expect(result).to.have.property('_state_changed').that.deep.equals(SERVER_TIMESTAMP)
-      expect(result).to.have.property('_error_details').that.is.null
-      expect(result).to.have.property('_owner').that.is.null
-      expect(result).to.have.property('foo').that.equals('bar')
-      expect(result).to.not.have.property('_new_state')
+      const expected = basicResolveResult({ finishedState: null })
+      expected.foo = 'bar'
+
+      expect(result).to.deep.equal(expected)
     })
 
     it('should resolve a task owned by the current worker and remove the task when provided _new_state = false', () => {
@@ -231,13 +222,10 @@ describe('TaskWorker', () => {
       const tw = new TaskWorker({ owner: 'owner', spec })
       const result = tw.resolveWith({ foo: 'bar', _new_state: { state: 'object_is_an_invalid_new_state' } })({ _state: spec.inProgressState, _owner: 'owner' })
 
-      expect(result).to.have.property('_progress').that.equals(100)
-      expect(result).to.have.property('_state').that.equals(spec.finishedState)
-      expect(result).to.have.property('_state_changed').that.deep.equals(SERVER_TIMESTAMP)
-      expect(result).to.have.property('_error_details').that.is.null
-      expect(result).to.have.property('_owner').that.is.null
-      expect(result).to.have.property('foo').that.equals('bar')
-      expect(result).to.not.have.property('_new_state')
+      const expected = basicResolveResult({ finishedState: spec.finishedState })
+      expected.foo = 'bar'
+
+      expect(result).to.deep.equal(expected)
     })
 
     it('should resolve a task owned by the current worker and remove the task when provided an invalid _new_state when finishedState is absent', () => {
