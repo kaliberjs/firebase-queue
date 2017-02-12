@@ -126,55 +126,27 @@ describe('QueueWorker', () => {
   })
 
   describe('#_resetTaskIfTimedOut', () => {
-    let qw
-    let testRef
 
-    beforeEach(() => {
-      qw = new th.QueueWorker(tasksRef, '0', true, false, _.noop)
-    })
+    it('should use TaskWorker in the transaction', () => 
+      withTasksRef(tasksRef => {
+        const tasks = []
+        function TaskWorker() { this.resetIfTimedOut = task => (tasks.push(task), task) }
 
-    afterEach(done => {
-      testRef.off()
-      qw.shutdown()
-        .then(_ => tasksRef.set(null))
-        .then(done)
-    })
-
-    function resetTaskIfTimedOut({ task, spec = th.validBasicTaskSpec }) {
-      qw._setTaskSpec(spec)
-      testRef = tasksRef.push()
-      return testRef.set(task)
-        .then(_ => qw._resetTaskIfTimedOut(testRef))
-        .then(_ => testRef.once('value'))
-    }
-
-    it('should not reset a task if it is has changed state recently', () => {
-      const task = {
-        '_state': th.validBasicTaskSpec.inProgressState,
-        '_state_changed': now(),
-        '_owner': 'someone'
-      }
-      return resetTaskIfTimedOut({ task })
-        .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          const task = { foo: 'bar' }
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set(task)
+              .then(_ => qw._resetTaskIfTimedOut(testRef))
+              .then(_ => {
+                expect(tasks).to.deep.equal([null, task])
+              })
+          )
         })
-    })
+      })
+    )
 
-    it('should reset a task that is currently in progress that has timed out', () => {
-      return resetTaskIfTimedOut({
-        task: {
-          '_state': th.validBasicTaskSpec.inProgressState,
-          '_state_changed': now() - th.validTaskSpecWithTimeout.timeout,
-          '_owner': 'someone'
-        },
-        spec: th.validTaskSpecWithTimeout
-      }).then(snapshot => {
-          var task = snapshot.val()
-          // we should probably check _state, _owner and _progress
-          expect(task).to.have.all.keys(['_state_changed'])
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-        })
-    })
+    it.skip('should correctly handle transaction retries', () => {})
   })
 
   describe('#_resolve', () => {
