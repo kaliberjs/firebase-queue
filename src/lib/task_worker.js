@@ -4,11 +4,12 @@ module.exports = TaskWorker
 
 const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
 
-function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, finishedState, timeout } }) {
+function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, finishedState, errorState, timeout, retries } }) {
 
   this.reset = reset
   this.resetIfTimedOut = resetIfTimedOut
   this.resolveWith = resolveWith
+  this.rejectWith = rejectWith
 
   function reset(task) {
     if (task === null) return null
@@ -45,6 +46,32 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
         replacement._error_details = null
 
         return replacement
+      }
+    }
+  }
+
+  function rejectWith(errorString, errorStack) {
+    return task => {
+      if (task === null) return null
+
+      if (_isOwner(task) && _isInProgress(task)) {
+        const {
+          attempts: previousAttempts = 0,
+          previous_state: previousState
+        } = task._error_details || {}
+
+        const attempts = previousState === inProgressState ? previousAttempts + 1 : 1
+
+        task._state = attempts > retries ? errorState : startState
+        task._state_changed = SERVER_TIMESTAMP
+        task._owner = null
+        task._error_details = {
+          previous_state: inProgressState,
+          error: errorString,
+          error_stack: errorStack,
+          attempts
+        }
+        return task
       }
     }
   }

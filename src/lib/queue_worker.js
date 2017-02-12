@@ -223,36 +223,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
         const errorStack = (!suppressStack && error && error.stack) || null
 
         taskRef
-          .transaction(
-            task => {
-              if (task === null) return task
-
-              if (inProgress(task) && isOwner(task)) {
-
-                const { 
-                  attempts: previousAttempts = 0, 
-                  previous_state: previousState
-                } = task._error_details || {}
-
-                const attempts = previousState === inProgressState
-                  ? previousAttempts + 1
-                  : 1
-
-                task._state = attempts > taskRetries ? errorState : startState
-                task._state_changed = SERVER_TIMESTAMP;
-                task._owner = null;
-                task._error_details = {
-                  previous_state: inProgressState,
-                  error: errorString,
-                  error_stack: errorStack,
-                  attempts
-                }
-                return task
-              }
-            }, 
-            undefined,
-            false
-          )
+          .transaction(taskWorker.rejectWith(errorString, errorStack), undefined, false)
           .then(_ => { deferred.resolve() })
           .catch(_ => {
             // reject task errored, retrying

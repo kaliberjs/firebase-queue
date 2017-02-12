@@ -13,18 +13,16 @@ chai
 const { expect } = chai
 
 const th = new Helpers()
-const { now, serverNow, allways, sideEffect, withTasksRef, withTestRefFor, withQueueWorkerFor, validBasicTaskSpec, validTaskSpecWithFinishedState, chain, pushTasks, waitForState, waitForStates, echo, nonPlainObjects } = th
+const { now, serverNow, allways, sideEffect, withTasksRef, withTestRefFor, withQueueWorkerFor, validBasicTaskSpec, validTaskSpecWithFinishedState, chain, pushTasks, waitForState, waitForStates, echo, nonPlainObjects, nonStrings, nonStringsWithoutNull } = th
 const tasksRef = th.tasksRef
 const _tasksRef = tasksRef
 
 const nonBooleans             = ['', 'foo', NaN, Infinity,              0, 1, ['foo', 'bar'], { foo: 'bar' }, null,            { foo: { bar: { baz: true } } }, _.noop                ]
-const nonStrings              = [           NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null,            { foo: { bar: { baz: true } } }, _.noop                ]
 const nonFunctions            = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null,            { foo: { bar: { baz: true } } }                        ]
 const nonPositiveIntegers     = ['', 'foo', NaN, Infinity, true, false, 0,    ['foo', 'bar'], { foo: 'bar' },                  { foo: { bar: { baz: true } } }, _.noop, -1, 1.1       ]
 const invalidPercentageValues = ['', 'foo', NaN, Infinity, true, false,       ['foo', 'bar'], { foo: 'bar' },                  { foo: { bar: { baz: true } } }, _.noop, -1,      100.1]
 const invalidTaskSpecs        = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, undefined, { foo: { bar: { baz: true } } }, _.noop, -1            ]
 
-const nonStringsWithoutNull = nonStrings.filter(x => x !== null)
 const nonPositiveIntegersWithout0 = nonPositiveIntegers.filter(x => x !== 0)
 
 describe('QueueWorker', () => {
@@ -193,255 +191,108 @@ describe('QueueWorker', () => {
   })
 
   describe('#_reject', () => {
-    let qw
-    let testRef
 
-    beforeEach(() => {
-      qw = new th.QueueWorker(tasksRef, '0', true, false, _.noop)
-    })
+    it('should use TaskWorker in the transaction', () => 
+      withTasksRef(tasksRef => {
+        const tasks = []
+        function TaskWorker() { this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task) }
 
-    afterEach(done => {
-      testRef.off()
-      qw.shutdown()
-        .then(_ => tasksRef.set(null))
-        .then(done)
-    })
-
-    function reject({ task, taskNumber = qw._taskNumber(), error, spec = th.validBasicTaskSpec }) {
-      qw._setTaskSpec(spec)
-      testRef = tasksRef.push()
-      return testRef.set(task)
-        .then(_ => qw._reject(testRef, taskNumber)[0](error))
-        .then(_ => testRef.once('value'))
-    }
-
-    it('should reject a task owned by the current worker', () => {
-      return reject({
-        task: {
-          '_state': th.validBasicTaskSpec.inProgressState,
-          '_owner': qw._currentId(),
-          '_progress': 0
-        }
-      }).then(snapshot => {
-          var task = snapshot.val()
-          expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details'])
-          expect(task._state).to.equal('error')
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-          expect(task._progress).to.equal(0)
-          expect(task._error_details).to.have.all.keys(['previous_state', 'attempts'])
-          expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
-          expect(task._error_details.attempts).to.equal(1)
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          const task = { foo: 'bar' }
+          const error = new Error('test error')
+          const { message, stack } = error
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set(task)
+              .then(_ => qw._reject(testRef, qw._taskNumber())[0](error))
+              .then(_ => {
+                expect(tasks).to.deep.equal([[message, stack, null], [message, stack, task]])
+              })
+          )
         })
-    })
-
-    it('should reject a task owned by the current worker and reset if more retries are specified', () => {
-      return reject({
-        task: {
-          '_state': th.validTaskSpecWithRetries.inProgressState,
-          '_owner': qw._currentId(),
-          '_progress': 0,
-          '_error_details': {
-            'previous_state': th.validTaskSpecWithRetries.inProgressState,
-            'attempts': 1
-          }
-        },
-        spec: th.validTaskSpecWithRetries
-      }).then(snapshot => {
-          var task = snapshot.val()
-          expect(task).to.have.all.keys(['_progress', '_state_changed', '_error_details'])
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-          expect(task._progress).to.equal(0)
-          expect(task._error_details).to.have.all.keys(['previous_state', 'attempts'])
-          expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
-          expect(task._error_details.attempts).to.equal(2)
-        })
-    })
-
-    it('should reject a task owned by the current worker and reset the attempts count if chaning error handlers', () => {
-      return reject({
-        task: {
-          '_state': th.validTaskSpecWithRetries.inProgressState,
-          '_owner': qw._currentId(),
-          '_progress': 0,
-          '_error_details': {
-            'previous_state': 'other_in_progress_state',
-            'attempts': 1
-          }
-        },
-        spec: th.validTaskSpecWithRetries
-      }).then(snapshot => {
-          var task = snapshot.val()
-          expect(task).to.have.all.keys(['_progress', '_state_changed', '_error_details'])
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-          expect(task._progress).to.equal(0)
-          expect(task._error_details).to.have.all.keys(['previous_state', 'attempts'])
-          expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
-          expect(task._error_details.attempts).to.equal(1)
-        })
-    })
-
-    it('should reject a task owned by the current worker and a non-standard error state', () => {
-      return reject({
-        task: {
-          '_state': th.validBasicTaskSpec.inProgressState,
-          '_owner': qw._currentId(),
-          '_progress': 0
-        },
-        spec: th.validTaskSpecWithErrorState
-      }).then(snapshot => {
-          var task = snapshot.val()
-          expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details'])
-          expect(task._state).to.equal(th.validTaskSpecWithErrorState.errorState)
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-          expect(task._progress).to.equal(0)
-          expect(task._error_details).to.have.all.keys(['previous_state', 'attempts'])
-          expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
-          expect(task._error_details.attempts).to.equal(1)
-        })
-    })
-
-    nonStringsWithoutNull.forEach(nonStringObject =>
-      it('should reject a task owned by the current worker and convert the error to a string if not a string: ' + nonStringObject, () => {
-        return reject({
-          task: {
-            '_state': th.validBasicTaskSpec.inProgressState,
-            '_owner': qw._currentId(),
-            '_progress': 0
-          },
-          error: nonStringObject
-        }).then(snapshot => {
-            var task = snapshot.val()
-            expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details'])
-            expect(task._state).to.equal('error')
-            expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-            expect(task._progress).to.equal(0)
-            expect(task._error_details).to.have.all.keys(['previous_state', 'error', 'attempts'])
-            expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
-            expect(task._error_details.error).to.equal(nonStringObject.toString())
-            expect(task._error_details.attempts).to.equal(1)
-          })
       })
     )
 
-    it('should reject a task owned by the current worker and append the error string to the _error_details', () => {
-      const error = 'My error message'
-      return reject({
-        task: {
-          '_state': th.validBasicTaskSpec.inProgressState,
-          '_owner': qw._currentId(),
-          '_progress': 0
-        },
-        error
-      }).then(snapshot => {
-          var task = snapshot.val()
-          expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details'])
-          expect(task._state).to.equal('error')
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-          expect(task._progress).to.equal(0)
-          expect(task._error_details).to.have.all.keys(['previous_state', 'error', 'attempts'])
-          expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
-          expect(task._error_details.attempts).to.equal(1)
-          expect(task._error_details.error).to.equal(error)
-        })
-    })
+    it.skip('should correctly handle transaction retries', () => {})
 
-    it('should reject a task owned by the current worker and append the error string and stack to the _error_details', () => {
-      const error = new Error('My error message')
-      return reject({
-        task: {
-          '_state': th.validBasicTaskSpec.inProgressState,
-          '_owner': qw._currentId(),
-          '_progress': 0
-        },
-        error
-      }).then(snapshot => {
-          var task = snapshot.val()
-          expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details'])
-          expect(task._state).to.equal('error')
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-          expect(task._progress).to.equal(0)
-          expect(task._error_details).to.have.all.keys(['previous_state', 'error', 'attempts', 'error_stack'])
-          expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
-          expect(task._error_details.attempts).to.equal(1)
-          expect(task._error_details.error).to.equal(error.message)
-          expect(task._error_details.error_stack).to.be.a.string
-        })
-    })
+    nonStringsWithoutNull.forEach(nonStringObject =>
+      it('should reject a task owned by the current worker and convert the error to a string if not a string: ' + nonStringObject, () =>
+        withTasksRef(tasksRef => {
+          const tasks = []
+          function TaskWorker() { this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task) }
 
-    it('should reject a task owned by the current worker and append the error string to the _error_details', () => {
-      qw = new th.QueueWorker(tasksRef, '0', true, true, _.noop)
-      qw._setTaskSpec(th.validBasicTaskSpec)
-      const error = new Error('My error message')
-      return reject({
-        task: {
-          '_state': th.validBasicTaskSpec.inProgressState,
-          '_owner': qw._currentId(),
-          '_progress': 0
-        },
-        error
-      }).then(snapshot => {
-          var task = snapshot.val()
-          expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details'])
-          expect(task._state).to.equal('error')
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-          expect(task._progress).to.equal(0)
-          expect(task._error_details).to.have.all.keys(['previous_state', 'error', 'attempts'])
-          expect(task._error_details.previous_state).to.equal(th.validBasicTaskSpec.inProgressState)
-          expect(task._error_details.attempts).to.equal(1)
-          expect(task._error_details.error).to.equal(error.message)
+          return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+            qw._setTaskSpec(th.validBasicTaskSpec)
+            const task = { foo: 'bar' }
+            return withTestRefFor(tasksRef, testRef =>
+              testRef.set(task)
+                .then(_ => qw._reject(testRef, qw._taskNumber())[0](nonStringObject))
+                .then(_ => {
+                  expect(tasks).to.deep.equal([[nonStringObject.toString(), null, null], [nonStringObject.toString(), null, task]])
+                })
+            )
+          })
         })
-    })
+      )
+    )
 
-    it('should not reject a task that no longer exists', () => {
-      return reject({ task: null, spec: th.validTaskSpecWithFinishedState })
-        .then(snapshot => {
-          expect(snapshot.val()).to.be.null
-        })
-    })
+    it('should reject a task owned by the current worker and append the error string to the _error_details', () =>
+      withTasksRef(tasksRef => {
+        const tasks = []
+        function TaskWorker() { this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task) }
 
-    it('should not reject a task if it is no longer owned by the current worker', () => {
-      const task = {
-        '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_owner': 'other_worker'
-      }
-      return reject({ task, spec: th.validTaskSpecWithFinishedState })
-        .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          const task = { foo: 'bar' }
+          const error = 'My error message'
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set(task)
+              .then(_ => qw._reject(testRef, qw._taskNumber())[0](error))
+              .then(_ => {
+                expect(tasks).to.deep.equal([[error, null, null], [error, null, task]])
+              })
+          )
         })
-    })
+      })
+    )
 
-    it('should not reject a task if it is has already changed state', () => {
-      const task = {
-        '_state': th.validTaskSpecWithFinishedState.finishedState,
-        '_owner': qw._currentId(),
-        '_progress': 0
-      }
-      return reject({ task, spec: th.validTaskSpecWithFinishedState })
-        .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
-        })
-    })
+    it('should reject a task owned by the current worker and append only the error string to the _error_details if suppressStack is set to true', () =>
+      withTasksRef(tasksRef => {
+        const tasks = []
+        function TaskWorker() { this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task) }
 
-    it('should not reject a task if it is has no state', () => {
-      const task = {
-        '_owner': qw._currentId()
-      }
-      return reject({ task, spec: th.validTaskSpecWithFinishedState })
-        .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, suppressStack: true }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          const task = { foo: 'bar' }
+          const error = new Error('test error')
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set(task)
+              .then(_ => qw._reject(testRef, qw._taskNumber())[0](error))
+              .then(_ => {
+                expect(tasks).to.deep.equal([[error.message, null, null], [error.message, null, task]])
+              })
+          )
         })
-    })
+      })
+    )
 
-    it('should not reject a task if a new task is being processed', () => {
-      const task = {
-        '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_owner': qw._currentId()
-      }
-      return reject({ task, taskNumber: qw._taskNumber() + 1, spec: th.validTaskSpecWithFinishedState })
-        .then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
+    it('should not reject a task if a new task is being processed', () =>
+      withTasksRef(tasksRef => {
+        const tasks = []
+        function TaskWorker() { this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task) }
+
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set({ foo: 'bar' })
+              .then(_ => qw._reject(testRef, qw._taskNumber() + 1)[0](null))
+              .then(_ => {
+                expect(tasks).to.deep.equal([])
+              })
+          )
         })
-    })
+      })
+    )
   })
 
   describe('#_updateProgress', () => {

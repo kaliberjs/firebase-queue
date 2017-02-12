@@ -5,7 +5,7 @@ const chai = require('chai')
 
 const { expect } = chai
 
-const { TaskWorker, serverNow, serverOffset, nonPlainObjects } = new Helpers()
+const { TaskWorker, serverNow, serverOffset, nonPlainObjects, nonStringsWithoutNull } = new Helpers()
 
 const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
 
@@ -120,17 +120,17 @@ describe('TaskWorker', () => {
 
   describe('#resolveWith', () => {
 
-    function basicResolveResult({ finishedState }) {
+    function basicResolveResult({ state }) {
       return {
         _progress: 100,
-        _state: finishedState,
+        _state: state,
         _state_changed: SERVER_TIMESTAMP,
         _error_details: null,
         _owner: null
       }
     }
 
-    it('should not reset a task that no longer exists and explicitly return null', () => {
+    it('should not resolve a task that no longer exists and explicitly return null', () => {
       const tw = new TaskWorker({ spec: {} })
       const result = tw.resolveWith(undefined)(null)
       expect(result).to.be.null
@@ -148,7 +148,7 @@ describe('TaskWorker', () => {
       const tw = new TaskWorker({ owner: 'owner', spec })
       const result = tw.resolveWith(undefined)({ _owner: 'owner', _state: spec.inProgressState, _error_details: {} })
 
-      expect(result).to.deep.equal(basicResolveResult({ finishedState: spec.finishedState }))
+      expect(result).to.deep.equal(basicResolveResult({ state: spec.finishedState }))
     })
 
 
@@ -158,7 +158,7 @@ describe('TaskWorker', () => {
         const tw = new TaskWorker({ owner: 'owner', spec })
         const result = tw.resolveWith(nonPlainObject)({ _state: spec.inProgressState, _owner: 'owner' })
 
-        expect(result).to.deep.equal(basicResolveResult({ finishedState: spec.finishedState }))
+        expect(result).to.deep.equal(basicResolveResult({ state: spec.finishedState }))
       })
     )
 
@@ -168,7 +168,7 @@ describe('TaskWorker', () => {
       const newTask = { foo: 'bar' }
       const result = tw.resolveWith(newTask)({ _state: spec.inProgressState, _owner: 'owner' })
 
-      const expected = basicResolveResult({ finishedState: spec.finishedState })
+      const expected = basicResolveResult({ state: spec.finishedState })
       expected.foo = 'bar'
 
       expect(result).to.deep.equal(expected)
@@ -181,7 +181,7 @@ describe('TaskWorker', () => {
       const tw = new TaskWorker({ owner: 'owner', spec })
       const result = tw.resolveWith({ foo: 'bar', _new_state: 'valid_new_state' })({ _state: spec.inProgressState, _owner: 'owner' })
 
-      const expected = basicResolveResult({ finishedState: 'valid_new_state' })
+      const expected = basicResolveResult({ state: 'valid_new_state' })
       expected.foo = 'bar'
 
       expect(result).to.deep.equal(expected)
@@ -192,7 +192,7 @@ describe('TaskWorker', () => {
       const tw = new TaskWorker({ owner: 'owner', spec })
       const result = tw.resolveWith({ foo: 'bar', _new_state: null })({ _state: spec.inProgressState, _owner: 'owner' })
 
-      const expected = basicResolveResult({ finishedState: null })
+      const expected = basicResolveResult({ state: null })
       expected.foo = 'bar'
 
       expect(result).to.deep.equal(expected)
@@ -203,7 +203,7 @@ describe('TaskWorker', () => {
       const tw = new TaskWorker({ owner: 'owner', spec })
       const result = tw.resolveWith({ foo: 'bar', _new_state: null })({ _state: spec.inProgressState, _owner: 'owner' })
 
-      const expected = basicResolveResult({ finishedState: null })
+      const expected = basicResolveResult({ state: null })
       expected.foo = 'bar'
 
       expect(result).to.deep.equal(expected)
@@ -222,7 +222,7 @@ describe('TaskWorker', () => {
       const tw = new TaskWorker({ owner: 'owner', spec })
       const result = tw.resolveWith({ foo: 'bar', _new_state: { state: 'object_is_an_invalid_new_state' } })({ _state: spec.inProgressState, _owner: 'owner' })
 
-      const expected = basicResolveResult({ finishedState: spec.finishedState })
+      const expected = basicResolveResult({ state: spec.finishedState })
       expected.foo = 'bar'
 
       expect(result).to.deep.equal(expected)
@@ -251,16 +251,160 @@ describe('TaskWorker', () => {
     })
 
     it('should not resolve a task if it is not in progress', () => {
-      const spec = { inProgressState: 'inProgress', finishedState: 'finished' }
-      const tw = new TaskWorker({ owner: 'owner', spec })
+      const tw = new TaskWorker({ owner: 'owner', spec: { inProgressState: 'inProgress' } })
       const result = tw.resolveWith({ foo: 'bar' })({ _state: 'notInProgress', _owner: 'owner' })
       expect(result).to.be.undefined
     })
 
     it('should not resolve a task if it is has no state', () => {
-      const spec = { inProgressState: 'inProgress', finishedState: 'finished' }
-      const tw = new TaskWorker({ owner: 'owner', spec })
+      const tw = new TaskWorker({ owner: 'owner', spec: { inProgressState: 'inProgress' } })
       const result = tw.resolveWith({ foo: 'bar' })({ _owner: 'owner' })
+      expect(result).to.be.undefined
+    })
+  })
+
+  describe.only('#rejectWith', () => {
+
+    function baseRejectResult({ state, previousState }) {
+      return {
+        _owner: null,
+        _state: state,
+        _state_changed: SERVER_TIMESTAMP,
+        _error_details: {
+          previous_state: previousState,
+          attempts: 1,
+          error: null,
+          error_stack: null
+        }
+      }
+    }
+
+    it('should not reject a task that no longer exists and explicitly return null', () => {
+      const tw = new TaskWorker({ spec: {} })
+      const result = tw.rejectWith(null, null)(null)
+      expect(result).to.be.null
+    })
+
+    it('should reject a task owned by the current worker', () => {
+      const spec = { inProgressState: 'inProgress', errorState: 'error', retries: 0 }
+      const tw = new TaskWorker({ owner: 'owner', spec })
+      const result = tw.rejectWith(null, null)({ _state: spec.inProgressState, _owner: 'owner', foo: 'bar' })
+
+      const expected = baseRejectResult({ state: spec.errorState, previousState: spec.inProgressState })
+      expected.foo = 'bar'
+
+      expect(result).to.deep.equal(expected)
+    })
+
+    it('should reject a task owned by the current worker and increase the attempts if this is not the first attempt', () => {
+      const spec = { inProgressState: 'inProgress', errorState: 'error', retries: 1 }
+      const tw = new TaskWorker({ owner: 'owner', spec })
+      const result = tw.rejectWith(null, null)({
+        _state: spec.inProgressState,
+        _owner: 'owner',
+        _error_details: {
+          previous_state: spec.inProgressState,
+          attempts: 1
+        },
+        foo: 'bar'
+      })
+
+      const expected = baseRejectResult({ state: spec.errorState, previousState: spec.inProgressState })
+      expected.foo = 'bar'
+      expected._error_details.attempts = 2
+
+      expect(result).to.deep.equal(expected)
+    })
+
+    it('should reject a task owned by the current worker and reset if more retries are specified', () => {
+      const spec = { startState: 'start', inProgressState: 'inProgress', errorState: 'error', retries: 4 }
+      const tw = new TaskWorker({ owner: 'owner', spec })
+      const result = tw.rejectWith(null, null)({
+        _state: spec.inProgressState,
+        _owner: 'owner',
+        _error_details: {
+          previous_state: spec.inProgressState,
+          attempts: 1
+        },
+        foo: 'bar'
+      })
+
+      const expected = baseRejectResult({ state: spec.startState, previousState: spec.inProgressState })
+      expected.foo = 'bar'
+      expected._error_details.attempts = 2
+
+      expect(result).to.deep.equal(expected)
+    })
+
+    it('should reject a task owned by the current worker and reset the attempts count if chaining error handlers', () => {
+      const spec = { startState: 'start', inProgressState: 'inProgress', errorState: 'error', retries: 4 }
+      const tw = new TaskWorker({ owner: 'owner', spec })
+      const result = tw.rejectWith(null, null)({
+        _state: spec.inProgressState,
+        _owner: 'owner',
+        _error_details: {
+          previous_state: 'other_in_progress_state',
+          attempts: 1
+        },
+        foo: 'bar'
+      })
+
+      const expected = baseRejectResult({ state: spec.startState, previousState: spec.inProgressState })
+      expected.foo = 'bar'
+      expected._error_details.attempts = 1
+
+      expect(result).to.deep.equal(expected)
+    })
+
+    it('should reject a task owned by the current worker and append the error string to the _error_details', () => {
+      const error = 'My error message'
+
+      const spec = { inProgressState: 'inProgress', errorState: 'error', retries: 0 }
+      const tw = new TaskWorker({ owner: 'owner', spec })
+      const result = tw.rejectWith(error, null)({ _state: spec.inProgressState, _owner: 'owner', foo: 'bar' })
+
+      const expected = baseRejectResult({ state: spec.errorState, previousState: spec.inProgressState })
+      expected.foo = 'bar'
+      expected._error_details.error = error
+
+      expect(result).to.deep.equal(expected)
+    })
+
+    it('should reject a task owned by the current worker and append the error string and stack to the _error_details', () => {
+      const { message, stack } = new Error('My error message')
+
+      const spec = { inProgressState: 'inProgress', errorState: 'error', retries: 0 }
+      const tw = new TaskWorker({ owner: 'owner', spec })
+      const result = tw.rejectWith(message, stack)({ _state: spec.inProgressState, _owner: 'owner', foo: 'bar' })
+
+      const expected = baseRejectResult({ state: spec.errorState, previousState: spec.inProgressState })
+      expected.foo = 'bar'
+      expected._error_details.error = message
+      expected._error_details.error_stack = stack
+
+      expect(result).to.deep.equal(expected)
+    })
+
+    it('should not reject a task if it is no longer owned by the current worker', () => {
+      const spec = { inProgressState: 'inProgress' }
+      const tw = new TaskWorker({ owner: 'us', spec })
+      const result = tw.rejectWith(null, null)({ _state: spec.inProgressState, _owner: 'them' })
+
+      expect(result).to.be.undefined
+    })
+
+    it('should not reject a task if it is not in progress', () => {
+      const tw = new TaskWorker({ owner: 'owner', spec: { inProgressState: 'inProgress' } })
+      const result = tw.rejectWith(null, null)({ _state: 'notInProgress', _owner: 'owner' })
+
+      expect(result).to.be.undefined
+    })
+
+    it('should not reject a task if it is has no state', () => {
+
+      const tw = new TaskWorker({ owner: 'owner', spec: { inProgressState: 'inProgress' } })
+      const result = tw.rejectWith(null, null)({ _owner: 'owner' })
+
       expect(result).to.be.undefined
     })
   })

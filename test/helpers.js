@@ -79,7 +79,8 @@ module.exports = function() {
   };
 
   this.nonPlainObjects         = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'],                 null,                                             _.noop                ]
-
+  this.nonStrings              = [           NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null,            { foo: { bar: { baz: true } } }, _.noop                ]
+  this.nonStringsWithoutNull   = this.nonStrings.filter(x => x !== null)
 
   this.waitForState = waitForState
   this.waitForStates = waitForStates
@@ -163,8 +164,8 @@ module.exports = function() {
     return Promise.all(tasks.map(task => ref.push(task))) // if libraries stopped using `this` internally we could have used `.map(ref.push)`
   }
 
-  function withQueueWorkerFor({ tasksRef, processFunction = echo, TaskWorker }, f) {
-    const qw = new QueueWorker(tasksRef, '0', true, false, processFunction, TaskWorker)
+  function withQueueWorkerFor({ tasksRef, processFunction = echo, TaskWorker, suppressStack = false }, f) {
+    const qw = new QueueWorker(tasksRef, '0', true, suppressStack, processFunction, TaskWorker)
     return allways(f(qw), () => qw.shutdown()) /* as soon as we removed all `this` references in QueueWorker we can simplify to `qw.shutdown` */
   }
 
