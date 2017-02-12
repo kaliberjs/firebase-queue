@@ -257,18 +257,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
       if (isInvalidTask(requestedTaskNumber)) return Promise.reject(new Error('Can\'t update progress - no task currently being processed'))
 
       return new Promise((resolve, reject) => {
-        taskRef.transaction(
-          task => {
-            /* istanbul ignore if */
-            if (task === null) return task
-            if (inProgress(task) && isOwner(task)) {
-              task._progress = progress
-              return task
-            }
-          },
-          undefined, 
-          false
-        )
+        taskRef.transaction(taskWorker.updateProgressWith(progress), undefined, false)
         .then(({ committed, snapshot }) => { 
           if (committed && snapshot.exists()) resolve()
           else reject(new Error('Can\'t update progress - current task no longer owned by this process'))

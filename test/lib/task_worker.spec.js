@@ -263,7 +263,7 @@ describe('TaskWorker', () => {
     })
   })
 
-  describe.only('#rejectWith', () => {
+  describe('#rejectWith', () => {
 
     function baseRejectResult({ state, previousState }) {
       return {
@@ -401,11 +401,53 @@ describe('TaskWorker', () => {
     })
 
     it('should not reject a task if it is has no state', () => {
-
       const tw = new TaskWorker({ owner: 'owner', spec: { inProgressState: 'inProgress' } })
       const result = tw.rejectWith(null, null)({ _owner: 'owner' })
 
       expect(result).to.be.undefined
+    })
+  })
+
+  describe('#updateProgressWith', () => {
+
+    it('should not update the progress a task that no longer exists and explicitly return null', () => {
+      const tw = new TaskWorker({ spec: {} })
+      const result = tw.updateProgressWith(10)(null)
+      expect(result).to.be.null
+    })
+
+    it('should not update the progress of a task no longer owned by the current worker', () => {
+      const tw = new TaskWorker({ owner: 'us', spec: { inProgressState: 'inProgress' } })
+      const result = tw.updateProgressWith(10)({ _owner: 'them' })
+
+      expect(result).to.be.undefined
+    })
+
+    it('should not update the progress of a task if the task is no longer in progress', () => {
+      const tw = new TaskWorker({ owner: 'owner', spec: { inProgressState: 'inProgress' } })
+      const result = tw.updateProgressWith(10)({ _owner: 'owner', _state: 'notInProgress' })
+
+      expect(result).to.be.undefined
+    })
+
+    it('should not update the progress of a task if the task has no _state', () => {
+      const tw = new TaskWorker({ owner: 'owner', spec: { inProgressState: 'inProgress' } })
+      const result = tw.updateProgressWith(10)({ _owner: 'owner' })
+
+      expect(result).to.be.undefined
+    })
+
+    it('should update the progress of the current task', () => {
+      const spec = { inProgressState: 'inProgress' }
+      const tw = new TaskWorker({ owner: 'owner', spec })
+      const result = tw.updateProgressWith(10)({ _owner: 'owner', _state: spec.inProgressState, foo: 'bar' })
+
+      expect(result).to.deep.equal({
+        _owner: 'owner',
+        _state: spec.inProgressState,
+        _progress: 10,
+        foo: 'bar'
+      })
     })
   })
 })

@@ -10,6 +10,7 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
   this.resetIfTimedOut = resetIfTimedOut
   this.resolveWith = resolveWith
   this.rejectWith = rejectWith
+  this.updateProgressWith = updateProgressWith
 
   function reset(task) {
     if (task === null) return null
@@ -71,6 +72,17 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
           error_stack: errorStack,
           attempts
         }
+        return task
+      }
+    }
+  }
+
+  function updateProgressWith(progress) {
+    return task => {
+      if (task === null) return null
+
+      if (_isOwner(task) && _isInProgress(task)) {
+        task._progress = progress
         return task
       }
     }

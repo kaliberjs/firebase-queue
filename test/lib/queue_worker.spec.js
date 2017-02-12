@@ -171,7 +171,7 @@ describe('QueueWorker', () => {
 
     it.skip('should correctly handle transaction retries', () => {})
 
-    it('should not resolve a task if a new task is being processed', () => 
+    it('should not call the task worker if a new task is being processed', () =>
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() { this.resolveWith = newTask => task => (tasks.push([newTask, task]), task) }
@@ -276,7 +276,7 @@ describe('QueueWorker', () => {
       })
     )
 
-    it('should not reject a task if a new task is being processed', () =>
+    it('should not call the task worker if a new task is being processed', () =>
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() { this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task) }
@@ -296,83 +296,77 @@ describe('QueueWorker', () => {
   })
 
   describe('#_updateProgress', () => {
-    let qw
-    let testRef
-    
-    beforeEach(() => {
-      qw = new th.QueueWorker(tasksRef, '0', true, false, _.noop);
-    })
 
-    afterEach(done => {
-      testRef.off()
-      qw.shutdown()
-        .then(_ => tasksRef.set(null))
-        .then(done)
-    })
+    it('should use TaskWorker in the transaction', () =>
+      withTasksRef(tasksRef => {
+        const tasks = []
+        function TaskWorker() { this.updateProgressWith = progress => task => (tasks.push([progress, task]), task) }
 
-    function updateProgress({ task, taskNumber = qw._taskNumber(), progress, spec = th.validBasicTaskSpec }) {
-      qw._setTaskSpec(spec)
-      testRef = tasksRef.push()
-      return testRef.set(task)
-        .then(_ => qw._updateProgress(testRef, taskNumber)(progress))
-    }
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          const task = { foo: 'bar' }
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set(task)
+              .then(_ => qw._updateProgress(testRef, qw._taskNumber())(1))
+              .then(_ => {
+                expect(tasks).to.deep.equal([[1, null], [1, task]])
+              })
+          )
+        })
+      })
+    )
 
     invalidPercentageValues.forEach(invalidPercentageValue => 
-      it('should ignore invalid input ' + invalidPercentageValue + ' to update the progress', () => 
-        updateProgress({ task: null, progress: invalidPercentageValue })
-          .should.eventually.be.rejectedWith('Invalid progress')
+      it('should ignore invalid input ' + invalidPercentageValue + ' to update the progress', () =>
+        withQueueWorkerFor({ tasksRef: {} }, qw =>
+          qw._updateProgress(null, null)(invalidPercentageValue).should.eventually.be.rejectedWith('Invalid progress')
+        )
       )
     )
 
-    it('should not update the progress of a task no longer owned by the current worker', () => {
-      return updateProgress({
-        task: { 
-          '_state': th.validBasicTaskSpec.inProgressState, 
-          '_owner': 'someone_else' 
-        },
-        progress: 10
-      }).should.eventually.be.rejectedWith('Can\'t update progress - current task no longer owned by this process')
-    })
+    it('should not update the progress of a task no longer owned by the current worker', () =>
+      withTasksRef(tasksRef => {
 
-    it('should not update the progress of a task if the task is no longer in progress', () => {
-      return updateProgress({
-        task: { 
-          '_state': th.validTaskSpecWithFinishedState.finishedState, 
-          '_owner': qw._currentId() 
-        },
-        progress: 10,
-        spec: th.validTaskSpecWithFinishedState
-      }).should.eventually.be.rejectedWith('Can\'t update progress - current task no longer owned by this process')
-    })
+        function TaskWorker() { this.updateProgressWith = progress => task => undefined }
 
-    it('should not update the progress of a task if the task has no _state', () => {
-      return updateProgress({
-        task: { 
-          '_owner': qw._currentId() 
-        },
-        progress: 10
-      }).should.eventually.be.rejectedWith('Can\'t update progress - current task no longer owned by this process')
-    })
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
 
-    it('should update the progress of the current task', () => {
-      return updateProgress({
-        task: { 
-          '_state': th.validBasicTaskSpec.inProgressState, 
-          '_owner': qw._currentId() 
-        },
-        progress: 10
-      }).should.eventually.be.fulfilled
-    })
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set({})
+              .then(_ => qw._updateProgress(testRef, qw._taskNumber())(1))
+              .should.eventually.be.rejectedWith('Can\'t update progress - current task no longer owned by this process')
+          )
+        })
+      })
+    )
 
-    it('should not update the progress of a task if a new task is being processed', () => {
-      return updateProgress({
-        task: { 
-          '_owner': qw._currentId() 
-        },
-        taskNumber: qw._taskNumber() + 1,
-        progress: 10
-      }).should.eventually.be.rejectedWith('Can\'t update progress - no task currently being processed')
-    })
+    it('should not update the progress of a task if a new task is being processed', () =>
+      withTasksRef(tasksRef =>
+        withQueueWorkerFor({ tasksRef, TaskWorker: function() {} }, qw =>
+          qw._updateProgress(null, qw._taskNumber() + 1)(1)
+            .should.eventually.be.rejectedWith('Can\'t update progress - no task currently being processed')
+        )
+      )
+    )
+
+    it('should not call the task worker if a new task is being processed', () =>
+      withTasksRef(tasksRef => {
+        const tasks = []
+        function TaskWorker() { this.updateProgressWith = progress => task => (tasks.push([progress, task]), task) }
+
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set({ foo: 'bar' })
+              .then(_ => qw._updateProgress(testRef, qw._taskNumber() + 1)(1).catch(_ => undefined))
+              .then(_ => {
+                expect(tasks).to.deep.equal([])
+              })
+          )
+        })
+      })
+    )
   })
 
   describe('#_tryToProcess', () => {
