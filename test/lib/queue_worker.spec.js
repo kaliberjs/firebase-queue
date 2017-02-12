@@ -13,14 +13,13 @@ chai
 const { expect } = chai
 
 const th = new Helpers()
-const { now, serverNow, allways, sideEffect, withTasksRef, withQueueWorkerFor, validBasicTaskSpec, validTaskSpecWithFinishedState, chain, pushTasks, waitForState, waitForStates, echo } = th
+const { now, serverNow, allways, sideEffect, withTasksRef, withQueueWorkerFor, validBasicTaskSpec, validTaskSpecWithFinishedState, chain, pushTasks, waitForState, waitForStates, echo, nonPlainObjects } = th
 const tasksRef = th.tasksRef
 const _tasksRef = tasksRef
 
 const nonBooleans             = ['', 'foo', NaN, Infinity,              0, 1, ['foo', 'bar'], { foo: 'bar' }, null,            { foo: { bar: { baz: true } } }, _.noop                ]
 const nonStrings              = [           NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null,            { foo: { bar: { baz: true } } }, _.noop                ]
 const nonFunctions            = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null,            { foo: { bar: { baz: true } } }                        ]
-const nonPlainObjects         = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'],                 null,                                             _.noop                ]
 const nonPositiveIntegers     = ['', 'foo', NaN, Infinity, true, false, 0,    ['foo', 'bar'], { foo: 'bar' },                  { foo: { bar: { baz: true } } }, _.noop, -1, 1.1       ]
 const invalidPercentageValues = ['', 'foo', NaN, Infinity, true, false,       ['foo', 'bar'], { foo: 'bar' },                  { foo: { bar: { baz: true } } }, _.noop, -1,      100.1]
 const invalidTaskSpecs        = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'], { foo: 'bar' }, null, undefined, { foo: { bar: { baz: true } } }, _.noop, -1            ]

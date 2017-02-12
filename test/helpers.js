@@ -78,6 +78,8 @@ module.exports = function() {
     retries: 4
   };
 
+  this.nonPlainObjects         = ['', 'foo', NaN, Infinity, true, false, 0, 1, ['foo', 'bar'],                 null,                                             _.noop                ]
+
 
   this.waitForState = waitForState
   this.waitForStates = waitForStates

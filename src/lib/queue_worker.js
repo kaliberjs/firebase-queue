@@ -181,33 +181,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
       if (isInvalidTask(requestedTaskNumber)) deferred.resolve()
       else {
         taskRef
-          .transaction(
-            task => {
-              if (task === null) return task
-
-              if (inProgress(task) && isOwner(task)) {
-                let outputTask = _.clone(newTask)
-                if (!_.isPlainObject(outputTask)) outputTask = {}
-
-                const newState = outputTask._new_state
-                delete outputTask._new_state
-
-                const invalidNewState = newState !== null && typeof newState !== 'string'
-                const shouldRemove = (invalidNewState && finishedState === null) || newState === false
-
-                if (shouldRemove) return null
-
-                outputTask._state = invalidNewState ? finishedState : newState
-                outputTask._state_changed = SERVER_TIMESTAMP
-                outputTask._owner = null
-                outputTask._progress = 100
-                outputTask._error_details = null
-                return outputTask
-              }
-            }, 
-            undefined,
-            false
-          )
+          .transaction(taskWorker.resolveWith(newTask), undefined, false)
           .then(_ => { deferred.resolve() })
           .catch(_ => {
             // resolve task errored, retrying
