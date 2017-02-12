@@ -150,222 +150,46 @@ describe('QueueWorker', () => {
   })
 
   describe('#_resolve', () => {
-    let qw
-    let testRef
+    
+    it('should use TaskWorker in the transaction', () => 
+      withTasksRef(tasksRef => {
+        const tasks = []
+        function TaskWorker() { this.resolveWith = newTask => task => (tasks.push([newTask, task]), task) }
 
-    beforeEach(() => {
-      qw = new th.QueueWorkerWithoutProcessing(tasksRef, '0', true, false, _.noop)
-    })
-
-    afterEach(done => {
-      testRef.off()
-      qw.shutdown()
-        .then(_ => tasksRef.set(null))
-        .then(done)
-    })
-
-    function resolve({ task, taskNumber = qw._taskNumber(), newTask, spec = th.validTaskSpecWithFinishedState }) {
-      qw._setTaskSpec(spec)
-      testRef = tasksRef.push()
-      return testRef.set(task)
-        .then(_ => qw._resolve(testRef, taskNumber)[0](newTask))
-        .then(_ => testRef.once('value'))
-    }
-
-    it('should resolve a task owned by the current worker and remove it when no finishedState is specified', () => {
-      return resolve({
-        task: {
-          '_state': th.validBasicTaskSpec.inProgressState,
-          '_owner': qw._currentId()
-        },
-        spec: th.validBasicTaskSpec
-      }).then(snapshot => {
-          expect(snapshot.val()).to.be.null
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          const task = { foo: 'bar' }
+          const newTask = { baz: 'qux' }
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set(task)
+              .then(_ => qw._resolve(testRef, qw._taskNumber())[0](newTask))
+              .then(_ => {
+                expect(tasks).to.deep.equal([[newTask, null], [newTask, task]])
+              })
+          )
         })
-    })
-
-    it('should resolve a task owned by the current worker and change the state when a finishedState is specified and no object passed', () => {
-      return resolve({
-        task: {
-          '_state': th.validTaskSpecWithFinishedState.inProgressState,
-          '_owner': qw._currentId()
-        }
-      }).then(snapshot => {
-          var task = snapshot.val()
-          expect(task).to.have.all.keys(['_state', '_state_changed', '_progress'])
-          expect(task._progress).to.equal(100)
-          expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState)
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-        })
-    })
-
-    nonPlainObjects.forEach(nonPlainObject => 
-      it('should resolve an task owned by the current worker and change the state when a finishedState is specified and an invalid object ' + nonPlainObject + ' passed', () => {
-        return resolve({
-          task: {
-            '_state': th.validTaskSpecWithFinishedState.inProgressState,
-            '_owner': qw._currentId()
-          },
-          newTask: nonPlainObject
-        }).then(snapshot => {
-            var task = snapshot.val()
-            expect(task).to.have.all.keys(['_state', '_state_changed', '_progress'])
-            expect(task._progress).to.equal(100)
-            expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState)
-            expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-          })
       })
     )
 
-    it('should resolve a task owned by the current worker and change the state when a finishedState is specified and a plain object passed', () => {
-      return resolve({
-        task: {
-          '_state': th.validTaskSpecWithFinishedState.inProgressState,
-          '_owner': qw._currentId()
-        },
-        newTask: { foo: 'bar' }
-      }).then(snapshot => {
-          var task = snapshot.val()
-          expect(task).to.have.all.keys(['_state', '_state_changed', '_progress', 'foo'])
-          expect(task._progress).to.equal(100)
-          expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState)
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-          expect(task.foo).to.equal('bar')
-        })
-    })
+    it.skip('should correctly handle transaction retries', () => {})
 
-    it('should resolve a task owned by the current worker and change the state to a provided valid string _new_state', () => {
-      return resolve({
-        task: {
-          '_state': th.validTaskSpecWithFinishedState.inProgressState,
-          '_owner': qw._currentId()
-        },
-        newTask: {
-          foo: 'bar',
-          _new_state: 'valid_new_state'
-        }
-      }).then(snapshot => {
-          var task = snapshot.val();
-          expect(task).to.have.all.keys(['_state', '_state_changed', '_progress', 'foo'])
-          expect(task._progress).to.equal(100)
-          expect(task._state).to.equal('valid_new_state')
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-          expect(task.foo).to.equal('bar')
-          // _new_state should be gone right?
-        })
-    })
+    it('should not resolve a task if a new task is being processed', () => 
+      withTasksRef(tasksRef => {
+        const tasks = []
+        function TaskWorker() { this.resolveWith = newTask => task => (tasks.push([newTask, task]), task) }
 
-    it('should resolve a task owned by the current worker and change the state to a provided valid null _new_state', () => {
-      return resolve({
-        task: {
-          '_state': th.validTaskSpecWithFinishedState.inProgressState,
-          '_owner': qw._currentId()
-        },
-        newTask: {
-          foo: 'bar',
-          _new_state: null
-        }
-      }).then(snapshot => {
-          var task = snapshot.val()
-          expect(task).to.have.all.keys(['_state_changed', '_progress', 'foo'])
-          expect(task._progress).to.equal(100)
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-          expect(task.foo).to.equal('bar')
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set({ foo: 'bar' })
+              .then(_ => qw._resolve(testRef, qw._taskNumber() + 1)[0]({ baz: 'qux' }))
+              .then(_ => {
+                expect(tasks).to.deep.equal([])
+              })
+          )
         })
-    })
-
-    it('should resolve a task owned by the current worker and remove the task when provided _new_state = false', () => {
-      return resolve({
-        task: {
-          '_state': th.validTaskSpecWithFinishedState.inProgressState,
-          '_owner': qw._currentId()
-        },
-        newTask: {
-          foo: 'bar',
-          _new_state: false
-        }
-      }).then(snapshot => {
-          expect(snapshot.val()).to.be.null
-        })
-    })
-
-    it('should resolve a task owned by the current worker and change the state to finishedState when provided an invalid _new_state', () => {
-      return resolve({
-        task: {
-          '_state': th.validTaskSpecWithFinishedState.inProgressState,
-          '_owner': qw._currentId()
-        },
-        newTask: {
-          foo: 'bar',
-          _new_state: {
-            state: 'object_is_an_invalid_new_state'
-          }
-        }
-      }).then(snapshot => {
-          var task = snapshot.val()
-          expect(task).to.have.all.keys(['_state', '_state_changed', '_progress', 'foo'])
-          expect(task._progress).to.equal(100)
-          expect(task._state).to.equal(th.validTaskSpecWithFinishedState.finishedState)
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
-          expect(task.foo).to.equal('bar')
-        })
-    })
-
-    it('should not resolve a task that no longer exists', () => {
-      return resolve({
-        task: null
-      }).then(snapshot => {
-          expect(snapshot.val()).to.be.null
-        })
-    })
-
-    it('should not resolve a task if it is no longer owned by the current worker', () => {
-      const task = {
-        '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_owner': 'other_worker'
-      };
-      return resolve({
-        task
-      }).then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
-        })
-    })
-
-    it('should not resolve a task if it is has already changed state', () => {
-      const task = {
-        '_state': th.validTaskSpecWithFinishedState.finishedState,
-        '_owner': qw._currentId()
-      };
-      return resolve({
-        task
-      }).then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
-        })
-    })
-
-    it('should not resolve a task if it is has no state', () => {
-      const task = {
-        '_owner': qw._processId + ':' + qw._taskNumber()
-      }
-      return resolve({
-        task
-      }).then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
-        })
-    })
-
-    it('should not resolve a task if a new task is being processed', () => {
-      const task = {
-        '_state': th.validTaskSpecWithFinishedState.inProgressState,
-        '_owner': qw._currentId()
-      }
-      return resolve({
-        taskNumber: qw._taskNumber() + 1,
-        task
-      }).then(snapshot => {
-          expect(snapshot.val()).to.deep.equal(task)
-        })
-    })
+      })
+    )
   })
 
   describe('#_reject', () => {
