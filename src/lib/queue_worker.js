@@ -93,7 +93,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   this._processingTasksRef = () => processingTasksRef
   this._currentTaskRef = () => currentTaskRef
   this._newTaskRef = (val) => val ? (newTaskRef = val, undefined) : newTaskRef
-  this._busy = (val) => val ? (busy = val, undefined) : busy
+  this._busy = (val) => val !== undefined ? (busy = val, undefined) : busy
   this._suppressStack = (val) => val ? (suppressStack = val, undefined) : suppressStack
   this._newTaskListener = () => newTaskListener
   this._processingTaskAddedListener = () => processingTaskAddedListener
@@ -108,6 +108,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   return this
 
   function currentId() { return processId + ':' + taskNumber }
+  function nextId() { return processId + ':' + (taskNumber + 1) }
 
   function isInvalidTask(requestedTaskNumber) {
     const notCurrentTask = taskNumber !== requestedTaskNumber
@@ -285,33 +286,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
             
             let nextTaskRef = null
             taskSnap.forEach(childSnap => { nextTaskRef = childSnap.ref })
-            return nextTaskRef.transaction(
-              task => {
-                /* istanbul ignore if */
-                if (task === null) return task
-
-                if (!_.isPlainObject(task)) {
-                  
-                  return {
-                    _state: errorState,
-                    _state_changed: SERVER_TIMESTAMP,
-                    _error_details: {
-                      error: 'Task was malformed',
-                      original_task: task
-                    }
-                  }
-                }
-                if ((task._state || null) === startState) {
-                  task._state = inProgressState;
-                  task._state_changed = SERVER_TIMESTAMP;
-                  task._owner = processId + ':' + (taskNumber + 1);
-                  task._progress = 0;
-                  return task;
-                }
-              },
-              undefined,
-              false
-            )
+            return nextTaskRef.transaction(taskWorker.claimFor(nextId), undefined, false)
           })
           .then(result => {
             if (!result) return

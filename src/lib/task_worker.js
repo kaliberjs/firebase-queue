@@ -11,6 +11,7 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
   this.resolveWith = resolveWith
   this.rejectWith = rejectWith
   this.updateProgressWith = updateProgressWith
+  this.claimFor = claimFor
 
   function reset(task) {
     if (task === null) return null
@@ -83,6 +84,32 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
 
       if (_isOwner(task) && _isInProgress(task)) {
         task._progress = progress
+        return task
+      }
+    }
+  }
+
+  function claimFor(getOwner) {
+    return task => {
+      if (task === null) return null
+
+      if (!_.isPlainObject(task)) {
+        return {
+          _state: errorState,
+          _state_changed: SERVER_TIMESTAMP,
+          _error_details: {
+            error: 'Task was malformed',
+            original_task: task
+          }
+        }
+      }
+
+      if ((task._state || null) === startState) {
+
+        task._state = inProgressState
+        task._state_changed = SERVER_TIMESTAMP
+        task._owner = getOwner()
+        task._progress = 0
         return task
       }
     }

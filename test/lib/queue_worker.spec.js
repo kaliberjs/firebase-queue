@@ -370,177 +370,233 @@ describe('QueueWorker', () => {
   })
 
   describe('#_tryToProcess', () => {
-    let qw
-
-    beforeEach(() => {
-      qw = new th.QueueWorker(tasksRef, '0', true, false, _.noop);
-    })
-
-    afterEach(done => {
-      qw.setTaskSpec();
-      tasksRef.set(null, done);
-    })
 
     /*
       Most of the specs here have extensive knowledge of the inner 
       workings of tryToProcess. We have to eventually fix that
     */
 
-    it('should not try and process a task if busy', () => {
-      qw._setTaskSpec(th.validTaskSpecWithStartState)
-      qw._busy(true)
-      qw._newTaskRef(tasksRef)
-      return tasksRef.push({
-        '_state': th.validTaskSpecWithStartState.startState
-      }).then(_ => qw._tryToProcess())
-        .then(_ => {
-          expect(qw._currentTaskRef()).to.be.null;
-        })
-    })
+    it('should not try and process a task if busy', () => 
+      withTasksRef(tasksRef => {
+        const tasks = []
+        function TaskWorker() { this.claimFor = getOwner => task => (tasks.push([getOwner, task]), null) }
 
-    it('should try and process a task if not busy', () => {
-      qw._setTaskSpec(th.validTaskSpecWithStartState)
-      qw._newTaskRef(tasksRef)
-      return tasksRef.push({
-        '_state': th.validTaskSpecWithStartState.startState
-      }).then(_ => qw._tryToProcess())
-        .then(_ => {
-          expect(qw._currentTaskRef()).to.not.be.null;
-          expect(qw._busy()).to.be.true;
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          qw._busy(true)
+          qw._newTaskRef(tasksRef)
+          const task = { foo: 'bar' }
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set(task)
+              .then(_ => qw._tryToProcess())
+              .then(_ => {
+                expect(qw._currentTaskRef()).to.be.null
+                qw._busy(false)
+              })
+          )
         })
-    })
-
-    it('should try and process a task if not busy, rejecting it if it throws', () => {
-      qw = new th.QueueWorker(tasksRef, '0', true, false, () => {
-        throw new Error('Error thrown in processingFunction')
       })
-      qw._setTaskSpec({ 
-        startState: th.validTaskSpecWithStartState.startState,
-        inProgressState: th.validTaskSpecWithStartState.inProgressState,
-        finishedState: th.validTaskSpecWithFinishedState.finishedState,
-        retries: 0
+    )
+    
+    it('should use TaskWorker in the transaction', () =>
+      withTasksRef(tasksRef => {
+        const tasks = []
+        function TaskWorker() { this.claimFor = getOwner => task => (tasks.push([getOwner, task]), null) }
+
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          qw._newTaskRef(tasksRef)
+          const task = { foo: 'bar' }
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set(task)
+              .then(_ => qw._tryToProcess())
+              .then(_ => {
+                expect(tasks).to.have.a.lengthOf(2)
+                expect(tasks).to.have.deep.property('[0]').that.is.an.array
+                expect(tasks).to.have.deep.property('[1]').that.is.an.array
+                const [[f1, task1], [f2, task2]] = tasks
+                expect(f1).to.equal(f2)
+                expect(f1().startsWith('0:')).to.be.true
+                expect(f1().endsWith(':1')).to.be.true
+                expect(task1).to.be.null
+                expect(task2).to.deep.equal(task)
+              })
+          )
+        })
       })
-      qw._newTaskRef(tasksRef)
-      const testRef = tasksRef.push()
+    )
 
-      return testRef.set({
-        '_state': th.validTaskSpecWithStartState.startState
-      }).then(_ => qw._tryToProcess())
-        .then(_ => {
-          expect(qw._currentTaskRef()).to.not.be.null;
-          expect(qw._busy()).to.be.true 
-        })
-        .then(_ => testRef.once('child_changed'))
-        .then(_ => testRef.once('value'))
-        .then(snapshot => {
-          var task = snapshot.val();
-          expect(task).to.have.all.keys(['_state', '_progress', '_state_changed', '_error_details']);
-          expect(task._state).to.equal('error');
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250);
-          expect(task._progress).to.equal(0);
-          expect(task._error_details).to.have.all.keys(['previous_state', 'attempts', 'error', 'error_stack']);
-          expect(task._error_details.previous_state).to.equal(th.validTaskSpecWithStartState.inProgressState);
-          expect(task._error_details.attempts).to.equal(1);
-          expect(task._error_details.error).to.equal('Error thrown in processingFunction');
-          expect(task._error_details.error_stack).to.be.a.string;
-        })
-    })
+    it('should try and process a task if not busy, rejecting it if it throws', () => 
+      withTasksRef(tasksRef => {
+        const error = new Error('Error thrown in processingFunction')
+        function TaskWorker() { 
+          this.rejectWith = (message, stack) => task => ({ foo: null, message, stack })
+          this.claimFor = getOwner => task => (task.foo && task) 
+        }
+        function processFunction() { throw error }
 
-    it('should try and process a task without a _state if not busy', () => {
-      qw._setTaskSpec(th.validBasicTaskSpec)
-      qw._newTaskRef(tasksRef)
-      return tasksRef.push({
-        foo: 'bar'
-      }).then(_ => qw._tryToProcess())
-        .then(_ => {
-          expect(qw._currentTaskRef()).to.not.be.null;
-          expect(qw._busy()).to.be.true;
+        return withQueueWorkerFor({ tasksRef, TaskWorker, processFunction }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          qw._newTaskRef(tasksRef)
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set({ foo: 'bar' })
+              .then(_ => qw._tryToProcess())
+              .then(_ => {
+                expect(qw._currentTaskRef()).to.not.be.null
+                expect(qw._busy()).to.be.true
+              })
+              .then(_ => testRef.once('child_removed'))
+              .then(_ => testRef.once('value'))
+              .then(snapshot => {
+                expect(snapshot.val()).to.deep.equal({ message: error.message, stack: error.stack })
+              })
+          )
         })
-    })
-
-    it('should not try and process a task if not a plain object [1]', () => {
-      qw._setTaskSpec(th.validBasicTaskSpec)
-      qw._newTaskRef(tasksRef)
-      const testRef = tasksRef.push('invalid')
-      return testRef
-        .then(_ => qw._tryToProcess())
-        .then(_ => {
-          expect(qw._currentTaskRef()).to.be.null;
-          expect(qw._busy()).to.be.false;
-        })
-        .then(_ => testRef.once('value'))
-        .then(snapshot => {
-          var task = snapshot.val();
-          expect(task).to.have.all.keys(['_error_details', '_state', '_state_changed']);
-          expect(task._error_details).to.have.all.keys(['error', 'original_task']);
-          expect(task._error_details.error).to.equal('Task was malformed');
-          expect(task._error_details.original_task).to.equal('invalid');
-          expect(task._state).to.equal('error');
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250);
-        })
-    })
-
-    it('should not try and process a task if no longer in correct startState', () => {
-      qw._setTaskSpec(th.validTaskSpecWithStartState)
-      qw._newTaskRef(tasksRef)
-      return tasksRef.push({
-        '_state': th.validTaskSpecWithStartState.inProgressState
-      }).then(_ => qw._tryToProcess())
-        .then(_ => {
-          expect(qw._currentTaskRef()).to.be.null
-        })
-    })
-
-    it('should not try and process a task if no task to process', () => {
-      qw._setTaskSpec(th.validTaskSpecWithStartState)
-      qw._newTaskRef(tasksRef)
-      return qw._tryToProcess().then(_ => {
-        expect(qw._currentTaskRef()).to.be.null
       })
-    })
+    )
 
-    it('should invalidate callbacks if another process times the task out', () => {
-      qw._setTaskSpec(th.validTaskSpecWithStartState)
-      qw._newTaskRef(tasksRef)
-      const testRef = tasksRef.push({
-        '_state': th.validTaskSpecWithStartState.startState
+    it('should set busy and current task ref for a valid task', () => 
+      withTasksRef(tasksRef => {
+        function TaskWorker() { 
+          this.resolveWith = newTask => task => undefined
+          this.claimFor = getOwner => task => task 
+        }
+
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          qw._newTaskRef(tasksRef)
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set({ foo: 'bar' })
+              .then(_ => qw._tryToProcess())
+              .then(_ => {
+                expect(qw._currentTaskRef()).to.not.be.null
+                expect(qw._busy()).to.be.true
+              })
+          )
+        })
       })
-      return testRef
-        .then(_ => qw._tryToProcess())
-        .then(_ => {
-          expect(qw._currentTaskRef()).to.not.be.null;
-          expect(qw._busy()).to.be.true;
+    )
+
+    it('should not set busy and current task ref for an invalid task', () => 
+      withTasksRef(tasksRef => {
+        function TaskWorker() { this.claimFor = getOwner => task => undefined }
+
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          qw._newTaskRef(tasksRef)
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set({ foo: 'bar' })
+              .then(_ => qw._tryToProcess())
+              .then(_ => {
+                expect(qw._currentTaskRef()).to.be.null
+                expect(qw._busy()).to.be.false
+              })
+          )
         })
-        .then(_ => testRef.update({ '_owner': null }))
-        .then(_ => {
-          expect(qw._currentTaskRef()).to.be.null;
+      })
+    )
+    
+    it('should not set busy and current task ref for a deleted task', () => 
+      withTasksRef(tasksRef => {
+        function TaskWorker() {   this.claimFor = getOwner => task => null }
+
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          qw._newTaskRef(tasksRef)
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set({ foo: 'bar' })
+              .then(_ => qw._tryToProcess())
+              .then(_ => {
+                expect(qw._currentTaskRef()).to.be.null
+                expect(qw._busy()).to.be.false
+              })
+          )
         })
-    })
+      })
+    )
+
+    it('should not try and process a task if no task to process', () => 
+      withTasksRef(tasksRef => {
+        const notCalled = true
+        function TaskWorker() { this.claimFor = getOwner => task => (notCalled = false, 'task') }
+
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          qw._newTaskRef(tasksRef)
+          return qw._tryToProcess()
+            .then(_ => {
+              expect(notCalled).to.be.true
+            })
+        })
+      })
+    )
+
+    it('should invalidate callbacks if another process times the task out', () => 
+      withTasksRef(tasksRef => {
+        function TaskWorker() { 
+          this.resolveWith = newTask => task => undefined
+          this.claimFor = getOwner => task => task 
+        }
+
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          qw._newTaskRef(tasksRef)
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set({ foo: 'bar' })
+              .then(_ => qw._tryToProcess())
+              .then(_ => {
+                expect(qw._currentTaskRef()).to.not.be.null
+                expect(qw._busy()).to.be.true
+              })
+              .then(_ => testRef.update({ _owner: null }))
+              .then(_ => {
+                expect(qw._currentTaskRef()).to.be.null
+              })
+          )
+        })
+      })
+    )
 
     it('should sanitize data passed to the processing function when specified', done => {
-      qw = new th.QueueWorker(tasksRef, '0', true, false, data => {
-        try {
-          expect(data).to.have.all.keys(['foo'])
-          done()
-        } catch (error) {
-          done(error)
+      withTasksRef(tasksRef => {
+        const task = { foo: 'bar' }
+        function TaskWorker() { this.claimFor = getOwner => task => ({ foo: task.foo, _owner: 'owner' }) }
+        function processFunction(data) {
+          try { expect(data).to.deep.equal(task); done() } catch (e) { done(e) }
         }
+
+        return withQueueWorkerFor({ tasksRef, TaskWorker, processFunction }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          qw._newTaskRef(tasksRef)
+          return withTestRefFor(tasksRef, testRef =>
+            testRef.set(task).then(_ => qw._tryToProcess())
+          )
+        })
       })
-      qw.setTaskSpec(th.validBasicTaskSpec)
-      tasksRef.push({ foo: 'bar' })
-    });
+    })
 
     it('should not sanitize data passed to the processing function when specified', done => {
-      qw = new th.QueueWorker(tasksRef, '0', false, false, data => {
-        try {
-          expect(data).to.have.all.keys(['foo', '_owner', '_progress', '_state', '_state_changed', '_id']);
-          done()
-        } catch (error) {
-          done(error)
+      withTasksRef(tasksRef => {
+        const task = { foo: 'bar' }
+        let id = null
+        const queueTask = Object.assign({ _owner: 'owner' }, task)
+        function TaskWorker() { this.claimFor = getOwner => task => queueTask }
+        function processFunction(data) {
+          try { 
+            expect(data).to.deep.equal(Object.assign({ _id: id }, queueTask))
+            done() 
+          } catch (e) { done(e) }
         }
-      });
-      qw.setTaskSpec(th.validBasicTaskSpec)
-      tasksRef.push({ foo: 'bar' })
+
+        return withQueueWorkerFor({ tasksRef, TaskWorker, processFunction, sanitize: false }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          qw._newTaskRef(tasksRef)
+          return withTestRefFor(tasksRef, testRef => {
+            id = testRef.key
+            return testRef.set(task).then(_ => qw._tryToProcess())
+          })
+        })
+      })
     })
   })
 
