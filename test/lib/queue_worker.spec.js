@@ -460,7 +460,6 @@ describe('QueueWorker', () => {
 
     it('should not try and process a task if not a plain object [1]', () => {
       qw._setTaskSpec(th.validBasicTaskSpec)
-      qw._suppressStack(true)
       qw._newTaskRef(tasksRef)
       const testRef = tasksRef.push('invalid')
       return testRef
@@ -478,29 +477,6 @@ describe('QueueWorker', () => {
           expect(task._error_details.original_task).to.equal('invalid');
           expect(task._state).to.equal('error');
           expect(task._state_changed).to.be.closeTo(serverNow(), 250);
-        })
-    })
-
-    it('should not try and process a task if not a plain object [2]', () => {
-      qw._setTaskSpec(th.validBasicTaskSpec)
-      qw._newTaskRef(tasksRef)
-      const testRef = tasksRef.push('invalid')
-      return testRef
-        .then(_ => qw._tryToProcess())
-        .then(_ => {
-          expect(qw._currentTaskRef()).to.be.null;
-          expect(qw._busy()).to.be.false;
-        })
-        .then(_ => testRef.once('value'))
-        .then(snapshot => {
-          var task = snapshot.val()
-          expect(task).to.have.all.keys(['_error_details', '_state', '_state_changed'])
-          expect(task._error_details).to.have.all.keys(['error', 'original_task', 'error_stack'])
-          expect(task._error_details.error).to.equal('Task was malformed')
-          expect(task._error_details.original_task).to.equal('invalid')
-          expect(task._error_details.error_stack).to.be.a.string
-          expect(task._state).to.equal('error')
-          expect(task._state_changed).to.be.closeTo(serverNow(), 250)
         })
     })
 

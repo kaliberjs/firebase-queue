@@ -291,16 +291,13 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
                 if (task === null) return task
 
                 if (!_.isPlainObject(task)) {
-                  const error = new Error('Task was malformed')
-                  const errorStack = suppressStack ? null : error.stack
                   
                   return {
                     _state: errorState,
                     _state_changed: SERVER_TIMESTAMP,
                     _error_details: {
-                      error: error.message,
-                      original_task: task,
-                      error_stack: errorStack
+                      error: 'Task was malformed',
+                      original_task: task
                     }
                   }
                 }
