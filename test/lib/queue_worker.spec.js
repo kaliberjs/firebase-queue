@@ -430,8 +430,9 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const error = new Error('Error thrown in processingFunction')
         function TaskWorker() { 
+          this.isInErrorState = _ => false
           this.rejectWith = (message, stack) => task => ({ foo: null, message, stack })
-          this.claimFor = getOwner => task => (task.foo && task) 
+          this.claimFor = getOwner => task => (task && task.foo && task) 
         }
         function processFunction() { throw error }
 
@@ -457,7 +458,8 @@ describe('QueueWorker', () => {
 
     it('should set busy and current task ref for a valid task', () => 
       withTasksRef(tasksRef => {
-        function TaskWorker() { 
+        function TaskWorker() {
+          this.isInErrorState = _ => false
           this.resolveWith = newTask => task => undefined
           this.claimFor = getOwner => task => task 
         }
@@ -534,6 +536,7 @@ describe('QueueWorker', () => {
     it('should invalidate callbacks if another process times the task out', () => 
       withTasksRef(tasksRef => {
         function TaskWorker() { 
+          this.isInErrorState = _ => false
           this.resolveWith = newTask => task => undefined
           this.claimFor = getOwner => task => task 
         }
@@ -560,7 +563,10 @@ describe('QueueWorker', () => {
     it('should sanitize data passed to the processing function when specified', done => {
       withTasksRef(tasksRef => {
         const task = { foo: 'bar' }
-        function TaskWorker() { this.claimFor = getOwner => task => ({ foo: task.foo, _owner: 'owner' }) }
+        function TaskWorker() {
+          this.isInErrorState = _ => false
+          this.claimFor = getOwner => task => (task && { foo: task.foo, _owner: 'owner' } || task)
+        }
         function processFunction(data) {
           try { expect(data).to.deep.equal(task); done() } catch (e) { done(e) }
         }
@@ -580,7 +586,10 @@ describe('QueueWorker', () => {
         const task = { foo: 'bar' }
         let id = null
         const queueTask = Object.assign({ _owner: 'owner' }, task)
-        function TaskWorker() { this.claimFor = getOwner => task => queueTask }
+        function TaskWorker() {
+          this.isInErrorState = _ => false
+          this.claimFor = getOwner => task => queueTask
+        }
         function processFunction(data) {
           try { 
             expect(data).to.deep.equal(Object.assign({ _id: id }, queueTask))

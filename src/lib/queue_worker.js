@@ -291,7 +291,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
           .then(result => {
             if (!result) return
             const { committed, snapshot } = result
-            if (committed && snapshot.exists() && snapshot.child('_state').val() !== errorState) {
+            if (committed && snapshot.exists() && !taskWorker.isInErrorState(snapshot)) {
               // Worker has become busy while the transaction was processing
               // so give up the task for now so another worker can claim it
               /* istanbul ignore if */

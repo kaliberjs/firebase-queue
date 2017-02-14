@@ -14,6 +14,7 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
   this.claimFor = claimFor
   this.getInProgressFrom = getInProgressFrom
   this.getNextFrom = getNextFrom
+  this.isInErrorState = isInErrorState
 
   function reset(task) {
     if (task === null) return null
@@ -123,6 +124,10 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
 
   function getNextFrom(tasksRef) {
     return tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
+  }
+
+  function isInErrorState(snapshot) {
+    return snapshot.child('_state').val() === errorState
   }
 
   function _isOwner({ _owner }) { return _owner === owner }

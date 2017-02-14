@@ -591,4 +591,36 @@ describe('TaskWorker', () => {
       )
     })
   })
+
+  describe('#isInErrorState', () => {
+
+    it('should not say a task is in error state when it is not', () =>
+      withTasksRef(tasksRef => {
+        const tw = new TaskWorker({ spec: { errorState: 'error' } })
+
+        return chain(
+          pushTasks(tasksRef, { _state: 'notError' }, {}),
+          ([t1, t2]) => Promise.all([t1.ref.once('value'), t2.ref.once('value')]),
+          ([t1, t2]) => {
+            expect(tw.isInErrorState(t1)).to.be.false
+            expect(tw.isInErrorState(t2)).to.be.false
+          }
+        )
+      })
+    )
+
+    it('should say a task is in error state when it is', () =>
+      withTasksRef(tasksRef => {
+        const tw = new TaskWorker({ spec: { errorState: 'error' } })
+
+        return chain(
+          pushTasks(tasksRef, { _state: 'error' }),
+          ([t1]) => t1.ref.once('value'),
+          t1 => {
+            expect(tw.isInErrorState(t1)).to.be.true
+          }
+        )
+      })
+    )
+  })
 })
