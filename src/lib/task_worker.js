@@ -15,6 +15,8 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
   this.getInProgressFrom = getInProgressFrom
   this.getNextFrom = getNextFrom
   this.isInErrorState = isInErrorState
+  this.hasTimeout = hasTimeout
+  this.expiresIn = expiresIn
 
   function reset(task) {
     if (task === null) return null
@@ -24,7 +26,7 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
   function resetIfTimedOut(task) {
     if (task === null) return null
 
-    const timeSinceUpdate = Date.now() - serverOffset - (task._state_changed || 0)
+    const timeSinceUpdate = Date.now() + serverOffset - (task._state_changed || 0)
     const timedOut = (timeout && timeSinceUpdate >= timeout)
 
     if (_isInProgress(task) && timedOut) return _reset(task)
@@ -128,6 +130,16 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
 
   function isInErrorState(snapshot) {
     return snapshot.child('_state').val() === errorState
+  }
+
+  function hasTimeout() {
+    return !!timeout
+  }
+
+  function expiresIn(snapshot) {
+    const now = Date.now() + serverOffset
+    const startTime = (snapshot.child('_state_changed').val() || now)
+    return Math.max(0, startTime - now + timeout)
   }
 
   function _isOwner({ _owner }) { return _owner === owner }

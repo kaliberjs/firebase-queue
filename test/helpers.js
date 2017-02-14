@@ -98,9 +98,21 @@ module.exports = function() {
   this.now = now
   this.serverNow = serverNow
   this.serverOffset = self.offset
+  this.withTimeFrozen = withTimeFrozen
+  this.withSnapshots = withSnapshots
 
   function now() { return new Date().getTime() }
   function serverNow() { return now() + self.offset }
+
+  function withSnapshots(tasks, f) {
+    return withTasksRef(tasksRef =>
+      chain(
+        pushTasks(tasksRef, ...tasks),
+        refs => Promise.all(refs.map(ref => ref.once('value'))),
+        f
+      )
+    )
+  }
 
   function waitForState(valOrVals, state, time = 500) {
     if (Array.isArray(valOrVals)) return waitForStateMultiple(valOrVals, state, time) 
@@ -178,6 +190,13 @@ module.exports = function() {
     const testRef = tasksRef.push()
     const off = () => testRef.off()
     return allways(f(testRef), off)
+  }
+
+  function withTimeFrozen(f) {
+    const oldNow = Date.now
+    const now = Date.now()
+    Date.now = () => now
+    return allways(f(now), () => { Date.now = oldNow })
   }
 
   function allways(promise, f) {

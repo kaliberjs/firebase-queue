@@ -386,7 +386,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
     })
     Object.keys(owners).forEach(key => { delete owners[key] })
 
-    if (!taskTimeout) processingTasksRef = null
+    if (!taskWorker.hasTimeout()) processingTasksRef = null
     else {
       processingTasksRef = taskWorker.getInProgressFrom(tasksRef)
 
@@ -407,10 +407,8 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
     }
 
     function setUpTimeout(snapshot) {
-      var taskName = snapshot.key
-      var now = new Date().getTime() // use server offset
-      var startTime = (snapshot.child('_state_changed').val() || now);
-      var expires = Math.max(0, startTime - now + taskTimeout);
+      const taskName = snapshot.key
+      const expires = taskWorker.expiresIn(snapshot)
       owners[taskName] = snapshot.child('_owner').val();
       expiryTimeouts[taskName] = setTimeout(
         () => _resetTaskIfTimedOut(snapshot.ref),

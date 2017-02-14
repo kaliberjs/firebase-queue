@@ -104,7 +104,10 @@ describe('QueueWorker', () => {
     it('should use TaskWorker in the transaction', () => 
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() { this.reset = task => (tasks.push(task), task) }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.reset = task => (tasks.push(task), task)
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -128,7 +131,10 @@ describe('QueueWorker', () => {
     it('should use TaskWorker in the transaction', () => 
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() { this.resetIfTimedOut = task => (tasks.push(task), task) }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.resetIfTimedOut = task => (tasks.push(task), task)
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -152,7 +158,10 @@ describe('QueueWorker', () => {
     it('should use TaskWorker in the transaction', () => 
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() { this.resolveWith = newTask => task => (tasks.push([newTask, task]), task) }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.resolveWith = newTask => task => (tasks.push([newTask, task]), task)
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -174,7 +183,10 @@ describe('QueueWorker', () => {
     it('should not call the task worker if a new task is being processed', () =>
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() { this.resolveWith = newTask => task => (tasks.push([newTask, task]), task) }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.resolveWith = newTask => task => (tasks.push([newTask, task]), task)
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -195,7 +207,10 @@ describe('QueueWorker', () => {
     it('should use TaskWorker in the transaction', () => 
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() { this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task) }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -219,7 +234,10 @@ describe('QueueWorker', () => {
       it('should reject a task owned by the current worker and convert the error to a string if not a string: ' + nonStringObject, () =>
         withTasksRef(tasksRef => {
           const tasks = []
-          function TaskWorker() { this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task) }
+          function TaskWorker() {
+            this.hasTimeout = () => false
+            this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
+          }
 
           return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
             qw._setTaskSpec(th.validBasicTaskSpec)
@@ -239,7 +257,10 @@ describe('QueueWorker', () => {
     it('should reject a task owned by the current worker and append the error string to the _error_details', () =>
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() { this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task) }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -259,7 +280,10 @@ describe('QueueWorker', () => {
     it('should reject a task owned by the current worker and append only the error string to the _error_details if suppressStack is set to true', () =>
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() { this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task) }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker, suppressStack: true }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -279,7 +303,10 @@ describe('QueueWorker', () => {
     it('should not call the task worker if a new task is being processed', () =>
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() { this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task) }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -300,7 +327,10 @@ describe('QueueWorker', () => {
     it('should use TaskWorker in the transaction', () =>
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() { this.updateProgressWith = progress => task => (tasks.push([progress, task]), task) }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.updateProgressWith = progress => task => (tasks.push([progress, task]), task)
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -327,7 +357,10 @@ describe('QueueWorker', () => {
     it('should not update the progress of a task no longer owned by the current worker', () =>
       withTasksRef(tasksRef => {
 
-        function TaskWorker() { this.updateProgressWith = progress => task => undefined }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.updateProgressWith = progress => task => undefined
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -343,7 +376,7 @@ describe('QueueWorker', () => {
 
     it('should not update the progress of a task if a new task is being processed', () =>
       withTasksRef(tasksRef =>
-        withQueueWorkerFor({ tasksRef, TaskWorker: function() {} }, qw =>
+        withQueueWorkerFor({ tasksRef, TaskWorker: function() { this.hasTimeout = () => false } }, qw =>
           qw._updateProgress(null, qw._taskNumber() + 1)(1)
             .should.eventually.be.rejectedWith('Can\'t update progress - no task currently being processed')
         )
@@ -353,7 +386,10 @@ describe('QueueWorker', () => {
     it('should not call the task worker if a new task is being processed', () =>
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() { this.updateProgressWith = progress => task => (tasks.push([progress, task]), task) }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.updateProgressWith = progress => task => (tasks.push([progress, task]), task)
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -379,7 +415,10 @@ describe('QueueWorker', () => {
     it('should not try and process a task if busy', () => 
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() { this.claimFor = getOwner => task => (tasks.push([getOwner, task]), null) }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.claimFor = getOwner => task => (tasks.push([getOwner, task]), null)
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -401,7 +440,10 @@ describe('QueueWorker', () => {
     it('should use TaskWorker in the transaction', () =>
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() { this.claimFor = getOwner => task => (tasks.push([getOwner, task]), null) }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.claimFor = getOwner => task => (tasks.push([getOwner, task]), null)
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -430,6 +472,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const error = new Error('Error thrown in processingFunction')
         function TaskWorker() { 
+          this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.rejectWith = (message, stack) => task => ({ foo: null, message, stack })
           this.claimFor = getOwner => task => (task && task.foo && task) 
@@ -459,6 +502,7 @@ describe('QueueWorker', () => {
     it('should set busy and current task ref for a valid task', () => 
       withTasksRef(tasksRef => {
         function TaskWorker() {
+          this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.resolveWith = newTask => task => undefined
           this.claimFor = getOwner => task => task 
@@ -481,7 +525,10 @@ describe('QueueWorker', () => {
 
     it('should not set busy and current task ref for an invalid task', () => 
       withTasksRef(tasksRef => {
-        function TaskWorker() { this.claimFor = getOwner => task => undefined }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.claimFor = getOwner => task => undefined
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -500,7 +547,10 @@ describe('QueueWorker', () => {
     
     it('should not set busy and current task ref for a deleted task', () => 
       withTasksRef(tasksRef => {
-        function TaskWorker() {   this.claimFor = getOwner => task => null }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.claimFor = getOwner => task => null
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -520,7 +570,10 @@ describe('QueueWorker', () => {
     it('should not try and process a task if no task to process', () => 
       withTasksRef(tasksRef => {
         const notCalled = true
-        function TaskWorker() { this.claimFor = getOwner => task => (notCalled = false, 'task') }
+        function TaskWorker() {
+          this.hasTimeout = () => false
+          this.claimFor = getOwner => task => (notCalled = false, 'task')
+        }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
@@ -535,7 +588,8 @@ describe('QueueWorker', () => {
 
     it('should invalidate callbacks if another process times the task out', () => 
       withTasksRef(tasksRef => {
-        function TaskWorker() { 
+        function TaskWorker() {
+          this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.resolveWith = newTask => task => undefined
           this.claimFor = getOwner => task => task 
@@ -564,6 +618,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const task = { foo: 'bar' }
         function TaskWorker() {
+          this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.claimFor = getOwner => task => (task && { foo: task.foo, _owner: 'owner' } || task)
         }
@@ -587,6 +642,7 @@ describe('QueueWorker', () => {
         let id = null
         const queueTask = Object.assign({ _owner: 'owner' }, task)
         function TaskWorker() {
+          this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.claimFor = getOwner => task => queueTask
         }

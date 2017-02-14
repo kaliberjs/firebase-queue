@@ -5,7 +5,7 @@ const chai = require('chai')
 
 const { expect } = chai
 
-const { TaskWorker, serverNow, serverOffset, nonPlainObjects, nonStringsWithoutNull, withTasksRef, pushTasks, chain } = new Helpers()
+const { TaskWorker, serverNow, serverOffset, nonPlainObjects, nonStringsWithoutNull, withTasksRef, pushTasks, chain, withTimeFrozen, withSnapshots } = new Helpers()
 
 const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
 
@@ -70,6 +70,9 @@ describe('TaskWorker', () => {
   })
 
   describe('#resetIfTimedOut', () => {
+
+    it.skip('should take serverOffset into account', () => {})
+
     it('should not reset a task that no longer exists and explicitly return null', () => {
       const tw = new TaskWorker({ spec: {} })
       const result = tw.resetIfTimedOut(null)
@@ -594,33 +597,108 @@ describe('TaskWorker', () => {
 
   describe('#isInErrorState', () => {
 
-    it('should not say a task is in error state when it is not', () =>
-      withTasksRef(tasksRef => {
-        const tw = new TaskWorker({ spec: { errorState: 'error' } })
+    it('should not say a task is in error state when it is not', () => {
+      const tw = new TaskWorker({ spec: { errorState: 'error' } })
 
-        return chain(
-          pushTasks(tasksRef, { _state: 'notError' }, {}),
-          ([t1, t2]) => Promise.all([t1.ref.once('value'), t2.ref.once('value')]),
-          ([t1, t2]) => {
-            expect(tw.isInErrorState(t1)).to.be.false
-            expect(tw.isInErrorState(t2)).to.be.false
+      return withSnapshots(
+        [{ _state: 'notError' }, {}],
+        ([t1, t2]) => {
+          expect(tw.isInErrorState(t1)).to.be.false
+          expect(tw.isInErrorState(t2)).to.be.false
+        }
+      )
+    })
+
+    it('should say a task is in error state when it is', () => {
+      const tw = new TaskWorker({ spec: { errorState: 'error' } })
+
+      return withSnapshots(
+        [{ _state: 'error' }],
+        ([t1]) => {
+          expect(tw.isInErrorState(t1)).to.be.true
+        }
+      )
+    })
+  })
+
+  describe('#hasTimeout', () => {
+
+    it('should not say a spec has a timeout if it has not', () => {
+      const tw = new TaskWorker({ spec: {}})
+      expect(tw.hasTimeout()).to.be.false
+    })
+
+    it('should not say a spec has a timeout if it is 0', () => {
+      const tw = new TaskWorker({ spec: { timeout: 0 }})
+      expect(tw.hasTimeout()).to.be.false
+    })
+
+    it('should say a spec has a timeout if it has', () => {
+      const tw = new TaskWorker({ spec: { timeout: 42 }})
+      expect(tw.hasTimeout()).to.be.true
+    })
+  })
+
+  describe('#expiresIn', () => {
+
+    it('should return the value of timeout if the last change was now', () =>
+      withTimeFrozen(now =>
+        withSnapshots(
+          [{ _state_changed: now }],
+          ([snapshot]) => {
+            const tw = new TaskWorker({ serverOffset: 0, spec: { timeout: 42 } })
+            expect(tw.expiresIn(snapshot)).to.equal(42)
           }
         )
-      })
+      )
     )
 
-    it('should say a task is in error state when it is', () =>
-      withTasksRef(tasksRef => {
-        const tw = new TaskWorker({ spec: { errorState: 'error' } })
-
-        return chain(
-          pushTasks(tasksRef, { _state: 'error' }),
-          ([t1]) => t1.ref.once('value'),
-          t1 => {
-            expect(tw.isInErrorState(t1)).to.be.true
+    it('should return 0 if the time passed since the last change is bigger than the timeout', () =>
+      withTimeFrozen(now =>
+        withSnapshots(
+          [{ _state_changed: now - 43 }],
+          ([snapshot]) => {
+            const tw = new TaskWorker({ serverOffset: 0, spec: { timeout: 42 } })
+            expect(tw.expiresIn(snapshot)).to.equal(0)
           }
         )
-      })
+      )
+    )
+
+    it('should take server offset into account', () =>
+      withTimeFrozen(now =>
+        withSnapshots(
+          [{ _state_changed: now }],
+          ([snapshot]) => {
+            const tw = new TaskWorker({ serverOffset: 10, spec: { timeout: 42 } })
+            expect(tw.expiresIn(snapshot)).to.equal(32)
+          }
+        )
+      )
+    )
+
+    it('should assume now if the task has no recorded state change timestamp', () =>
+      withTimeFrozen(_ =>
+        withSnapshots(
+          [{}],
+          ([snapshot]) => {
+            const tw = new TaskWorker({ serverOffset: 10, spec: { timeout: 42 } })
+            expect(tw.expiresIn(snapshot)).to.equal(42)
+          }
+        )
+      )
+    )
+
+    it('should correctly return the expiration time if it in the past', () =>
+      withTimeFrozen(now =>
+        withSnapshots(
+          [{ _state_changed: now - 10 }],
+          ([snapshot]) => {
+            const tw = new TaskWorker({ serverOffset: 0, spec: { timeout: 42 } })
+            expect(tw.expiresIn(snapshot)).to.equal(32)
+          }
+        )
+      )
     )
   })
 })
