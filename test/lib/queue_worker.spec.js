@@ -628,6 +628,8 @@ describe('QueueWorker', () => {
         .then(done)
     })
 
+    it.skip('should use taskWorker to select tasks in progress', () => {})
+
     it('should not set up timeouts when no task timeout is set', () => {
       qw.setTaskSpec(th.validBasicTaskSpec)
       return tasksRef.push().set({

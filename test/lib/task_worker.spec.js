@@ -5,7 +5,7 @@ const chai = require('chai')
 
 const { expect } = chai
 
-const { TaskWorker, serverNow, serverOffset, nonPlainObjects, nonStringsWithoutNull } = new Helpers()
+const { TaskWorker, serverNow, serverOffset, nonPlainObjects, nonStringsWithoutNull, withTasksRef, pushTasks, chain } = new Helpers()
 
 const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
 
@@ -505,5 +505,34 @@ describe('TaskWorker', () => {
       const result = tw.claimFor(undefined)({ foo: 'bar', _state: 'inProgress' })
       expect(result).to.be.undefined
     })
+  })
+
+  describe('#getInProgressFrom', () => {
+
+    it('should select only tasks in progress', () =>
+      withTasksRef(tasksRef => {
+        const spec = { inProgressState: '2.inProgress' }
+        const tw = new TaskWorker({ spec })
+        const [t1, t2, t3, t4] = [
+          { id: 1, _state: '1.other' },
+          { id: 2, _state: spec.inProgressState },
+          { id: 3, _state: spec.inProgressState },
+          { id: 4, _state: '3.other' }
+        ]
+        return chain(
+          pushTasks(tasksRef, t1, t2, t3, t4),
+          _ => tw.getInProgressFrom(tasksRef).once('value'),
+          snapshot => {
+            const result = []
+            snapshot.forEach(x => { result.push(x.val()) })
+            return result
+          },
+          result => {
+            expect(result).to.have.a.lengthOf(2)
+            expect(result).to.deep.equal([t2, t3])
+          }
+        )
+      })
+    )
   })
 })

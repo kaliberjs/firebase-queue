@@ -388,7 +388,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
     if (!taskTimeout) processingTasksRef = null
     else {
-      processingTasksRef = tasksRef.orderByChild('_state').equalTo(inProgressState)
+      processingTasksRef = taskWorker.getInProgressFrom(tasksRef)
 
       processingTaskAddedListener = processingTasksRef.on('child_added', setUpTimeout)
       processingTaskRemovedListener = processingTasksRef.on('child_removed', ({ key }) => {
