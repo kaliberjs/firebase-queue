@@ -438,7 +438,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
     _setTaskSpec(taskSpec)
 
     if (isValidTaskSpec(taskSpec)) {
-      newTaskRef = tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
+      newTaskRef = taskWorker.getNextFrom(tasksRef)
       newTaskListener = newTaskRef.on('child_added', () => { self._tryToProcess() })
     } else {
       newTaskRef = null

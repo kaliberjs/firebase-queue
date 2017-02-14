@@ -13,6 +13,7 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
   this.updateProgressWith = updateProgressWith
   this.claimFor = claimFor
   this.getInProgressFrom = getInProgressFrom
+  this.getNextFrom = getNextFrom
 
   function reset(task) {
     if (task === null) return null
@@ -118,6 +119,10 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
 
   function getInProgressFrom(tasksRef) {
     return tasksRef.orderByChild('_state').equalTo(inProgressState)
+  }
+
+  function getNextFrom(tasksRef) {
+    return tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
   }
 
   function _isOwner({ _owner }) { return _owner === owner }

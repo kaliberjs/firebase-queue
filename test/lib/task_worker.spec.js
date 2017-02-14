@@ -535,4 +535,60 @@ describe('TaskWorker', () => {
       })
     )
   })
+
+  describe('#getNextFrom', () => {
+
+    function getNext(spec, tasks) {
+      const tw = new TaskWorker({ spec })
+      return withTasksRef(tasksRef =>
+        chain(
+          pushTasks(tasksRef, ...tasks),
+          _ => tw.getNextFrom(tasksRef).once('value'),
+          snapshot => {
+            const result = []
+            snapshot.forEach(x => { result.push(x.val()) })
+            return result
+          }
+        )
+      )
+    }
+
+    it('should select a single task in start state', () => {
+      const spec = { startState: '2.start' }
+      const tasks = [
+        { id: 1, _state: '1.other' },
+        { id: 2, _state: spec.startState },
+        { id: 3, _state: spec.startState },
+        { id: 4, _state: '3.other' }
+      ]
+      const [t1, t2, t3, t4] = tasks
+
+      return chain(
+        getNext(spec, tasks),
+        result => {
+          expect(result).to.have.a.lengthOf(1)
+          expect(result).to.deep.equal([t2])
+        }
+      )
+    })
+
+    it('should select a single task in start state if start state is null', () => {
+      const spec = { startState: null }
+      const tasks = [
+        { id: 1, _state: '1.other' },
+        { id: 2 },
+        { id: 3 },
+        { id: 4, _state: '3.other' }
+      ]
+      const [t1, t2, t3, t4] = tasks
+
+      return chain(
+        getNext(spec, tasks),
+        result => {
+          expect(result).to.have.a.lengthOf(1)
+          expect(result).to.deep.equal([t2])
+        }
+      )
+    })
+  })
 })

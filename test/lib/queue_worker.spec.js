@@ -954,6 +954,8 @@ describe('QueueWorker', () => {
       that test the behaviour or effect of a certain call.
     */
 
+    it.skip('should use task worker to select new tasks', () => {})
+
     it('should reset the worker when called with an invalid task spec', () => 
       invalidTaskSpecs.forEach(invalidTaskSpec => {
         const oldTaskNumber = qw._taskNumber()
