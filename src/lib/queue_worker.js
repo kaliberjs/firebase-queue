@@ -63,14 +63,6 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
   let busy = false
   let taskNumber = 0
-  let errorState = DEFAULT_ERROR_STATE
-
-  let taskTimeout = null
-  let inProgressState = null
-  let finishedState = null
-  let taskRetries = null
-  let startState = null
-
 
   this.setTaskSpec = setTaskSpec
   this.shutdown = shutdown
@@ -99,10 +91,6 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   this._processingTaskAddedListener = () => processingTaskAddedListener
   this._processingTaskRemovedListener = () => processingTaskRemovedListener
   this._taskNumber = () => taskNumber
-  this._taskTimeout = () => taskTimeout
-  this._inProgressState = () => inProgressState
-  this._finishedState = () => finishedState
-  this._startState = () => startState
   this._currentId = currentId
 
   return this
@@ -440,31 +428,22 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   }
 
   function _setTaskSpec(taskSpec) {
-    if (isValidTaskSpec(taskSpec)) {
-      startState = taskSpec.startState || null
-      inProgressState = taskSpec.inProgressState
-      finishedState = taskSpec.finishedState || null
-      errorState = taskSpec.errorState || DEFAULT_ERROR_STATE
-      taskTimeout = taskSpec.timeout || null
-      taskRetries = taskSpec.retries || DEFAULT_RETRIES
-    } else {
-      startState = null
-      inProgressState = null
-      finishedState = null
-      errorState = DEFAULT_ERROR_STATE
-      taskTimeout = null
-      taskRetries = DEFAULT_RETRIES
-    }
-    _updateTaskWorker()
+    const spec = isValidTaskSpec(taskSpec) ? getSanitizedTaskSpec(taskSpec) : getSanitizedTaskSpec()
+    taskWorker = new TaskWorker({ serverOffset: 0, owner: currentId(), spec })
   }
 
   function _updateTaskWorker() {
-    taskWorker = new TaskWorker({
-      serverOffset: 0,
-      owner: currentId(), 
-      spec: { startState, inProgressState, finishedState, errorState, timeout: taskTimeout, retries: taskRetries } 
-    })
+    taskWorker = taskWorker.cloneWithOwner(currentId())
   }
+
+  function getSanitizedTaskSpec({
+    startState = null,
+    inProgressState = null,
+    finishedState = null,
+    errorState = DEFAULT_ERROR_STATE,
+    timeout = null,
+    retries = DEFAULT_RETRIES
+  } = {}) { return { startState, inProgressState, finishedState, errorState, timeout, retries } }
 
   function shutdown() {
     if (shutdownDeferred) return shutdownDeferred.promise

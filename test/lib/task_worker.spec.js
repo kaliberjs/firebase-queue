@@ -67,6 +67,11 @@ describe('TaskWorker', () => {
       expect(result).to.be.undefined
     })
     
+    it('should not reset a task if it was cloned with a new non-matching owner', () => {
+      const tw = new TaskWorker({ owner: 'owner', spec: { inProgressState: 'inProgress'} }).cloneWithOwner('newOwner')
+      const result = tw.reset({ _owner: 'owner', _state: 'inProgress' })
+      expect(result).to.be.undefined
+    })
   })
 
   describe('#resetIfTimedOut', () => {
@@ -264,6 +269,12 @@ describe('TaskWorker', () => {
       const result = tw.resolveWith({ foo: 'bar' })({ _owner: 'owner' })
       expect(result).to.be.undefined
     })
+
+    it('should not resolve a task if it was cloned with a new non-matching owner', () => {
+      const tw = new TaskWorker({ owner: 'owner', spec: { inProgressState: 'inProgress'} }).cloneWithOwner('newOwner')
+      const result = tw.reset({ _owner: 'owner', _state: 'inProgress' })
+      expect(result).to.be.undefined
+    })
   })
 
   describe('#rejectWith', () => {
@@ -409,6 +420,12 @@ describe('TaskWorker', () => {
 
       expect(result).to.be.undefined
     })
+
+    it('should not reject a task if it was cloned with a new non-matching owner', () => {
+      const tw = new TaskWorker({ owner: 'owner', spec: { inProgressState: 'inProgress'} }).cloneWithOwner('newOwner')
+      const result = tw.reset({ _owner: 'owner', _state: 'inProgress' })
+      expect(result).to.be.undefined
+    })
   })
 
   describe('#updateProgressWith', () => {
@@ -451,6 +468,12 @@ describe('TaskWorker', () => {
         _progress: 10,
         foo: 'bar'
       })
+    })
+
+    it('should not update the progress of a task if it was cloned with a new non-matching owner', () => {
+      const tw = new TaskWorker({ owner: 'owner', spec: { inProgressState: 'inProgress'} }).cloneWithOwner('newOwner')
+      const result = tw.reset({ _owner: 'owner', _state: 'inProgress' })
+      expect(result).to.be.undefined
     })
   })
 

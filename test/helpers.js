@@ -205,7 +205,7 @@ module.exports = function() {
   }
 
   function allways(promise, f) {
-    return promise
+    return Promise.resolve(promise)
       .then(val => new Promise(r => r(f())).then(_ => val))
       .catch(e => new Promise(r => r(f())).then(_ => Promise.reject(e)))
   }

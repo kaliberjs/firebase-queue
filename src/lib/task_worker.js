@@ -22,6 +22,11 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
   this.getOwner = getOwner
   this.getOwnerRef = getOwnerRef
   this.sanitize = sanitize
+  this.cloneWithOwner = cloneWithOwner
+
+  function cloneWithOwner(owner) {
+    return new TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, finishedState, errorState, timeout, retries } })
+  }
 
   function reset(task) {
     if (task === null) return null

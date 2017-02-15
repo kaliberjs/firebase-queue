@@ -471,7 +471,8 @@ describe('QueueWorker', () => {
     it('should try and process a task if not busy, rejecting it if it throws', () => 
       withTasksRef(tasksRef => {
         const error = new Error('Error thrown in processingFunction')
-        function TaskWorker() { 
+        function TaskWorker() {
+          this.cloneWithOwner = _ => new TaskWorker()
           this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
@@ -503,6 +504,7 @@ describe('QueueWorker', () => {
     it('should set busy and current task ref for a valid task', () => 
       withTasksRef(tasksRef => {
         function TaskWorker() {
+          this.cloneWithOwner = _ => new TaskWorker()
           this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
@@ -591,6 +593,7 @@ describe('QueueWorker', () => {
     it('should invalidate callbacks if another process times the task out', () => 
       withTasksRef(tasksRef => {
         function TaskWorker() {
+          this.cloneWithOwner = _ => new TaskWorker()
           this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
@@ -621,6 +624,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const task = { foo: 'bar' }
         function TaskWorker() {
+          this.cloneWithOwner = _ => new TaskWorker()
           this.sanitize = task => (delete task._owner, task)
           this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
@@ -647,6 +651,7 @@ describe('QueueWorker', () => {
         let id = null
         const queueTask = Object.assign({ _owner: 'owner' }, task)
         function TaskWorker() {
+          this.cloneWithOwner = _ => new TaskWorker()
           this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
@@ -1027,116 +1032,179 @@ describe('QueueWorker', () => {
 
     it.skip('should use task worker to select new tasks', () => {})
 
-    it('should reset the worker when called with an invalid task spec', () => 
-      invalidTaskSpecs.forEach(invalidTaskSpec => {
-        const oldTaskNumber = qw._taskNumber()
-        qw.setTaskSpec(invalidTaskSpec)
-        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
-        expect(qw._startState()).to.be.null
-        expect(qw._inProgressState()).to.be.null
-        expect(qw._finishedState()).to.be.null
-        expect(qw._taskTimeout()).to.be.null
-        expect(qw._newTaskRef()).to.be.null
-        expect(qw._newTaskListener()).to.be.null
-        expect(qw._expiryTimeouts).to.deep.equal({})
+    it('should reset the worker when called with an invalid task spec', () => {
+      let result = null
+      function TaskWorker({ spec }) {
+        result = spec
+        this.hasTimeout = () => false
+      }
+      return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+        invalidTaskSpecs.forEach(invalidTaskSpec => {
+          const oldTaskNumber = qw._taskNumber()
+          qw.setTaskSpec(invalidTaskSpec)
+          expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+          expect(result.startState).to.be.null
+          expect(result.inProgressState).to.be.null
+          expect(result.finishedState).to.be.null
+          expect(result.timeout).to.be.null
+          expect(qw._newTaskRef()).to.be.null
+          expect(qw._newTaskListener()).to.be.null
+          expect(qw._expiryTimeouts).to.deep.equal({})
+        })
       })
-    )
+    })
 
-    it('should reset the worker when called with an invalid task spec after a valid task spec', () =>
-      invalidTaskSpecs.forEach(invalidTaskSpec => {
-        qw.setTaskSpec(th.validBasicTaskSpec)
-        const oldTaskNumber = qw._taskNumber()
-        qw.setTaskSpec(invalidTaskSpec)
-        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
-        expect(qw._startState()).to.be.null
-        expect(qw._inProgressState()).to.be.null
-        expect(qw._finishedState()).to.be.null
-        expect(qw._taskTimeout()).to.be.null
-        expect(qw._newTaskRef()).to.be.null
-        expect(qw._newTaskListener()).to.be.null
-        expect(qw._expiryTimeouts).to.deep.equal({})
+    it('should reset the worker when called with an invalid task spec after a valid task spec', () => {
+      let result = null
+      function TaskWorker({ spec }) {
+        result = spec
+        this.hasTimeout = () => false
+        this.getNextFrom = ref => ref
+      }
+      return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+        invalidTaskSpecs.forEach(invalidTaskSpec => {
+          qw.setTaskSpec(th.validBasicTaskSpec)
+          const oldTaskNumber = qw._taskNumber()
+          qw.setTaskSpec(invalidTaskSpec)
+          expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+          expect(result.startState).to.be.null
+          expect(result.inProgressState).to.be.null
+          expect(result.finishedState).to.be.null
+          expect(result.timeout).to.be.null
+          expect(qw._newTaskRef()).to.be.null
+          expect(qw._newTaskListener()).to.be.null
+          expect(qw._expiryTimeouts).to.deep.equal({})
+        })
       })
-    )
+    })
 
-    it('should reset the worker when called with an invalid task spec after a valid task spec with everythin', () => 
-      invalidTaskSpecs.forEach(invalidTaskSpec => {
-        qw.setTaskSpec(th.validTaskSpecWithEverything)
-        const oldTaskNumber = qw._taskNumber()
-        qw.setTaskSpec(invalidTaskSpec)
-        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
-        expect(qw._startState()).to.be.null
-        expect(qw._inProgressState()).to.be.null
-        expect(qw._finishedState()).to.be.null
-        expect(qw._taskTimeout()).to.be.null
-        expect(qw._newTaskRef()).to.be.null
-        expect(qw._newTaskListener()).to.be.null
-        expect(qw._expiryTimeouts).to.deep.equal({})
+    it('should reset the worker when called with an invalid task spec after a valid task spec with everythin', () => {
+      let result = null
+      function TaskWorker({ spec }) {
+        result = spec
+        this.hasTimeout = () => false
+        this.getNextFrom = ref => ref
+      }
+      return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+        invalidTaskSpecs.forEach(invalidTaskSpec => {
+          qw.setTaskSpec(th.validTaskSpecWithEverything)
+          const oldTaskNumber = qw._taskNumber()
+          qw.setTaskSpec(invalidTaskSpec)
+          expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+          expect(result.startState).to.be.null
+          expect(result.inProgressState).to.be.null
+          expect(result.finishedState).to.be.null
+          expect(result.timeout).to.be.null
+          expect(qw._newTaskRef()).to.be.null
+          expect(qw._newTaskListener()).to.be.null
+          expect(qw._expiryTimeouts).to.deep.equal({})
+        })
       })
-    )
+    })
 
     it('should reset a worker when called with a basic valid task spec', () => {
-      const oldTaskNumber = qw._taskNumber()
-      qw.setTaskSpec(th.validBasicTaskSpec)
-      expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
-      expect(qw._startState()).to.be.null
-      expect(qw._inProgressState()).to.equal(th.validBasicTaskSpec.inProgressState)
-      expect(qw._finishedState()).to.be.null
-      expect(qw._taskTimeout()).to.be.null
-      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
-      expect(qw._newTaskListener()).to.be.a('function')
-      expect(qw._expiryTimeouts).to.deep.equal({})
+      let result = null
+      function TaskWorker({ spec }) {
+        result = spec
+        this.hasTimeout = () => false
+        this.getNextFrom = ref => ref
+      }
+      return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+        const oldTaskNumber = qw._taskNumber()
+        qw.setTaskSpec(th.validBasicTaskSpec)
+        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+        expect(result.startState).to.be.null
+        expect(result.inProgressState).to.equal(th.validBasicTaskSpec.inProgressState)
+        expect(result.finishedState).to.be.null
+        expect(result.timeout).to.be.null
+        expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
+        expect(qw._newTaskListener()).to.be.a('function')
+        expect(qw._expiryTimeouts).to.deep.equal({})
+      })
     })
 
     it('should reset a worker when called with a valid task spec with a startState', () => {
-      const oldTaskNumber = qw._taskNumber()
-      qw.setTaskSpec(th.validTaskSpecWithStartState)
-      expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
-      expect(qw._startState()).to.equal(th.validTaskSpecWithStartState.startState)
-      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithStartState.inProgressState)
-      expect(qw._finishedState()).to.be.null
-      expect(qw._taskTimeout()).to.be.null
-      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
-      expect(qw._newTaskListener()).to.be.a('function')
-      expect(qw._expiryTimeouts).to.deep.equal({})
+      let result = null
+      function TaskWorker({ spec }) {
+        result = spec
+        this.hasTimeout = () => false
+        this.getNextFrom = ref => ref
+      }
+      return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+        const oldTaskNumber = qw._taskNumber()
+        qw.setTaskSpec(th.validTaskSpecWithStartState)
+        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+        expect(result.startState).to.equal(th.validTaskSpecWithStartState.startState)
+        expect(result.inProgressState).to.equal(th.validTaskSpecWithStartState.inProgressState)
+        expect(result.finishedState).to.be.null
+        expect(result.timeout).to.be.null
+        expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
+        expect(qw._newTaskListener()).to.be.a('function')
+        expect(qw._expiryTimeouts).to.deep.equal({})
+      })
     })
 
     it('should reset a worker when called with a valid task spec with a finishedState', () => {
-      const oldTaskNumber = qw._taskNumber()
-      qw.setTaskSpec(th.validTaskSpecWithFinishedState)
-      expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
-      expect(qw._startState()).to.be.null
-      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithFinishedState.inProgressState)
-      expect(qw._finishedState()).to.equal(th.validTaskSpecWithFinishedState.finishedState)
-      expect(qw._taskTimeout()).to.be.null
-      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
-      expect(qw._newTaskListener()).to.be.a('function')
-      expect(qw._expiryTimeouts).to.deep.equal({})
+      let result = null
+      function TaskWorker({ spec }) {
+        result = spec
+        this.hasTimeout = () => false
+        this.getNextFrom = ref => ref
+      }
+      return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+        const oldTaskNumber = qw._taskNumber()
+        qw.setTaskSpec(th.validTaskSpecWithFinishedState)
+        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+        expect(result.startState).to.be.null
+        expect(result.inProgressState).to.equal(th.validTaskSpecWithFinishedState.inProgressState)
+        expect(result.finishedState).to.equal(th.validTaskSpecWithFinishedState.finishedState)
+        expect(result.timeout).to.be.null
+        expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
+        expect(qw._newTaskListener()).to.be.a('function')
+        expect(qw._expiryTimeouts).to.deep.equal({})
+      })
     })
 
     it('should reset a worker when called with a valid task spec with a timeout', () => {
-      const oldTaskNumber = qw._taskNumber()
-      qw.setTaskSpec(th.validTaskSpecWithTimeout)
-      expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
-      expect(qw._startState()).to.be.null
-      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithTimeout.inProgressState)
-      expect(qw._finishedState()).to.be.null
-      expect(qw._taskTimeout()).to.equal(th.validTaskSpecWithTimeout.timeout)
-      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
-      expect(qw._newTaskListener()).to.be.a('function')
-      expect(qw._expiryTimeouts).to.deep.equal({})
+      let result = null
+      function TaskWorker({ spec }) {
+        result = spec
+        this.hasTimeout = () => false
+        this.getNextFrom = ref => ref
+      }
+      return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+        const oldTaskNumber = qw._taskNumber()
+        qw.setTaskSpec(th.validTaskSpecWithTimeout)
+        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+        expect(result.startState).to.be.null
+        expect(result.inProgressState).to.equal(th.validTaskSpecWithTimeout.inProgressState)
+        expect(result.finishedState).to.be.null
+        expect(result.timeout).to.equal(th.validTaskSpecWithTimeout.timeout)
+        expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
+        expect(qw._newTaskListener()).to.be.a('function')
+        expect(qw._expiryTimeouts).to.deep.equal({})
+      })
     })
 
     it('should reset a worker when called with a valid task spec with everything', () => {
-      const oldTaskNumber = qw._taskNumber()
-      qw.setTaskSpec(th.validTaskSpecWithEverything)
-      expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
-      expect(qw._startState()).to.equal(th.validTaskSpecWithEverything.startState)
-      expect(qw._inProgressState()).to.equal(th.validTaskSpecWithEverything.inProgressState)
-      expect(qw._finishedState()).to.equal(th.validTaskSpecWithEverything.finishedState)
-      expect(qw._taskTimeout()).to.equal(th.validTaskSpecWithEverything.timeout)
-      expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
-      expect(qw._newTaskListener()).to.be.a('function')
-      expect(qw._expiryTimeouts).to.deep.equal({})
+      let result = null
+      function TaskWorker({ spec }) {
+        result = spec
+        this.hasTimeout = () => false
+        this.getNextFrom = ref => ref
+      }
+      return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+        const oldTaskNumber = qw._taskNumber()
+        qw.setTaskSpec(th.validTaskSpecWithEverything)
+        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+        expect(result.startState).to.equal(th.validTaskSpecWithEverything.startState)
+        expect(result.inProgressState).to.equal(th.validTaskSpecWithEverything.inProgressState)
+        expect(result.finishedState).to.equal(th.validTaskSpecWithEverything.finishedState)
+        expect(result.timeout).to.equal(th.validTaskSpecWithEverything.timeout)
+        expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
+        expect(qw._newTaskListener()).to.be.a('function')
+        expect(qw._expiryTimeouts).to.deep.equal({})
+      })
     })
 
     it('should not pick up tasks on the queue not for the current worker', () => {
