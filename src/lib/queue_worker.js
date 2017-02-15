@@ -352,7 +352,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   }
 
   function startWatchingOwner(taskRef) {
-    const ownerRef = taskRef.child('_owner')
+    const ownerRef = taskWorker.getOwnerRef(taskRef)
     ownerRef.on('value', onOwnerChanged)
 
     function onOwnerChanged(snapshot) {
@@ -401,7 +401,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
         // This catches de-duped events from the server - if the task was removed
         // and added in quick succession, the server may squash them into a
         // single update
-        if (snapshot.child('_owner').val() !== owners[snapshot.key]) 
+        if (taskWorker.getOwner(snapshot) !== owners[snapshot.key])
           setUpTimeout(snapshot)
       })
     }
@@ -409,7 +409,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
     function setUpTimeout(snapshot) {
       const taskName = snapshot.key
       const expires = taskWorker.expiresIn(snapshot)
-      owners[taskName] = snapshot.child('_owner').val();
+      owners[taskName] = taskWorker.getOwner(snapshot)
       expiryTimeouts[taskName] = setTimeout(
         () => _resetTaskIfTimedOut(snapshot.ref),
         expires

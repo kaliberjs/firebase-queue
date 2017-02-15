@@ -472,6 +472,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const error = new Error('Error thrown in processingFunction')
         function TaskWorker() { 
+          this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.rejectWith = (message, stack) => task => ({ foo: null, message, stack })
@@ -502,6 +503,7 @@ describe('QueueWorker', () => {
     it('should set busy and current task ref for a valid task', () => 
       withTasksRef(tasksRef => {
         function TaskWorker() {
+          this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.resolveWith = newTask => task => undefined
@@ -589,6 +591,7 @@ describe('QueueWorker', () => {
     it('should invalidate callbacks if another process times the task out', () => 
       withTasksRef(tasksRef => {
         function TaskWorker() {
+          this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.resolveWith = newTask => task => undefined
@@ -618,6 +621,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const task = { foo: 'bar' }
         function TaskWorker() {
+          this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.claimFor = getOwner => task => (task && { foo: task.foo, _owner: 'owner' } || task)
@@ -642,6 +646,7 @@ describe('QueueWorker', () => {
         let id = null
         const queueTask = Object.assign({ _owner: 'owner' }, task)
         function TaskWorker() {
+          this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.claimFor = getOwner => task => queueTask

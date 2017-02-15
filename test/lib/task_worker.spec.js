@@ -5,7 +5,7 @@ const chai = require('chai')
 
 const { expect } = chai
 
-const { TaskWorker, serverNow, serverOffset, nonPlainObjects, nonStringsWithoutNull, withTasksRef, pushTasks, chain, withTimeFrozen, withSnapshots } = new Helpers()
+const { TaskWorker, serverNow, serverOffset, nonPlainObjects, nonStringsWithoutNull, withTasksRef, pushTasks, chain, withTimeFrozen, withSnapshots, withSnapshot } = new Helpers()
 
 const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
 
@@ -612,9 +612,9 @@ describe('TaskWorker', () => {
     it('should say a task is in error state when it is', () => {
       const tw = new TaskWorker({ spec: { errorState: 'error' } })
 
-      return withSnapshots(
-        [{ _state: 'error' }],
-        ([t1]) => {
+      return withSnapshot(
+        { _state: 'error' },
+        t1 => {
           expect(tw.isInErrorState(t1)).to.be.true
         }
       )
@@ -643,9 +643,9 @@ describe('TaskWorker', () => {
 
     it('should return the value of timeout if the last change was now', () =>
       withTimeFrozen(now =>
-        withSnapshots(
-          [{ _state_changed: now }],
-          ([snapshot]) => {
+        withSnapshot(
+          { _state_changed: now },
+          snapshot => {
             const tw = new TaskWorker({ serverOffset: 0, spec: { timeout: 42 } })
             expect(tw.expiresIn(snapshot)).to.equal(42)
           }
@@ -655,9 +655,9 @@ describe('TaskWorker', () => {
 
     it('should return 0 if the time passed since the last change is bigger than the timeout', () =>
       withTimeFrozen(now =>
-        withSnapshots(
-          [{ _state_changed: now - 43 }],
-          ([snapshot]) => {
+        withSnapshot(
+          { _state_changed: now - 43 },
+          snapshot => {
             const tw = new TaskWorker({ serverOffset: 0, spec: { timeout: 42 } })
             expect(tw.expiresIn(snapshot)).to.equal(0)
           }
@@ -667,9 +667,9 @@ describe('TaskWorker', () => {
 
     it('should take server offset into account', () =>
       withTimeFrozen(now =>
-        withSnapshots(
-          [{ _state_changed: now }],
-          ([snapshot]) => {
+        withSnapshot(
+          { _state_changed: now },
+          snapshot => {
             const tw = new TaskWorker({ serverOffset: 10, spec: { timeout: 42 } })
             expect(tw.expiresIn(snapshot)).to.equal(32)
           }
@@ -679,9 +679,9 @@ describe('TaskWorker', () => {
 
     it('should assume now if the task has no recorded state change timestamp', () =>
       withTimeFrozen(_ =>
-        withSnapshots(
-          [{}],
-          ([snapshot]) => {
+        withSnapshot(
+          {},
+          snapshot => {
             const tw = new TaskWorker({ serverOffset: 10, spec: { timeout: 42 } })
             expect(tw.expiresIn(snapshot)).to.equal(42)
           }
@@ -691,14 +691,60 @@ describe('TaskWorker', () => {
 
     it('should correctly return the expiration time if it in the past', () =>
       withTimeFrozen(now =>
-        withSnapshots(
-          [{ _state_changed: now - 10 }],
-          ([snapshot]) => {
+        withSnapshot(
+          { _state_changed: now - 10 },
+          snapshot => {
             const tw = new TaskWorker({ serverOffset: 0, spec: { timeout: 42 } })
             expect(tw.expiresIn(snapshot)).to.equal(32)
           }
         )
       )
+    )
+  })
+
+  describe('#getOwner', () => {
+
+    it('should return null if no owner was present', () =>
+      withSnapshot(
+        {  },
+        snapshot => {
+          const tw = new TaskWorker({ spec: {} })
+          expect(tw.getOwner(snapshot)).to.equal(null)
+        }
+      )
+    )
+
+    it('should return the owner if it is present', () =>
+      withSnapshot(
+        { _owner: 'owner' },
+        snapshot => {
+          const tw = new TaskWorker({ spec: {} })
+          expect(tw.getOwner(snapshot)).to.equal('owner')
+        }
+      )
+    )
+  })
+
+  describe('#getOwnerRef', () => {
+
+    it('should return a reference for the owner', () =>
+      withTasksRef(tasksRef => {
+        let result = []
+        const tw = new TaskWorker({ spec: {} })
+        const ref = tw.getOwnerRef(tasksRef)
+        ref.on('value', snapshot => { result.push(snapshot.val()) })
+
+        return chain(
+          ref.set('owner1'),
+          _ => tasksRef.set({ _other: 'other' }),
+          _ => tasksRef.set({ _owner: 'owner2' }),
+          _ => tasksRef.set({ _owner: 'owner3' }),
+          _ => {
+            expect(result).to.deep.equal(['owner1', null, 'owner2', 'owner3'])
+          },
+          _ => ref.off()
+        )
+      })
     )
   })
 })

@@ -100,9 +100,14 @@ module.exports = function() {
   this.serverOffset = self.offset
   this.withTimeFrozen = withTimeFrozen
   this.withSnapshots = withSnapshots
+  this.withSnapshot = withSnapshot
 
   function now() { return new Date().getTime() }
   function serverNow() { return now() + self.offset }
+
+  function withSnapshot(task, f) {
+    return withSnapshots([task], ([task]) => f(task))
+  }
 
   function withSnapshots(tasks, f) {
     return withTasksRef(tasksRef =>
