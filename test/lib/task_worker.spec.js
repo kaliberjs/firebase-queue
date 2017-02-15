@@ -736,15 +736,35 @@ describe('TaskWorker', () => {
 
         return chain(
           ref.set('owner1'),
+          _ => ref.set('owner2'),
           _ => tasksRef.set({ _other: 'other' }),
-          _ => tasksRef.set({ _owner: 'owner2' }),
           _ => tasksRef.set({ _owner: 'owner3' }),
+          _ => tasksRef.set({ _owner: 'owner4' }),
           _ => {
-            expect(result).to.deep.equal(['owner1', null, 'owner2', 'owner3'])
+            expect(result).to.deep.equal(['owner1', 'owner2', null, 'owner3', 'owner4'])
           },
           _ => ref.off()
         )
       })
     )
   })
+
+  describe('#sanitize', () =>
+
+    it('should remove any fields introduced by the task worker methods', () => {
+      const tw = new TaskWorker({ spec: {} })
+      const input = {
+        _owner: 'owner',
+        _state: 'state',
+        _state_changed: 'state changed',
+        _progress: 'progress',
+        _error_details: 'error details',
+        foo: 'bar'
+      }
+      const expected = { foo: 'bar' }
+      const result = tw.sanitize(input)
+      expect(result).to.deep.equal(expected)
+      expect(input).to.deep.equal(expected)
+    })
+  )
 })

@@ -6,6 +6,8 @@ const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
 
 function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, finishedState, errorState, timeout, retries } }) {
 
+  const fields = ['_state', '_state_changed', '_owner', '_progress', '_error_details']
+
   this.reset = reset
   this.resetIfTimedOut = resetIfTimedOut
   this.resolveWith = resolveWith
@@ -19,6 +21,7 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
   this.expiresIn = expiresIn
   this.getOwner = getOwner
   this.getOwnerRef = getOwnerRef
+  this.sanitize = sanitize
 
   function reset(task) {
     if (task === null) return null
@@ -150,6 +153,11 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
 
   function getOwnerRef(ref) {
     return ref.child('_owner')
+  }
+
+  function sanitize(task) {
+    fields.forEach(field => { delete task[field] })
+    return task
   }
 
   function _isOwner({ _owner }) { return _owner === owner }

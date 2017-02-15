@@ -305,15 +305,8 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
                 /* const */ currentTaskRef = snapshot.ref
 
                 const data = snapshot.val()
-                if (sanitize) {
-                  [
-                    '_state',
-                    '_state_changed',
-                    '_owner',
-                    '_progress',
-                    '_error_details'
-                  ].forEach(reserved => { delete data[reserved] });
-                } else { data._id = snapshot.key } // this should be independent of `sanitize` and behind the flag `includeKey` or similar
+                if (sanitize) taskWorker.sanitize(data)
+                else { data._id = snapshot.key } // this should be independent of `sanitize` and behind the flag `includeKey` or similar
 
                 const progress = _updateProgress(currentTaskRef, taskNumber);
                 const [resolve, resolvePromise] = _resolve(currentTaskRef, taskNumber);

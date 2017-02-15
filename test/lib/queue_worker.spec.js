@@ -480,7 +480,7 @@ describe('QueueWorker', () => {
         }
         function processFunction() { throw error }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, processFunction }, qw => {
+        return withQueueWorkerFor({ tasksRef, TaskWorker, processFunction, sanitize: false }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
           qw._newTaskRef(tasksRef)
           return withTestRefFor(tasksRef, testRef =>
@@ -510,7 +510,7 @@ describe('QueueWorker', () => {
           this.claimFor = getOwner => task => task 
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+        return withQueueWorkerFor({ tasksRef, TaskWorker, sanitize: false }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
           qw._newTaskRef(tasksRef)
           return withTestRefFor(tasksRef, testRef =>
@@ -598,7 +598,7 @@ describe('QueueWorker', () => {
           this.claimFor = getOwner => task => task 
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+        return withQueueWorkerFor({ tasksRef, TaskWorker, sanitize: false }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
           qw._newTaskRef(tasksRef)
           return withTestRefFor(tasksRef, testRef =>
@@ -621,6 +621,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const task = { foo: 'bar' }
         function TaskWorker() {
+          this.sanitize = task => (delete task._owner, task)
           this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
