@@ -371,9 +371,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
         Object.keys(expiryTimeouts).forEach(key => {
           clearTimeout(expiryTimeouts[key])
-          delete expiryTimeouts[key]
         })
-        Object.keys(owners).forEach(key => { delete owners[key] })
       }
 
       function setUpTimeout(snapshot) {
