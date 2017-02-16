@@ -77,10 +77,8 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   this._processId = processId
   this._newTaskRef = (val) => val ? (newTaskRef = val, undefined) : newTaskRef
   this._busy = (val) => val !== undefined ? (busy = val, undefined) : busy
-  this._suppressStack = (val) => val ? (suppressStack = val, undefined) : suppressStack
   this._newTaskListener = () => newTaskListener
   this._taskNumber = () => taskNumber
-  this._currentId = currentId
 
   return this
 
