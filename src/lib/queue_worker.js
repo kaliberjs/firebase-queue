@@ -52,13 +52,11 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
   let shutdownDeferred = null
   let taskWorker = null
-  let processingTasksRef = null
   let newTaskRef = null
 
   let stopWatchingOwner = null
   let newTaskListener = null
-  let processingTaskAddedListener = null
-  let processingTaskRemovedListener = null
+  let stopTimeouts = null
 
   let busy = false
   let taskNumber = 0
@@ -81,13 +79,10 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   this._setTaskSpec = _setTaskSpec
   this._processId = processId
   this._expiryTimeouts = expiryTimeouts
-  this._processingTasksRef = () => processingTasksRef
   this._newTaskRef = (val) => val ? (newTaskRef = val, undefined) : newTaskRef
   this._busy = (val) => val !== undefined ? (busy = val, undefined) : busy
   this._suppressStack = (val) => val ? (suppressStack = val, undefined) : suppressStack
   this._newTaskListener = () => newTaskListener
-  this._processingTaskAddedListener = () => processingTaskAddedListener
-  this._processingTaskRemovedListener = () => processingTaskRemovedListener
   this._taskNumber = () => taskNumber
   this._currentId = currentId
 
@@ -350,39 +345,38 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
    * Sets up timeouts to reclaim tasks that fail due to taking too long.
    */
   function _setUpTimeouts() {
-    if (processingTaskAddedListener !== null) {
-      processingTasksRef.off('child_added', processingTaskAddedListener)
-      processingTaskAddedListener = null
-    }
-    if (processingTaskRemovedListener !== null) {
-      processingTasksRef.off('child_removed', processingTaskRemovedListener)
-      processingTaskRemovedListener = null
-    }
+    if (stopTimeouts) stopTimeouts()
 
-    Object.keys(expiryTimeouts).forEach(key => { 
-      clearTimeout(expiryTimeouts[key])
-      delete expiryTimeouts[key]
-    })
-    Object.keys(owners).forEach(key => { delete owners[key] })
+    if (taskWorker.hasTimeout()) {
+      const ref = taskWorker.getInProgressFrom(tasksRef)
 
-    if (!taskWorker.hasTimeout()) processingTasksRef = null
-    else {
-      processingTasksRef = taskWorker.getInProgressFrom(tasksRef)
-
-      processingTaskAddedListener = processingTasksRef.on('child_added', setUpTimeout)
-      processingTaskRemovedListener = processingTasksRef.on('child_removed', ({ key }) => {
+      const onChildAdded = ref.on('child_added', setUpTimeout)
+      const onChildRemoved = ref.on('child_removed', ({ key }) => {
         clearTimeout(expiryTimeouts[key])
         delete expiryTimeouts[key]
         delete owners[key]
       })
       // possible problem, this listener is never removed:
-      processingTasksRef.on('child_changed', snapshot => {
+      ref.on('child_changed', snapshot => {
         // This catches de-duped events from the server - if the task was removed
         // and added in quick succession, the server may squash them into a
         // single update
         if (taskWorker.getOwner(snapshot) !== owners[snapshot.key])
           setUpTimeout(snapshot)
       })
+
+      stopTimeouts = () => {
+        stopTimeouts = null
+
+        ref.off('child_added', onChildAdded)
+        ref.off('child_removed', onChildRemoved)
+
+        Object.keys(expiryTimeouts).forEach(key => {
+          clearTimeout(expiryTimeouts[key])
+          delete expiryTimeouts[key]
+        })
+        Object.keys(owners).forEach(key => { delete owners[key] })
+      }
     }
 
     function setUpTimeout(snapshot) {
@@ -424,6 +418,12 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
     self._setUpTimeouts()
   }
+
+  // The mechanism of creating and updating the task worker is a refactoring of the original code
+  // it now however clearly shows an inbalance. When a QueueWorker is created its state is 
+  // different from the state left after a shutdown (_setTaskSpec(null)). In the latter case 
+  // we end up with a task worker in 'default' state. It seems this does not give any problems
+  // in practice but this is a pure side-effect from the other moving parts. 
 
   function _setTaskSpec(taskSpec) {
     const spec = isValidTaskSpec(taskSpec) ? getSanitizedTaskSpec(taskSpec) : getSanitizedTaskSpec()
