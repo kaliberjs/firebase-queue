@@ -47,9 +47,6 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
   const processId = processIdBase + ':' + uuid.v4()
 
-  const expiryTimeouts = {}
-  const owners = {}
-
   let shutdownDeferred = null
   let taskWorker = null
   let newTaskRef = null
@@ -78,7 +75,6 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   this._reject = _reject
   this._setTaskSpec = _setTaskSpec
   this._processId = processId
-  this._expiryTimeouts = expiryTimeouts
   this._newTaskRef = (val) => val ? (newTaskRef = val, undefined) : newTaskRef
   this._busy = (val) => val !== undefined ? (busy = val, undefined) : busy
   this._suppressStack = (val) => val ? (suppressStack = val, undefined) : suppressStack
@@ -348,6 +344,8 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
     if (stopTimeouts) stopTimeouts()
 
     if (taskWorker.hasTimeout()) {
+      const expiryTimeouts = {}
+      const owners = {}
       const ref = taskWorker.getInProgressFrom(tasksRef)
 
       const onChildAdded = ref.on('child_added', setUpTimeout)
@@ -356,8 +354,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
         delete expiryTimeouts[key]
         delete owners[key]
       })
-      // possible problem, this listener is never removed:
-      ref.on('child_changed', snapshot => {
+      const onChildChanged = ref.on('child_changed', snapshot => {
         // This catches de-duped events from the server - if the task was removed
         // and added in quick succession, the server may squash them into a
         // single update
@@ -370,6 +367,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
         ref.off('child_added', onChildAdded)
         ref.off('child_removed', onChildRemoved)
+        ref.off('child_changed', onChildChanged)
 
         Object.keys(expiryTimeouts).forEach(key => {
           clearTimeout(expiryTimeouts[key])
@@ -377,16 +375,16 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
         })
         Object.keys(owners).forEach(key => { delete owners[key] })
       }
-    }
 
-    function setUpTimeout(snapshot) {
-      const taskName = snapshot.key
-      const expires = taskWorker.expiresIn(snapshot)
-      owners[taskName] = taskWorker.getOwner(snapshot)
-      expiryTimeouts[taskName] = setTimeout(
-        () => _resetTaskIfTimedOut(snapshot.ref),
-        expires
-      )
+      function setUpTimeout(snapshot) {
+        const taskName = snapshot.key
+        const expires = taskWorker.expiresIn(snapshot)
+        owners[taskName] = taskWorker.getOwner(snapshot)
+        expiryTimeouts[taskName] = setTimeout(
+          () => _resetTaskIfTimedOut(snapshot.ref),
+          expires
+        )
+      }
     }
   }
 

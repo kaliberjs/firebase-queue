@@ -13,7 +13,7 @@ chai
 const { expect } = chai
 
 const th = new Helpers()
-const { now, serverNow, allways, sideEffect, withTasksRef, withTestRefFor, withQueueWorkerFor, validBasicTaskSpec, validTaskSpecWithFinishedState, chain, pushTasks, waitForState, waitForStates, echo, nonPlainObjects, nonStrings, nonStringsWithoutNull } = th
+const { now, serverNow, allways, sideEffect, withTasksRef, withTestRefFor, withQueueWorkerFor, validBasicTaskSpec, validTaskSpecWithFinishedState, chain, pushTasks, waitForState, waitForStates, echo, nonPlainObjects, nonStrings, nonStringsWithoutNull, wait } = th
 const tasksRef = th.tasksRef
 const _tasksRef = tasksRef
 
@@ -709,40 +709,53 @@ describe('QueueWorker', () => {
 
     it('should not set up timeouts when no task timeout is set', () => {
       qw.setTaskSpec(th.validBasicTaskSpec)
-      return tasksRef.push().set({
-        '_state': th.validBasicTaskSpec.inProgressState,
-        '_state_changed': now()
-      }).then(_ => {
-          expect(qw._expiryTimeouts).to.deep.equal({})
-        })
+      return chain(
+        tasksRef.push().set({
+          '_state': th.validBasicTaskSpec.inProgressState,
+          '_state_changed': now()
+        }),
+        _ => { expect(setTimeoutSpy.called).to.be.false }
+      )
     })
 
     it('should not set up timeouts when a task not in progress is added and a task timeout is set', () => {
       qw.setTaskSpec(th.validTaskSpecWithTimeout)
-      return tasksRef.push({
-        '_state': th.validTaskSpecWithFinishedState.finishedState,
-        '_state_changed': now()
-      }).then(_ => {
-          expect(qw._expiryTimeouts).to.deep.equal({})
-        })
+      return chain(
+        tasksRef.push({
+          '_state': th.validTaskSpecWithFinishedState.finishedState,
+          '_state_changed': now()
+        }),
+        _ => { expect(setTimeoutSpy.called).to.be.false }
+      )
     })
 
-    it.skip('should set up timeout listeners when a task timeout is set', () => {
-      // we need to evaluate if this is really needed or can be tested using the effect
-      // of setting up timeouts
-
-      // required steps in this spec:
-      // 1. set taskspec without timeout
-      // 2. set taskspec with timeout
+    it('should set up timeout listeners when a task timeout is set', () => {
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      return chain(
+        tasksRef.push({
+          '_state': th.validBasicTaskSpec.inProgressState,
+          '_state_changed': now()
+        }),
+        _ => { expect(setTimeoutSpy.called).to.be.false },
+        _ => { qw.setTaskSpec(th.validTaskSpecWithTimeout) },
+        _ => tasksRef.once('child_added'),
+        _ => { expect(setTimeoutSpy.called).to.be.true }
+      )
     })
 
-    it.skip('should remove timeout listeners when a task timeout is not specified after a previous task specified a timeout', () => {
-      // we need to evaluate if this is really needed or can be tested using the effect
-      // of setting up timeouts
+    it.skip('should do xyz when a task in progress is removed', () => {})
+    it.skip('should do xyz when a task in progress is changed', () => {})
 
-      // required steps in this spec:
-      // 1. set taskspec with timeout
-      // 2. set taskspec without timeout
+    it('should remove timeout listeners when a task timeout is not specified after a previous task specified a timeout', () => {
+      qw.setTaskSpec(th.validTaskSpecWithTimeout)
+      qw.setTaskSpec(th.validBasicTaskSpec)
+      return chain(
+        tasksRef.push().set({
+          '_state': th.validBasicTaskSpec.inProgressState,
+          '_state_changed': now()
+        }),
+        _ => { expect(setTimeoutSpy.called).to.be.false }
+      )
     })
 
     it('should set up a timeout when a task timeout is set and a task added', () => {
@@ -753,7 +766,6 @@ describe('QueueWorker', () => {
       })
 
       return testRef.then(_ => {
-          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key])
           expect(setTimeoutSpy.firstCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5)
         })
     })
@@ -767,12 +779,8 @@ describe('QueueWorker', () => {
       })
 
       return testRef
-        .then(_ => {
-          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key])
-        })
         .then(_ => testRef.update({ '_owner': qw._processId + ':1', '_state_changed': now() - 5 }))
         .then(_ => {
-          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key])
           expect(setTimeoutSpy.lastCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5)
         })
     })
@@ -788,12 +796,8 @@ describe('QueueWorker', () => {
       })
 
       return testRef
-        .then(_ => {
-          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key])
-        })
         .then(_ => testRef.update({ '_progress': 1 }))
         .then(_ => {
-          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key])
           expect(setTimeoutSpy.firstCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5)
         })
     })
@@ -807,25 +811,30 @@ describe('QueueWorker', () => {
 
       return testRef
         .then(_ => {
-          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key]);
           expect(setTimeoutSpy.firstCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout);
         })
     })
 
     it('should clear timeouts when a task timeout is not set and a timeout exists', () => {
       qw.setTaskSpec(th.validTaskSpecWithTimeout)
-      const testRef = tasksRef.push({
+
+      const task = {
         '_state': th.validTaskSpecWithTimeout.inProgressState,
         '_state_changed': now()
-      })
+      }
 
-      return testRef
-        .then(_ => {
-          expect(qw._expiryTimeouts).to.have.all.keys([testRef.key])
-          qw.setTaskSpec()
-          expect(qw._expiryTimeouts).to.deep.equal({})
-        })
+      // this spec can maybe be improved by checking the actual effect
+      return withTestRefFor(tasksRef, testRef =>
+        chain(
+          testRef.set(task),
+          _ => { expect(setTimeoutSpy.called).to.be.true },
+          _ => { qw.setTaskSpec() },
+          _ => { expect(clearTimeoutSpy.called).to.be.true }
+        )
+      )
     })
+
+    it.skip('check the different types of listeners child_added, child_removed and child_changed (and also cleanup of listeners)', () => {})
 
     it('should clear a timeout when a task is completed', () => {
       const taskSpec = _.clone(th.validTaskSpecWithTimeout)
@@ -1038,7 +1047,6 @@ describe('QueueWorker', () => {
           expect(result.timeout).to.be.null
           expect(qw._newTaskRef()).to.be.null
           expect(qw._newTaskListener()).to.be.null
-          expect(qw._expiryTimeouts).to.deep.equal({})
         })
       })
     })
@@ -1062,7 +1070,6 @@ describe('QueueWorker', () => {
           expect(result.timeout).to.be.null
           expect(qw._newTaskRef()).to.be.null
           expect(qw._newTaskListener()).to.be.null
-          expect(qw._expiryTimeouts).to.deep.equal({})
         })
       })
     })
@@ -1086,7 +1093,6 @@ describe('QueueWorker', () => {
           expect(result.timeout).to.be.null
           expect(qw._newTaskRef()).to.be.null
           expect(qw._newTaskListener()).to.be.null
-          expect(qw._expiryTimeouts).to.deep.equal({})
         })
       })
     })
@@ -1108,7 +1114,6 @@ describe('QueueWorker', () => {
         expect(result.timeout).to.be.null
         expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
         expect(qw._newTaskListener()).to.be.a('function')
-        expect(qw._expiryTimeouts).to.deep.equal({})
       })
     })
 
@@ -1129,7 +1134,6 @@ describe('QueueWorker', () => {
         expect(result.timeout).to.be.null
         expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
         expect(qw._newTaskListener()).to.be.a('function')
-        expect(qw._expiryTimeouts).to.deep.equal({})
       })
     })
 
@@ -1150,7 +1154,6 @@ describe('QueueWorker', () => {
         expect(result.timeout).to.be.null
         expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
         expect(qw._newTaskListener()).to.be.a('function')
-        expect(qw._expiryTimeouts).to.deep.equal({})
       })
     })
 
@@ -1171,7 +1174,6 @@ describe('QueueWorker', () => {
         expect(result.timeout).to.equal(th.validTaskSpecWithTimeout.timeout)
         expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
         expect(qw._newTaskListener()).to.be.a('function')
-        expect(qw._expiryTimeouts).to.deep.equal({})
       })
     })
 
@@ -1192,7 +1194,6 @@ describe('QueueWorker', () => {
         expect(result.timeout).to.equal(th.validTaskSpecWithEverything.timeout)
         expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
         expect(qw._newTaskListener()).to.be.a('function')
-        expect(qw._expiryTimeouts).to.deep.equal({})
       })
     })
 
