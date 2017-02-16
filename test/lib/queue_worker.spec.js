@@ -414,10 +414,10 @@ describe('QueueWorker', () => {
 
     it('should not try and process a task if busy', () => 
       withTasksRef(tasksRef => {
-        const tasks = []
+        let claimForCalled = false
         function TaskWorker() {
           this.hasTimeout = () => false
-          this.claimFor = getOwner => task => (tasks.push([getOwner, task]), null)
+          this.claimFor = getOwner => task => (claimForCalled = true, null)
         }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
@@ -429,7 +429,7 @@ describe('QueueWorker', () => {
             testRef.set(task)
               .then(_ => qw._tryToProcess())
               .then(_ => {
-                expect(qw._currentTaskRef()).to.be.null
+                expect(claimForCalled).to.be.false
                 qw._busy(false)
               })
           )
@@ -488,7 +488,6 @@ describe('QueueWorker', () => {
             testRef.set({ foo: 'bar' })
               .then(_ => qw._tryToProcess())
               .then(_ => {
-                expect(qw._currentTaskRef()).to.not.be.null
                 expect(qw._busy()).to.be.true
               })
               .then(_ => testRef.once('child_removed'))
@@ -501,7 +500,7 @@ describe('QueueWorker', () => {
       })
     )
 
-    it('should set busy and current task ref for a valid task', () => 
+    it('should set busy for a valid task', () =>
       withTasksRef(tasksRef => {
         function TaskWorker() {
           this.cloneWithOwner = _ => new TaskWorker()
@@ -519,7 +518,6 @@ describe('QueueWorker', () => {
             testRef.set({ foo: 'bar' })
               .then(_ => qw._tryToProcess())
               .then(_ => {
-                expect(qw._currentTaskRef()).to.not.be.null
                 expect(qw._busy()).to.be.true
               })
           )
@@ -527,7 +525,7 @@ describe('QueueWorker', () => {
       })
     )
 
-    it('should not set busy and current task ref for an invalid task', () => 
+    it('should not set busy for an invalid task', () =>
       withTasksRef(tasksRef => {
         function TaskWorker() {
           this.hasTimeout = () => false
@@ -541,7 +539,6 @@ describe('QueueWorker', () => {
             testRef.set({ foo: 'bar' })
               .then(_ => qw._tryToProcess())
               .then(_ => {
-                expect(qw._currentTaskRef()).to.be.null
                 expect(qw._busy()).to.be.false
               })
           )
@@ -549,7 +546,7 @@ describe('QueueWorker', () => {
       })
     )
     
-    it('should not set busy and current task ref for a deleted task', () => 
+    it('should not set busy for a deleted task', () =>
       withTasksRef(tasksRef => {
         function TaskWorker() {
           this.hasTimeout = () => false
@@ -563,7 +560,6 @@ describe('QueueWorker', () => {
             testRef.set({ foo: 'bar' })
               .then(_ => qw._tryToProcess())
               .then(_ => {
-                expect(qw._currentTaskRef()).to.be.null
                 expect(qw._busy()).to.be.false
               })
           )
@@ -592,28 +588,33 @@ describe('QueueWorker', () => {
 
     it('should invalidate callbacks if another process times the task out', () => 
       withTasksRef(tasksRef => {
+        let resolveCalled = false
         function TaskWorker() {
           this.cloneWithOwner = _ => new TaskWorker()
           this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
-          this.resolveWith = newTask => task => undefined
+          this.resolveWith = newTask => task => (resolveCalled = true, undefined)
           this.claimFor = getOwner => task => task 
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, sanitize: false }, qw => {
+        let resolve
+
+        function test(data, _, r) { resolve = r }
+
+        return withQueueWorkerFor({ tasksRef, TaskWorker, sanitize: false, processFunction: test }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
           qw._newTaskRef(tasksRef)
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
               .then(_ => qw._tryToProcess())
               .then(_ => {
-                expect(qw._currentTaskRef()).to.not.be.null
                 expect(qw._busy()).to.be.true
               })
               .then(_ => testRef.update({ _owner: null }))
+              .then(_ => resolve())
               .then(_ => {
-                expect(qw._currentTaskRef()).to.be.null
+                expect(resolveCalled).to.be.false
               })
           )
         })

@@ -53,7 +53,6 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   let shutdownDeferred = null
   let taskWorker = null
   let processingTasksRef = null
-  let currentTaskRef = null // this can be removed as soon as we have converted the _tryToProcess unit tests
   let newTaskRef = null
 
   let stopWatchingOwner = null
@@ -83,7 +82,6 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   this._processId = processId
   this._expiryTimeouts = expiryTimeouts
   this._processingTasksRef = () => processingTasksRef
-  this._currentTaskRef = () => currentTaskRef
   this._newTaskRef = (val) => val ? (newTaskRef = val, undefined) : newTaskRef
   this._busy = (val) => val !== undefined ? (busy = val, undefined) : busy
   this._suppressStack = (val) => val ? (suppressStack = val, undefined) : suppressStack
@@ -290,7 +288,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
                 _updateTaskWorker()
 
-                /* const */ currentTaskRef = snapshot.ref
+                const currentTaskRef = snapshot.ref
 
                 const data = snapshot.val()
                 if (sanitize) taskWorker.sanitize(data)
@@ -342,9 +340,9 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
     }
 
     stopWatchingOwner = () => {
+      taskNumber += 1
       ownerRef.off('value', onOwnerChanged)
       stopWatchingOwner = null
-      currentTaskRef = null
     }
   } 
 
