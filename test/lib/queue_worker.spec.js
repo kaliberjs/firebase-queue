@@ -105,6 +105,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.reset = task => (tasks.push(task), task)
         }
@@ -132,6 +133,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.resetIfTimedOut = task => (tasks.push(task), task)
         }
@@ -159,6 +161,8 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.owner = 'owner'
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.resolveWith = newTask => task => (tasks.push([newTask, task]), task)
         }
@@ -169,7 +173,7 @@ describe('QueueWorker', () => {
           const newTask = { baz: 'qux' }
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
-              .then(_ => qw._resolve(testRef, qw._taskNumber())[0](newTask))
+              .then(_ => qw._resolve(testRef, 'owner')[0](newTask))
               .then(_ => {
                 expect(tasks).to.deep.equal([[newTask, null], [newTask, task]])
               })
@@ -184,6 +188,8 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.owner = 'newOwner'
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.resolveWith = newTask => task => (tasks.push([newTask, task]), task)
         }
@@ -192,7 +198,7 @@ describe('QueueWorker', () => {
           qw._setTaskSpec(th.validBasicTaskSpec)
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
-              .then(_ => qw._resolve(testRef, qw._taskNumber() + 1)[0]({ baz: 'qux' }))
+              .then(_ => qw._resolve(testRef, 'owner')[0]({ baz: 'qux' }))
               .then(_ => {
                 expect(tasks).to.deep.equal([])
               })
@@ -208,6 +214,8 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.owner = 'owner'
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
         }
@@ -219,7 +227,7 @@ describe('QueueWorker', () => {
           const { message, stack } = error
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
-              .then(_ => qw._reject(testRef, qw._taskNumber())[0](error))
+              .then(_ => qw._reject(testRef, 'owner')[0](error))
               .then(_ => {
                 expect(tasks).to.deep.equal([[message, stack, null], [message, stack, task]])
               })
@@ -235,6 +243,8 @@ describe('QueueWorker', () => {
         withTasksRef(tasksRef => {
           const tasks = []
           function TaskWorker() {
+            this.owner = 'owner'
+            this.cloneForNextTask = () => new TaskWorker()
             this.hasTimeout = () => false
             this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
           }
@@ -244,7 +254,7 @@ describe('QueueWorker', () => {
             const task = { foo: 'bar' }
             return withTestRefFor(tasksRef, testRef =>
               testRef.set(task)
-                .then(_ => qw._reject(testRef, qw._taskNumber())[0](nonStringObject))
+                .then(_ => qw._reject(testRef, 'owner')[0](nonStringObject))
                 .then(_ => {
                   expect(tasks).to.deep.equal([[nonStringObject.toString(), null, null], [nonStringObject.toString(), null, task]])
                 })
@@ -258,6 +268,8 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.owner = 'owner'
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
         }
@@ -268,7 +280,7 @@ describe('QueueWorker', () => {
           const error = 'My error message'
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
-              .then(_ => qw._reject(testRef, qw._taskNumber())[0](error))
+              .then(_ => qw._reject(testRef, 'owner')[0](error))
               .then(_ => {
                 expect(tasks).to.deep.equal([[error, null, null], [error, null, task]])
               })
@@ -281,6 +293,8 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.owner = 'owner'
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
         }
@@ -291,7 +305,7 @@ describe('QueueWorker', () => {
           const error = new Error('test error')
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
-              .then(_ => qw._reject(testRef, qw._taskNumber())[0](error))
+              .then(_ => qw._reject(testRef, 'owner')[0](error))
               .then(_ => {
                 expect(tasks).to.deep.equal([[error.message, null, null], [error.message, null, task]])
               })
@@ -304,6 +318,8 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.owner = 'newOwner'
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
         }
@@ -312,7 +328,7 @@ describe('QueueWorker', () => {
           qw._setTaskSpec(th.validBasicTaskSpec)
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
-              .then(_ => qw._reject(testRef, qw._taskNumber() + 1)[0](null))
+              .then(_ => qw._reject(testRef, 'owner')[0](null))
               .then(_ => {
                 expect(tasks).to.deep.equal([])
               })
@@ -328,6 +344,8 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.owner = 'owner'
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.updateProgressWith = progress => task => (tasks.push([progress, task]), task)
         }
@@ -337,7 +355,7 @@ describe('QueueWorker', () => {
           const task = { foo: 'bar' }
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
-              .then(_ => qw._updateProgress(testRef, qw._taskNumber())(1))
+              .then(_ => qw._updateProgress(testRef, 'owner')(1))
               .then(_ => {
                 expect(tasks).to.deep.equal([[1, null], [1, task]])
               })
@@ -358,6 +376,8 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
 
         function TaskWorker() {
+          this.owner = 'owner'
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.updateProgressWith = progress => task => undefined
         }
@@ -367,7 +387,7 @@ describe('QueueWorker', () => {
 
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({})
-              .then(_ => qw._updateProgress(testRef, qw._taskNumber())(1))
+              .then(_ => qw._updateProgress(testRef, 'owner')(1))
               .should.eventually.be.rejectedWith('Can\'t update progress - current task no longer owned by this process')
           )
         })
@@ -375,18 +395,27 @@ describe('QueueWorker', () => {
     )
 
     it('should not update the progress of a task if a new task is being processed', () =>
-      withTasksRef(tasksRef =>
-        withQueueWorkerFor({ tasksRef, TaskWorker: function() { this.hasTimeout = () => false } }, qw =>
-          qw._updateProgress(null, qw._taskNumber() + 1)(1)
+      withTasksRef(tasksRef => {
+        function TaskWorker() {
+          this.owner = 'newOwner'
+          this.cloneForNextTask = () => new TaskWorker()
+          this.hasTimeout = () => false 
+        }
+
+        return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
+          qw._setTaskSpec(th.validBasicTaskSpec)
+          qw._updateProgress(null, 'owner')(1)
             .should.eventually.be.rejectedWith('Can\'t update progress - no task currently being processed')
-        )
-      )
+        })
+      })
     )
 
     it('should not call the task worker if a new task is being processed', () =>
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.owner = 'newOwner'
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.updateProgressWith = progress => task => (tasks.push([progress, task]), task)
         }
@@ -395,7 +424,7 @@ describe('QueueWorker', () => {
           qw._setTaskSpec(th.validBasicTaskSpec)
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
-              .then(_ => qw._updateProgress(testRef, qw._taskNumber() + 1)(1).catch(_ => undefined))
+              .then(_ => qw._updateProgress(testRef, 'owner')(1).catch(_ => undefined))
               .then(_ => {
                 expect(tasks).to.deep.equal([])
               })
@@ -416,6 +445,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         let claimForCalled = false
         function TaskWorker() {
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.claimFor = getOwner => task => (claimForCalled = true, null)
         }
@@ -441,6 +471,8 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.nextOwner = 'owner'
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.claimFor = getOwner => task => (tasks.push([getOwner, task]), null)
         }
@@ -458,8 +490,7 @@ describe('QueueWorker', () => {
                 expect(tasks).to.have.deep.property('[1]').that.is.an.array
                 const [[f1, task1], [f2, task2]] = tasks
                 expect(f1).to.equal(f2)
-                expect(f1().startsWith('0:')).to.be.true
-                expect(f1().endsWith(':1')).to.be.true
+                expect(f1()).to.equal('owner')
                 expect(task1).to.be.null
                 expect(task2).to.deep.equal(task)
               })
@@ -472,7 +503,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const error = new Error('Error thrown in processingFunction')
         function TaskWorker() {
-          this.cloneWithOwner = _ => new TaskWorker()
+          this.cloneForNextTask = () => new TaskWorker()
           this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
@@ -503,7 +534,7 @@ describe('QueueWorker', () => {
     it('should set busy for a valid task', () =>
       withTasksRef(tasksRef => {
         function TaskWorker() {
-          this.cloneWithOwner = _ => new TaskWorker()
+          this.cloneForNextTask = () => new TaskWorker()
           this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
@@ -528,6 +559,7 @@ describe('QueueWorker', () => {
     it('should not set busy for an invalid task', () =>
       withTasksRef(tasksRef => {
         function TaskWorker() {
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.claimFor = getOwner => task => undefined
         }
@@ -549,6 +581,7 @@ describe('QueueWorker', () => {
     it('should not set busy for a deleted task', () =>
       withTasksRef(tasksRef => {
         function TaskWorker() {
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.claimFor = getOwner => task => null
         }
@@ -571,6 +604,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const notCalled = true
         function TaskWorker() {
+          this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.claimFor = getOwner => task => (notCalled = false, 'task')
         }
@@ -589,8 +623,9 @@ describe('QueueWorker', () => {
     it('should invalidate callbacks if another process times the task out', () => 
       withTasksRef(tasksRef => {
         let resolveCalled = false
-        function TaskWorker() {
-          this.cloneWithOwner = _ => new TaskWorker()
+        function TaskWorker(owner = 'owner') {
+          this.owner = owner
+          this.cloneForNextTask = () => new TaskWorker(owner + '1')
           this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
@@ -625,7 +660,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const task = { foo: 'bar' }
         function TaskWorker() {
-          this.cloneWithOwner = _ => new TaskWorker()
+          this.cloneForNextTask = () => new TaskWorker()
           this.sanitize = task => (delete task._owner, task)
           this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
@@ -652,7 +687,7 @@ describe('QueueWorker', () => {
         let id = null
         const queueTask = Object.assign({ _owner: 'owner' }, task)
         function TaskWorker() {
-          this.cloneWithOwner = _ => new TaskWorker()
+          this.cloneForNextTask = () => new TaskWorker()
           this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
@@ -1032,15 +1067,16 @@ describe('QueueWorker', () => {
 
     it('should reset the worker when called with an invalid task spec', () => {
       let result = null
+      let cloneCalled = false
       function TaskWorker({ spec }) {
         result = spec
+        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
         this.hasTimeout = () => false
       }
       return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
         invalidTaskSpecs.forEach(invalidTaskSpec => {
-          const oldTaskNumber = qw._taskNumber()
           qw.setTaskSpec(invalidTaskSpec)
-          expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+          expect(cloneCalled).to.be.true
           expect(result.startState).to.be.null
           expect(result.inProgressState).to.be.null
           expect(result.finishedState).to.be.null
@@ -1053,17 +1089,20 @@ describe('QueueWorker', () => {
 
     it('should reset the worker when called with an invalid task spec after a valid task spec', () => {
       let result = null
+      let cloneCalled = false
       function TaskWorker({ spec }) {
         result = spec
+        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
         this.hasTimeout = () => false
         this.getNextFrom = ref => ref
       }
       return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
         invalidTaskSpecs.forEach(invalidTaskSpec => {
           qw.setTaskSpec(th.validBasicTaskSpec)
-          const oldTaskNumber = qw._taskNumber()
+          expect(cloneCalled).to.be.true
+          cloneCalled = false
           qw.setTaskSpec(invalidTaskSpec)
-          expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+          expect(cloneCalled).to.be.true
           expect(result.startState).to.be.null
           expect(result.inProgressState).to.be.null
           expect(result.finishedState).to.be.null
@@ -1076,17 +1115,20 @@ describe('QueueWorker', () => {
 
     it('should reset the worker when called with an invalid task spec after a valid task spec with everythin', () => {
       let result = null
+      let cloneCalled = false
       function TaskWorker({ spec }) {
         result = spec
+        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
         this.hasTimeout = () => false
         this.getNextFrom = ref => ref
       }
       return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
         invalidTaskSpecs.forEach(invalidTaskSpec => {
           qw.setTaskSpec(th.validTaskSpecWithEverything)
-          const oldTaskNumber = qw._taskNumber()
+          expect(cloneCalled).to.be.true
+          cloneCalled = false
           qw.setTaskSpec(invalidTaskSpec)
-          expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+          expect(cloneCalled).to.be.true
           expect(result.startState).to.be.null
           expect(result.inProgressState).to.be.null
           expect(result.finishedState).to.be.null
@@ -1099,15 +1141,16 @@ describe('QueueWorker', () => {
 
     it('should reset a worker when called with a basic valid task spec', () => {
       let result = null
+      let cloneCalled = false
       function TaskWorker({ spec }) {
         result = spec
+        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
         this.hasTimeout = () => false
         this.getNextFrom = ref => ref
       }
       return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
-        const oldTaskNumber = qw._taskNumber()
         qw.setTaskSpec(th.validBasicTaskSpec)
-        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+        expect(cloneCalled).to.be.true
         expect(result.startState).to.be.null
         expect(result.inProgressState).to.equal(th.validBasicTaskSpec.inProgressState)
         expect(result.finishedState).to.be.null
@@ -1119,15 +1162,16 @@ describe('QueueWorker', () => {
 
     it('should reset a worker when called with a valid task spec with a startState', () => {
       let result = null
+      let cloneCalled = false
       function TaskWorker({ spec }) {
         result = spec
+        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
         this.hasTimeout = () => false
         this.getNextFrom = ref => ref
       }
       return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
-        const oldTaskNumber = qw._taskNumber()
         qw.setTaskSpec(th.validTaskSpecWithStartState)
-        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+        expect(cloneCalled).to.be.true
         expect(result.startState).to.equal(th.validTaskSpecWithStartState.startState)
         expect(result.inProgressState).to.equal(th.validTaskSpecWithStartState.inProgressState)
         expect(result.finishedState).to.be.null
@@ -1139,15 +1183,16 @@ describe('QueueWorker', () => {
 
     it('should reset a worker when called with a valid task spec with a finishedState', () => {
       let result = null
+      let cloneCalled = false
       function TaskWorker({ spec }) {
         result = spec
+        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
         this.hasTimeout = () => false
         this.getNextFrom = ref => ref
       }
       return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
-        const oldTaskNumber = qw._taskNumber()
         qw.setTaskSpec(th.validTaskSpecWithFinishedState)
-        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+        expect(cloneCalled).to.be.true
         expect(result.startState).to.be.null
         expect(result.inProgressState).to.equal(th.validTaskSpecWithFinishedState.inProgressState)
         expect(result.finishedState).to.equal(th.validTaskSpecWithFinishedState.finishedState)
@@ -1159,15 +1204,16 @@ describe('QueueWorker', () => {
 
     it('should reset a worker when called with a valid task spec with a timeout', () => {
       let result = null
+      let cloneCalled = false
       function TaskWorker({ spec }) {
         result = spec
+        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
         this.hasTimeout = () => false
         this.getNextFrom = ref => ref
       }
       return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
-        const oldTaskNumber = qw._taskNumber()
         qw.setTaskSpec(th.validTaskSpecWithTimeout)
-        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+        expect(cloneCalled).to.be.true
         expect(result.startState).to.be.null
         expect(result.inProgressState).to.equal(th.validTaskSpecWithTimeout.inProgressState)
         expect(result.finishedState).to.be.null
@@ -1179,15 +1225,16 @@ describe('QueueWorker', () => {
 
     it('should reset a worker when called with a valid task spec with everything', () => {
       let result = null
+      let cloneCalled = false
       function TaskWorker({ spec }) {
         result = spec
+        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
         this.hasTimeout = () => false
         this.getNextFrom = ref => ref
       }
       return withQueueWorkerFor({ tasksRef, TaskWorker }, qw => {
-        const oldTaskNumber = qw._taskNumber()
         qw.setTaskSpec(th.validTaskSpecWithEverything)
-        expect(qw._taskNumber()).to.not.equal(oldTaskNumber)
+        expect(cloneCalled).to.be.true
         expect(result.startState).to.equal(th.validTaskSpecWithEverything.startState)
         expect(result.inProgressState).to.equal(th.validTaskSpecWithEverything.inProgressState)
         expect(result.finishedState).to.equal(th.validTaskSpecWithEverything.finishedState)

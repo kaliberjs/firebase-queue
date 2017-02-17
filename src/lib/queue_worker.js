@@ -56,7 +56,6 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   let stopTimeouts = null
 
   let busy = false
-  let taskNumber = 0
 
   this.setTaskSpec = setTaskSpec
   this.shutdown = shutdown
@@ -78,15 +77,11 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
   this._newTaskRef = (val) => val ? (newTaskRef = val, undefined) : newTaskRef
   this._busy = (val) => val !== undefined ? (busy = val, undefined) : busy
   this._newTaskListener = () => newTaskListener
-  this._taskNumber = () => taskNumber
 
   return this
 
-  function currentId() { return processId + ':' + taskNumber }
-  function nextId() { return processId + ':' + (taskNumber + 1) }
-
-  function isInvalidTask(requestedTaskNumber) {
-    const notCurrentTask = taskNumber !== requestedTaskNumber
+  function isInvalidTask(owner) {
+    const notCurrentTask = taskWorker.owner !== owner
 
     return notCurrentTask
   }
@@ -135,10 +130,10 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
   /**
    * Creates a resolve callback function, storing the current task number.
-   * @param {Number} taskNumber the current task number
+   * @param {Number} owner the current owner
    * @returns {Function} the resolve callback function.
    */
-  function _resolve(taskRef, requestedTaskNumber) {
+  function _resolve(taskRef, owner) {
     let retries = 0
     const deferred = createDeferred()
 
@@ -151,7 +146,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
      */
     function resolve(newTask) {
 
-      if (isInvalidTask(requestedTaskNumber)) deferred.resolve()
+      if (isInvalidTask(owner)) deferred.resolve()
       else {
         taskRef
           .transaction(taskWorker.resolveWith(newTask), undefined, false)
@@ -169,10 +164,10 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
   /**
    * Creates a reject callback function, storing the current task number.
-   * @param {Number} taskNumber the current task number
+   * @param {Number} owner the current owner
    * @returns {Function} the reject callback function.
    */
-  function _reject(taskRef, requestedTaskNumber) {
+  function _reject(taskRef, owner) {
     let retries = 0
     const deferred = createDeferred()
 
@@ -185,7 +180,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
      * @returns {Promise} Whether the task was able to be rejected.
      */
     function reject(error) {
-      if (isInvalidTask(requestedTaskNumber)) deferred.resolve()
+      if (isInvalidTask(owner)) deferred.resolve()
       else {
         const errorString = 
           _.isError(error) ? error.message
@@ -211,10 +206,10 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
   /**
    * Creates an update callback function, storing the current task number.
-   * @param {Number} taskNumber the current task number
+   * @param {Number} owner the current owner
    * @returns {Function} the update callback function.
    */
-  function _updateProgress(taskRef, requestedTaskNumber) {
+  function _updateProgress(taskRef, owner) {
 
     return updateProgress
 
@@ -227,7 +222,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
       if (typeof progress !== 'number' || _.isNaN(progress) || progress < 0 || progress > 100) 
         return Promise.reject(new Error('Invalid progress'))
 
-      if (isInvalidTask(requestedTaskNumber)) return Promise.reject(new Error('Can\'t update progress - no task currently being processed'))
+      if (isInvalidTask(owner)) return Promise.reject(new Error('Can\'t update progress - no task currently being processed'))
 
       return new Promise((resolve, reject) => {
         taskRef.transaction(taskWorker.updateProgressWith(progress), undefined, false)
@@ -261,7 +256,7 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
             
             let nextTaskRef = null
             taskSnap.forEach(childSnap => { nextTaskRef = childSnap.ref })
-            return nextTaskRef.transaction(taskWorker.claimFor(nextId), undefined, false)
+            return nextTaskRef.transaction(taskWorker/* cloneForNextTask().claim */.claimFor(() => taskWorker.nextOwner), undefined, false)
           })
           .then(result => {
             if (!result) return
@@ -273,9 +268,8 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
               if (busy) _resetTask(snapshot.ref)
               else {
                 busy = true
-                taskNumber += 1
 
-                _updateTaskWorker()
+                _prepareTaskWorkerForNextTask()
 
                 const currentTaskRef = snapshot.ref
 
@@ -283,9 +277,10 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
                 if (sanitize) taskWorker.sanitize(data)
                 else { data._id = snapshot.key } // this should be independent of `sanitize` and behind the flag `includeKey` or similar
 
-                const progress = _updateProgress(currentTaskRef, taskNumber);
-                const [resolve, resolvePromise] = _resolve(currentTaskRef, taskNumber);
-                const [reject, rejectPromise] = _reject(currentTaskRef, taskNumber);
+                const { owner } = taskWorker
+                const progress = _updateProgress(currentTaskRef, owner)
+                const [resolve, resolvePromise] = _resolve(currentTaskRef, owner)
+                const [reject, rejectPromise] = _reject(currentTaskRef, owner)
 
                 startWatchingOwner(currentTaskRef)
 
@@ -325,11 +320,11 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
     function onOwnerChanged(snapshot) {
       /* istanbul ignore else */
-      if (snapshot.val() !== currentId() && stopWatchingOwner) stopWatchingOwner()
+      if (snapshot.val() !== taskWorker.owner && stopWatchingOwner) stopWatchingOwner()
     }
 
     stopWatchingOwner = () => {
-      taskNumber += 1
+      _prepareTaskWorkerForNextTask() // this is to stop processing
       ownerRef.off('value', onOwnerChanged)
       stopWatchingOwner = null
     }
@@ -390,17 +385,26 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
    * @param {Object} taskSpec The specification for the task.
    */
   function setTaskSpec(taskSpec) {
+    /*
+
+    Original comment and code:
+
     // Increment the taskNumber so that a task being processed before the change
     // doesn't continue to use incorrect data
     taskNumber += 1 // <-- this is problematic in the following scenario: 
       // processing has started (inProgress), setTaskSpec is called, taskNumber is changed, resolve is called, 
       // resolve does not mark task as done, task times out, task is processed again 
 
+    This problem still exists. The mechanism involved in this is the mutability of taskWorker and the various
+    interactions with `.owner`, `.cloneForNextTask` and `.nextOwner`
+    */
+  
     if (newTaskListener !== null) newTaskRef.off('child_added', newTaskListener)
 
     if (stopWatchingOwner !== null) stopWatchingOwner()
 
-    _setTaskSpec(taskSpec)
+    _setTaskSpec(taskSpec) // dangerous construct involving the taskworker
+    _prepareTaskWorkerForNextTask()
 
     if (isValidTaskSpec(taskSpec)) {
       newTaskRef = taskWorker.getNextFrom(tasksRef)
@@ -421,11 +425,11 @@ function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processin
 
   function _setTaskSpec(taskSpec) {
     const spec = isValidTaskSpec(taskSpec) ? getSanitizedTaskSpec(taskSpec) : getSanitizedTaskSpec()
-    taskWorker = new TaskWorker({ serverOffset: 0, owner: currentId(), spec })
+    taskWorker = new TaskWorker({ serverOffset: 0, processId, spec })
   }
 
-  function _updateTaskWorker() {
-    taskWorker = taskWorker.cloneWithOwner(currentId())
+  function _prepareTaskWorkerForNextTask() {
+    taskWorker = taskWorker.cloneForNextTask()
   }
 
   function getSanitizedTaskSpec({

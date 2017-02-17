@@ -4,10 +4,20 @@ module.exports = TaskWorker
 
 const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
 
-function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, finishedState, errorState, timeout, retries } }) {
+function TaskWorker({ serverOffset, taskNumber = 0, processId, spec }) {
+
+  const { startState, inProgressState, finishedState, errorState, timeout, retries } = spec
 
   const fields = ['_state', '_state_changed', '_owner', '_progress', '_error_details']
 
+  if (!processId) throw new Error('no processId')
+
+  const owner = processId + ':' + taskNumber
+  const nextTaskNumber = taskNumber + 1
+  const nextOwner = processId + ':' + nextTaskNumber
+
+  this.nextOwner = nextOwner
+  this.owner = owner
   this.reset = reset
   this.resetIfTimedOut = resetIfTimedOut
   this.resolveWith = resolveWith
@@ -22,10 +32,10 @@ function TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, 
   this.getOwner = getOwner
   this.getOwnerRef = getOwnerRef
   this.sanitize = sanitize
-  this.cloneWithOwner = cloneWithOwner
+  this.cloneForNextTask = cloneForNextTask
 
-  function cloneWithOwner(owner) {
-    return new TaskWorker({ serverOffset, owner, spec: { startState, inProgressState, finishedState, errorState, timeout, retries } })
+  function cloneForNextTask() {
+    return new TaskWorker({ serverOffset, taskNumber: nextTaskNumber, processId, spec })
   }
 
   function reset(task) {
