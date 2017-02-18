@@ -19,7 +19,7 @@ const nonBooleanObjects              = ['', 'foo', NaN, Infinity,              0
 const invalidRefConfigurationObjects = [{}, { foo: 'bar' }, { tasksRef: th.testRef }, { specsRef: th.testRef }]
 const bools = [true, false]
 
-describe.only('Queue', () => {
+describe('Queue', () => {
 
   describe('initialize', () => {
     it('should not create a Queue with only a queue reference', () => {
@@ -102,44 +102,62 @@ describe.only('Queue', () => {
 
     _.range(1, 20).forEach(numWorkers => {
       it('should create a Queue with ' + numWorkers + ' workers when specified in options.numWorkers', () => {
-        var q = new th.Queue(th.testRef, { numWorkers: numWorkers }, _.noop)
+        let instanceCount = 0
+        function QueueWorker() {
+          instanceCount++
+          this.setTaskSpec = () => {}
+        }
+        const q = new th.Queue(th.testRef, { numWorkers: numWorkers, QueueWorker }, _.noop)
         expect(q.getWorkerCount()).to.equal(numWorkers)
+        expect(instanceCount).to.equal(numWorkers)
       })
     })
 
-    it('should create a Queue with a specific specId when specified', done => {
-      // if we add an injectable constructor for queue worker we an check the passed in
-      // progress Id of the worker 
+    it('should create a Queue with a specific specId when specified', () => {
+      let processIdBase = null
+      function QueueWorker(_, p) {
+        this.setTaskSpec = () => {}
+        processIdBase = p
+      }
       const specId = 'test_task'
-      const q = new th.Queue(th.testRef, { specId: specId }, _.noop);
-      expect(q._specId).to.equal(specId);
-      const interval = setInterval(() => {
-        if (q._initialized()) {
-          clearInterval(interval)
-          try {
-            const specRegex = new RegExp('^' + specId + ':0:[a-f0-9\\-]{36}$')
-            expect(q._workers[0]._processId).to.match(specRegex)
-            done()
-          } catch (error) { done(error) }
-        }
-      }, 100)
+      const q = new th.Queue(th.testRef, { specId: specId, QueueWorker }, _.noop)
+
+      return new Promise(resolve => {
+        const interval = setInterval(() => {
+          if (processIdBase) {
+            clearInterval(interval)
+            resolve()
+          }
+        }, 100)
+      }).then(_ => {
+        expect(processIdBase).to.equal(specId + ':0')
+      })
     })
+
+    it.skip('should listen to changes of the specId', () => {})
+    it.skip('should set the correct spec if given a specId', () => {})
 
     bools.forEach(bool => {
       it('should create a Queue with a ' + bool + ' sanitize option when specified', () => {
-        // with an injectable constructor we can be sure this has the desired effect instead of 
-        // checking that part of the implementation is correct
-        var q = new th.Queue(th.testRef, { sanitize: bool }, _.noop)
-        expect(q._sanitize).to.equal(bool)
+        let sanitize = null
+        function QueueWorker(_1, _2, s) {
+          this.setTaskSpec = () => {}
+          sanitize = s
+        }
+        const q = new th.Queue(th.testRef, { sanitize: bool, QueueWorker }, _.noop)
+        expect(sanitize).to.equal(bool)
       })
     })
 
     bools.forEach(bool => {
       it('should create a Queue with a ' + bool + ' suppressStack option when specified', () => {
-        // with an injectable constructor we can be sure this has the desired effect instead of 
-        // checking that part of the implementation is correct
-        var q = new th.Queue(th.testRef, { suppressStack: bool }, _.noop)
-        expect(q._suppressStack).to.equal(bool)
+        let suppressStack = null
+        function QueueWorker(_1, _2, _3, s) {
+          this.setTaskSpec = () => {}
+          suppressStack = s
+        }
+        const q = new th.Queue(th.testRef, { suppressStack: bool, QueueWorker }, _.noop)
+        expect(suppressStack).to.equal(bool)
       })
     })
 
@@ -149,50 +167,66 @@ describe.only('Queue', () => {
     })
   })
 
-  describe('#getWorkerCount', () => {
-    it('should return worker count with options.numWorkers', () => {
-      // is already tested in initialize
-      const numWorkers = 10
-      const q = new th.Queue(th.testRef, { numWorkers: numWorkers }, _.noop)
-      expect(q.getWorkerCount()).to.equal(numWorkers)
-    })
-  })
-
   describe('#addWorker', () => {
     // addWorker semantics will probably change a bit, in theory the spec might not be available yet
 
     it('should add worker', () => {
-      // we should check this with injectable constructor  for queue worker
-      // this might not have created an actual worker
-      const q = new th.Queue(th.testRef, _.noop)
+      let queueWorkers = 0
+      function QueueWorker() {
+        this.setTaskSpec = () => {}
+        queueWorkers++
+      }
+      const q = new th.Queue(th.testRef, { QueueWorker }, _.noop)
+      expect(queueWorkers).to.equal(1)
       expect(q.getWorkerCount()).to.equal(1)
       q.addWorker()
+      expect(queueWorkers).to.equal(2)
       expect(q.getWorkerCount()).to.equal(2)
     })
 
     it('should add worker with correct process id', () => {
-      // constructor
+      let processIdBase = null
+      let queueWorkers = 0
+      function QueueWorker(_, p) {
+        this.setTaskSpec = () => {}
+        processIdBase = p
+        queueWorkers++
+      }
       const specId = 'test_task'
-      const q = new th.Queue(th.testRef, { specId: specId }, _.noop)
+      const q = new th.Queue(th.testRef, { specId: specId, QueueWorker }, _.noop)
       const worker = q.addWorker()
-      const specRegex = new RegExp('^' + specId + ':1:[a-f0-9\\-]{36}$');
-      expect(worker._processId).to.match(specRegex);
+      return new Promise(resolve => {
+        const interval = setInterval(() => {
+          if (queueWorkers === 2) {
+            clearInterval(interval)
+            resolve()
+          }
+        }, 100)
+      }).then(_ => {
+        expect(processIdBase).to.equal(specId + ':1')
+      })
     })
 
     it('should not allow a worker to be added if the queue is shutting down', () => {
-      const q = new th.Queue(th.testRef, _.noop)
+      let queueWorkers = 0
+      function QueueWorker() {
+        this.shutdown = () => {}
+        this.setTaskSpec = () => {}
+        queueWorkers++
+      }
+      const q = new th.Queue(th.testRef, { QueueWorker }, _.noop)
+      expect(queueWorkers).to.equal(1)
       expect(q.getWorkerCount()).to.equal(1)
       q.shutdown()
       expect(() => { q.addWorker() })
         .to.throw('Cannot add worker while queue is shutting down')
-      // also check the worker has not been added before the error was thrown
+      expect(queueWorkers).to.equal(1)
     })
   })
 
   describe('#shutdownWorker', () => {
 
     it('should remove worker', () => {
-      // constructor
       const q = new th.Queue(th.testRef, _.noop)
       expect(q.getWorkerCount()).to.equal(1)
       q.shutdownWorker()
@@ -200,13 +234,17 @@ describe.only('Queue', () => {
     });
 
     it('should shutdown worker', () => {
-      // needs investigation, it seems nothing is tested here apart from 
-      // the completion of a promise
-      const q = new th.Queue(th.testRef, _.noop)
+      let shutdownCalled = false
+      function QueueWorker() {
+        this.setTaskSpec = () => {}
+        this.shutdown = () => { shutdownCalled = true }
+      }
+      const q = new th.Queue(th.testRef, { QueueWorker }, _.noop)
       expect(q.getWorkerCount()).to.equal(1)
       const workerShutdownPromise = q.shutdownWorker()
+      expect(shutdownCalled).to.be.true
       return workerShutdownPromise
-    });
+    })
 
     it('should reject when no workers remaining', () => {
       const q = new th.Queue(th.testRef, _.noop)
@@ -221,32 +259,48 @@ describe.only('Queue', () => {
   describe('#shutdown', () => {
 
     it('should shutdown a queue initialized with the default spec', () => {
-      // what is tested here?
-      const q = new th.Queue(th.testRef, _.noop)
-      return q.shutdown().should.eventually.be.fulfilled
+      let shutdownCalled = false
+      function QueueWorker() {
+        this.setTaskSpec = () => {}
+        this.shutdown = () => { shutdownCalled = true }
+      }
+      const q = new th.Queue(th.testRef, { QueueWorker }, _.noop)
+      return q.shutdown()
+        .then(_ => {
+          expect(shutdownCalled).to.be.true
+        })
     })
 
     it('should shutdown a queue initialized with a custom spec before the listener callback', () => {
-      // what is tested here?
-      const q = new th.Queue(th.testRef, { specId: 'test_task' }, _.noop)
-      return q.shutdown().should.eventually.be.fulfilled
+      let taskSpecSet = false
+      function QueueWorker() {
+        this.shutdown = () => {}
+        this.setTaskSpec = () => { taskSpecSet = true }
+      }
+      const q = new th.Queue(th.testRef.child('this_needs_to_be_improved'), { specId: 'test_task', QueueWorker }, _.noop)
+      expect(taskSpecSet).to.be.false
+      return q.shutdown()
     })
 
-    it('should shutdown a queue initialized with a custom spec after the listener callback', done => {
-      // we need to examine this one
-      const q = new th.Queue(th.testRef, { specId: 'test_task' }, _.noop)
-      const interval = setInterval(() => {
-        if (q._initialized()) {
-          clearInterval(interval)
-          try {
-            const shutdownPromise = q.shutdown()
-            expect(q._specChangeListener()).to.be.null
-            shutdownPromise.should.eventually.be.fulfilled.notify(done)
-          } catch (error) {
-            done(error)
+    it('should shutdown a queue initialized with a custom spec after the listener callback', () => {
+      let taskSpecSet = false
+      function QueueWorker() {
+        this.shutdown = () => {}
+        this.setTaskSpec = () => { taskSpecSet = true }
+      }
+      const q = new th.Queue(th.testRef, { specId: 'test_task', QueueWorker }, _.noop)
+
+      return new Promise(resolve => {
+        const interval = setInterval(() => {
+          if (taskSpecSet) {
+            clearInterval(interval)
+            resolve()
           }
-        }
-      }, 100)
+        }, 100)
+      }).then(_ => q.shutdown())
+        .then(_ => { taskSpecSet = false })
+        .then(_ => th.testRef.child('specs').child('test_task').set({ foo: 'bar' }))
+        .then(_ => { expect(taskSpecSet).to.be.false })
     })
   })
 })

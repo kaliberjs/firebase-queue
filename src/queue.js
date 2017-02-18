@@ -1,6 +1,6 @@
 'use strict'
 
-const QueueWorker = require('./lib/queue_worker.js')
+const DefaultQueueWorker = require('./lib/queue_worker.js')
 
 const DEFAULT_NUM_WORKERS = 1
 const DEFAULT_SANITIZE = true
@@ -91,6 +91,8 @@ module.exports = function Queue() {
     ? throwError('When ref is an object it must contain both keys \'tasksRef\' and \'specsRef\'')
     : [constructorArguments[0].child('tasks'), constructorArguments[0].child('specs')]
 
+  const QueueWorker = options.QueueWorker ? options.QueueWorker : DefaultQueueWorker
+
   const workers = Array(numWorkers).fill().map(createWorker)
 
   if (!specId) {
@@ -123,14 +125,6 @@ module.exports = function Queue() {
   this.getWorkerCount = getWorkerCount
   this.shutdownWorker = shutdownWorker
   this.shutdown = shutdown
-
-  // used in tests
-  this._workers = workers
-  this._specId = specId
-  this._sanitize = sanitize
-  this._suppressStack = suppressStack
-  this._initialized = () => initialized
-  this._specChangeListener = () => specChangeListener
 
   return this
 
