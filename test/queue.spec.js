@@ -117,6 +117,7 @@ describe('Queue', () => {
       let processIdBase = null
       function QueueWorker(_, p) {
         this.setTaskSpec = () => {}
+        this.shutdown = () => {}
         processIdBase = p
       }
       const specId = 'test_task'
@@ -189,6 +190,7 @@ describe('Queue', () => {
       let queueWorkers = 0
       function QueueWorker(_, p) {
         this.setTaskSpec = () => {}
+        this.shutdown = () => {}
         processIdBase = p
         queueWorkers++
       }

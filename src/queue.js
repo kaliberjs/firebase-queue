@@ -92,10 +92,10 @@ module.exports = function Queue() {
 
   const QueueWorker = options.QueueWorker ? options.QueueWorker : DefaultQueueWorker
 
-  const workers = Array(numWorkers).fill().map(createWorker)
+  const workers = []
 
   if (!specId) {
-    workers.forEach(worker => worker.setTaskSpec(DEFAULT_TASK_SPEC))
+    workers.push(...createWorkers(DEFAULT_TASK_SPEC))
   } else {
     specChangeListener = specsRef.child(specId).on(
       'value', 
@@ -109,7 +109,9 @@ module.exports = function Queue() {
           retries: val('retries')
         }
 
-        workers.forEach(worker => worker.setTaskSpec(taskSpec))
+        shutdownWorkers()
+          .then(_ => { workers.push(...createWorkers(taskSpec)) })
+
         currentTaskSpec = taskSpec
 
         function val(key) { return taskSpecSnap.child(key).val() }
@@ -138,7 +140,7 @@ module.exports = function Queue() {
       specChangeListener = null
     }
 
-    return Promise.all(workers.map(worker => worker.shutdown()))
+    return shutdownWorkers()
   }
 
   /**
@@ -148,14 +150,9 @@ module.exports = function Queue() {
   function addWorker() {
     if (shuttingDown) throwError('Cannot add worker while queue is shutting down')
 
-    const worker = createWorker()
-    workers.push(worker)
-
-    if (!specId) worker.setTaskSpec(DEFAULT_TASK_SPEC)
-    else if (currentTaskSpec) worker.setTaskSpec(currentTaskSpec)
+    if (!specId) workers.push(createWorker(DEFAULT_TASK_SPEC))
+    else if (currentTaskSpec) workers.push(createWorker(currentTaskSpec))
     // if the currentTaskSpec is not yet set it will be called once it's fetched
-
-    return worker
   }
 
   /**
@@ -179,15 +176,31 @@ module.exports = function Queue() {
       : Promise.reject(new Error('No workers to shutdown'))
   }
 
-  function createWorker(_, i = workers.length) {
-    const processId = (specId ? specId + ':' : '') + i
-    return new QueueWorker(
+  function shutdownWorkers() {
+    const removedWorkers = workers.slice()
+    workers.splice(0)
+    return Promise.all(removedWorkers.map(worker => {
+      if (!worker.shutdown) console.log(worker)
+      worker.shutdown()
+    }))
+  }
+
+  function createWorker(spec, id = workers.length) {
+    const processId = (specId ? specId + ':' : '') + id
+    const worker = new QueueWorker(
       tasksRef,
       processId,
       sanitize,
       suppressStack,
       processingFunction
     )
+    worker.setTaskSpec(spec)
+    return worker
+  }
+
+  function createWorkers(spec) {
+    const startId = workers.length
+    return Array(numWorkers).fill().map((_, i) => createWorker(spec, startId + i))
   }
 
   function isObject(value) {
