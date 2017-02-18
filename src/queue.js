@@ -48,7 +48,6 @@ module.exports = function Queue() {
   var constructorArguments = arguments
 
   let currentTaskSpec = undefined
-  let initialized = false
   let shuttingDown = false
 
   let specChangeListener = null
@@ -97,7 +96,6 @@ module.exports = function Queue() {
 
   if (!specId) {
     workers.forEach(worker => worker.setTaskSpec(DEFAULT_TASK_SPEC))
-    initialized = true
   } else {
     specChangeListener = specsRef.child(specId).on(
       'value', 
@@ -113,7 +111,6 @@ module.exports = function Queue() {
 
         workers.forEach(worker => worker.setTaskSpec(taskSpec))
         currentTaskSpec = taskSpec
-        initialized = true
 
         function val(key) { return taskSpecSnap.child(key).val() }
       },
