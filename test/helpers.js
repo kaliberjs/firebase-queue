@@ -34,14 +34,14 @@ module.exports = function() {
   this.TaskWorker = TaskWorker
 
   this.QueueWorkerWithoutProcessingOrTimeouts = function() {
-    self.QueueWorker.apply(this, arguments);
+    self.QueueWorker.apply(this, arguments)
 
     this._tryToProcess = _.noop
     this._setUpTimeouts = _.noop
   };
 
   this.QueueWorkerWithoutProcessing = function() {
-    self.QueueWorker.apply(this, arguments);
+    self.QueueWorker.apply(this, arguments)
 
     this._tryToProcess = _.noop
   };

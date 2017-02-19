@@ -37,13 +37,14 @@ module.exports = QueueWorker
 
 QueueWorker.isValidTaskSpec = isValidTaskSpec
 
-function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, processingFunction, TaskWorker = DefaultTaskWorker }) {
+function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, processingFunction, spec, TaskWorker = DefaultTaskWorker }) {
 
   if (!tasksRef) throwError('No tasks reference provided.')
   if (typeof processIdBase !== 'string') throwError('Invalid process ID provided.')
   if (Boolean(sanitize) !== sanitize) throwError('Invalid sanitize option.')
   if (Boolean(suppressStack) !== suppressStack) throwError('Invalid suppressStack option.')
   if (typeof processingFunction !== 'function') throwError('No processing function provided.')
+  if (!isValidTaskSpec(spec) && /* for tests I think */ spec !== null) throwError('Invalid task spec provided')
 
   const processId = processIdBase + ':' + uuid.v4()
 
@@ -77,6 +78,8 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   this._newTaskRef = (val) => val ? (newTaskRef = val, undefined) : newTaskRef
   this._busy = (val) => val !== undefined ? (busy = val, undefined) : busy
   this._newTaskListener = () => newTaskListener
+
+  setTaskSpec(spec)
 
   return this
 
