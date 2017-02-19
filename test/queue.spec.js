@@ -105,7 +105,7 @@ describe('Queue', () => {
         let instanceCount = 0
         function QueueWorker() {
           instanceCount++
-          this.setTaskSpec = () => {}
+          this.start = () => {}
         }
         const q = new th.Queue(th.testRef, { numWorkers: numWorkers, QueueWorker }, _.noop)
         expect(q.getWorkerCount()).to.equal(numWorkers)
@@ -116,7 +116,7 @@ describe('Queue', () => {
     it('should create a Queue with a specific specId when specified', () => {
       let processIdBase = null
       function QueueWorker({ processIdBase: p }) {
-        this.setTaskSpec = () => {}
+        this.start = () => {}
         this.shutdown = () => {}
         processIdBase = p
       }
@@ -137,12 +137,13 @@ describe('Queue', () => {
 
     it.skip('should listen to changes of the specId', () => {})
     it.skip('should set the correct spec if given a specId', () => {})
+    it.skip('should do xyz when the spec is changed to an invalid one', () => {})
 
     bools.forEach(bool => {
       it('should create a Queue with a ' + bool + ' sanitize option when specified', () => {
         let sanitize = null
         function QueueWorker({ sanitize: s }) {
-          this.setTaskSpec = () => {}
+          this.start = () => {}
           sanitize = s
         }
         const q = new th.Queue(th.testRef, { sanitize: bool, QueueWorker }, _.noop)
@@ -154,7 +155,7 @@ describe('Queue', () => {
       it('should create a Queue with a ' + bool + ' suppressStack option when specified', () => {
         let suppressStack = null
         function QueueWorker({ suppressStack: s }) {
-          this.setTaskSpec = () => {}
+          this.start = () => {}
           suppressStack = s
         }
         const q = new th.Queue(th.testRef, { suppressStack: bool, QueueWorker }, _.noop)
@@ -174,7 +175,7 @@ describe('Queue', () => {
     it('should add worker', () => {
       let queueWorkers = 0
       function QueueWorker() {
-        this.setTaskSpec = () => {}
+        this.start = () => {}
         queueWorkers++
       }
       const q = new th.Queue(th.testRef, { QueueWorker }, _.noop)
@@ -189,7 +190,7 @@ describe('Queue', () => {
       let processIdBase = null
       let queueWorkers = 0
       function QueueWorker({ processIdBase: p }) {
-        this.setTaskSpec = () => {}
+        this.start = () => {}
         this.shutdown = () => {}
         processIdBase = p
         queueWorkers++
@@ -213,7 +214,7 @@ describe('Queue', () => {
       let queueWorkers = 0
       function QueueWorker() {
         this.shutdown = () => {}
-        this.setTaskSpec = () => {}
+        this.start = () => {}
         queueWorkers++
       }
       const q = new th.Queue(th.testRef, { QueueWorker }, _.noop)
@@ -238,7 +239,7 @@ describe('Queue', () => {
     it('should shutdown worker', () => {
       let shutdownCalled = false
       function QueueWorker() {
-        this.setTaskSpec = () => {}
+        this.start = () => {}
         this.shutdown = () => { shutdownCalled = true }
       }
       const q = new th.Queue(th.testRef, { QueueWorker }, _.noop)
@@ -263,7 +264,7 @@ describe('Queue', () => {
     it('should shutdown a queue initialized with the default spec', () => {
       let shutdownCalled = false
       function QueueWorker() {
-        this.setTaskSpec = () => {}
+        this.start = () => {}
         this.shutdown = () => { shutdownCalled = true }
       }
       const q = new th.Queue(th.testRef, { QueueWorker }, _.noop)
@@ -274,35 +275,35 @@ describe('Queue', () => {
     })
 
     it('should shutdown a queue initialized with a custom spec before the listener callback', () => {
-      let taskSpecSet = false
+      let startCalled = false
       function QueueWorker() {
         this.shutdown = () => {}
-        this.setTaskSpec = () => { taskSpecSet = true }
+        this.start = () => { startCalled = true }
       }
       const q = new th.Queue(th.testRef.child('this_needs_to_be_improved'), { specId: 'test_task', QueueWorker }, _.noop)
-      expect(taskSpecSet).to.be.false
+      expect(startCalled).to.be.false
       return q.shutdown()
     })
 
     it('should shutdown a queue initialized with a custom spec after the listener callback', () => {
-      let taskSpecSet = false
+      let startCalled = false
       function QueueWorker() {
         this.shutdown = () => {}
-        this.setTaskSpec = () => { taskSpecSet = true }
+        this.start = () => { startCalled = true }
       }
       const q = new th.Queue(th.testRef, { specId: 'test_task', QueueWorker }, _.noop)
 
       return new Promise(resolve => {
         const interval = setInterval(() => {
-          if (taskSpecSet) {
+          if (startCalled) {
             clearInterval(interval)
             resolve()
           }
         }, 100)
       }).then(_ => q.shutdown())
-        .then(_ => { taskSpecSet = false })
+        .then(_ => { startCalled = false })
         .then(_ => th.testRef.child('specs').child('test_task').set({ foo: 'bar' }))
-        .then(_ => { expect(taskSpecSet).to.be.false })
+        .then(_ => { expect(startCalled).to.be.false })
     })
   })
 })

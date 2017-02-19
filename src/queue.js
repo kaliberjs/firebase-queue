@@ -195,7 +195,7 @@ module.exports = function Queue() {
       suppressStack,
       processingFunction
     })
-    worker.setTaskSpec(spec)
+    worker.start()
     return worker
   }
 

@@ -54,7 +54,7 @@ describe('QueueWorker', () => {
     )
 
     it('should create a QueueWorker with a tasksRef, processId, sanitize option and a processing function', () =>
-      expect(() => initialize({ spec: null })).to.not.throw(Error)
+      expect(() => initialize({ spec: th.validBasicTaskSpec })).to.not.throw(Error)
     )
 
     it('should not create a QueueWorker with a non-string processId specified', () => 
@@ -77,12 +77,11 @@ describe('QueueWorker', () => {
 
     it('should not create a QueueWorker with an invalid task spec', () =>
       invalidTaskSpecs.forEach(spec => {
-
-        // for now until we changed the rest of the specs
-        if (spec === null) return
         expect(() => initialize({ spec })).to.throw('Invalid task spec provided')
       })
     )
+
+    it.skip('should instantiate task worker with correct values', () => {})
   })
 
   describe('# Resetting tasks', () => {
@@ -93,6 +92,7 @@ describe('QueueWorker', () => {
     it('should reset a task when another task is currently being processed', () =>
       withTasksRef(tasksRef => 
         withQueueWorkerFor({ tasksRef, spec: validTaskSpecWithFinishedState }, qw => {
+          qw.start()
           const { startState, inProgressState, finishedState } = validTaskSpecWithFinishedState
           return chain(
             pushTasks(tasksRef, { task: 1 }, { task: 2 }),
@@ -121,8 +121,7 @@ describe('QueueWorker', () => {
           this.reset = task => (tasks.push(task), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           const task = { foo: 'bar' }
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
@@ -149,8 +148,7 @@ describe('QueueWorker', () => {
           this.resetIfTimedOut = task => (tasks.push(task), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           const task = { foo: 'bar' }
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
@@ -178,8 +176,7 @@ describe('QueueWorker', () => {
           this.resolveWith = newTask => task => (tasks.push([newTask, task]), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           const task = { foo: 'bar' }
           const newTask = { baz: 'qux' }
           return withTestRefFor(tasksRef, testRef =>
@@ -205,8 +202,7 @@ describe('QueueWorker', () => {
           this.resolveWith = newTask => task => (tasks.push([newTask, task]), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
               .then(_ => qw._resolve(testRef, 'owner')[0]({ baz: 'qux' }))
@@ -231,8 +227,7 @@ describe('QueueWorker', () => {
           this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           const task = { foo: 'bar' }
           const error = new Error('test error')
           const { message, stack } = error
@@ -260,8 +255,7 @@ describe('QueueWorker', () => {
             this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
           }
 
-          return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-            qw._setTaskSpec(th.validBasicTaskSpec)
+          return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
             const task = { foo: 'bar' }
             return withTestRefFor(tasksRef, testRef =>
               testRef.set(task)
@@ -285,8 +279,7 @@ describe('QueueWorker', () => {
           this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           const task = { foo: 'bar' }
           const error = 'My error message'
           return withTestRefFor(tasksRef, testRef =>
@@ -310,8 +303,7 @@ describe('QueueWorker', () => {
           this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, suppressStack: true, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, suppressStack: true, spec: th.validBasicTaskSpec }, qw => {
           const task = { foo: 'bar' }
           const error = new Error('test error')
           return withTestRefFor(tasksRef, testRef =>
@@ -335,8 +327,7 @@ describe('QueueWorker', () => {
           this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
               .then(_ => qw._reject(testRef, 'owner')[0](null))
@@ -361,8 +352,7 @@ describe('QueueWorker', () => {
           this.updateProgressWith = progress => task => (tasks.push([progress, task]), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           const task = { foo: 'bar' }
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
@@ -377,7 +367,7 @@ describe('QueueWorker', () => {
 
     invalidPercentageValues.forEach(invalidPercentageValue => 
       it('should ignore invalid input ' + invalidPercentageValue + ' to update the progress', () =>
-        withQueueWorkerFor({ tasksRef: {}, spec: null }, qw =>
+        withQueueWorkerFor({ tasksRef: {}, spec: th.validBasicTaskSpec }, qw =>
           qw._updateProgress(null, null)(invalidPercentageValue).should.eventually.be.rejectedWith('Invalid progress')
         )
       )
@@ -393,8 +383,7 @@ describe('QueueWorker', () => {
           this.updateProgressWith = progress => task => undefined
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
 
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({})
@@ -413,8 +402,7 @@ describe('QueueWorker', () => {
           this.hasTimeout = () => false 
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           qw._updateProgress(null, 'owner')(1)
             .should.eventually.be.rejectedWith('Can\'t update progress - no task currently being processed')
         })
@@ -431,8 +419,7 @@ describe('QueueWorker', () => {
           this.updateProgressWith = progress => task => (tasks.push([progress, task]), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
               .then(_ => qw._updateProgress(testRef, 'owner')(1).catch(_ => undefined))
@@ -461,14 +448,12 @@ describe('QueueWorker', () => {
           this.claimFor = getOwner => task => (claimForCalled = true, null)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           qw._busy(true)
-          qw._newTaskRef(tasksRef)
           const task = { foo: 'bar' }
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
-              .then(_ => qw._tryToProcess())
+              .then(_ => qw._tryToProcess(tasksRef))
               .then(_ => {
                 expect(claimForCalled).to.be.false
                 qw._busy(false)
@@ -488,13 +473,11 @@ describe('QueueWorker', () => {
           this.claimFor = getOwner => task => (tasks.push([getOwner, task]), null)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
-          qw._newTaskRef(tasksRef)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           const task = { foo: 'bar' }
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
-              .then(_ => qw._tryToProcess())
+              .then(_ => qw._tryToProcess(tasksRef))
               .then(_ => {
                 expect(tasks).to.have.a.lengthOf(2)
                 expect(tasks).to.have.deep.property('[0]').that.is.an.array
@@ -523,12 +506,10 @@ describe('QueueWorker', () => {
         }
         function processingFunction() { throw error }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction, sanitize: false, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
-          qw._newTaskRef(tasksRef)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction, sanitize: false, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
-              .then(_ => qw._tryToProcess())
+              .then(_ => qw._tryToProcess(tasksRef))
               .then(_ => {
                 expect(qw._busy()).to.be.true
               })
@@ -553,12 +534,10 @@ describe('QueueWorker', () => {
           this.claimFor = getOwner => task => task 
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, sanitize: false, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
-          qw._newTaskRef(tasksRef)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, sanitize: false, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
-              .then(_ => qw._tryToProcess())
+              .then(_ => qw._tryToProcess(tasksRef))
               .then(_ => {
                 expect(qw._busy()).to.be.true
               })
@@ -575,12 +554,10 @@ describe('QueueWorker', () => {
           this.claimFor = getOwner => task => undefined
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
-          qw._newTaskRef(tasksRef)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
-              .then(_ => qw._tryToProcess())
+              .then(_ => qw._tryToProcess(tasksRef))
               .then(_ => {
                 expect(qw._busy()).to.be.false
               })
@@ -597,12 +574,10 @@ describe('QueueWorker', () => {
           this.claimFor = getOwner => task => null
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
-          qw._newTaskRef(tasksRef)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
-              .then(_ => qw._tryToProcess())
+              .then(_ => qw._tryToProcess(tasksRef))
               .then(_ => {
                 expect(qw._busy()).to.be.false
               })
@@ -620,10 +595,8 @@ describe('QueueWorker', () => {
           this.claimFor = getOwner => task => (notCalled = false, 'task')
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
-          qw._newTaskRef(tasksRef)
-          return qw._tryToProcess()
+        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
+          return qw._tryToProcess(tasksRef)
             .then(_ => {
               expect(notCalled).to.be.true
             })
@@ -648,12 +621,10 @@ describe('QueueWorker', () => {
 
         function test(data, _, r) { resolve = r }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, sanitize: false, processingFunction: test, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
-          qw._newTaskRef(tasksRef)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, sanitize: false, processingFunction: test, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
-              .then(_ => qw._tryToProcess())
+              .then(_ => qw._tryToProcess(tasksRef))
               .then(_ => {
                 expect(qw._busy()).to.be.true
               })
@@ -682,11 +653,9 @@ describe('QueueWorker', () => {
           try { expect(data).to.deep.equal(task); done() } catch (e) { done(e) }
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
-          qw._newTaskRef(tasksRef)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef =>
-            testRef.set(task).then(_ => qw._tryToProcess())
+            testRef.set(task).then(_ => qw._tryToProcess(tasksRef))
           )
         })
       })
@@ -711,12 +680,10 @@ describe('QueueWorker', () => {
           } catch (e) { done(e) }
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction, sanitize: false, spec: null }, qw => {
-          qw._setTaskSpec(th.validBasicTaskSpec)
-          qw._newTaskRef(tasksRef)
+        return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction, sanitize: false, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef => {
             id = testRef.key
-            return testRef.set(task).then(_ => qw._tryToProcess())
+            return testRef.set(task).then(_ => qw._tryToProcess(tasksRef))
           })
         })
       })
@@ -724,7 +691,6 @@ describe('QueueWorker', () => {
   })
 
   describe('#_setUpTimeouts', () => {
-    let qw
     let clock
     let setTimeoutSpy
     let clearTimeoutSpy
@@ -736,63 +702,72 @@ describe('QueueWorker', () => {
     })
 
     beforeEach(() => {
-      qw = new th.QueueWorkerWithoutProcessing({ tasksRef, processIdBase: '0', spec: null, sanitize: true, suppressStack: false, processingFunction: _.noop })
       clock = sinon.useFakeTimers(now())
       setTimeoutSpy = sinon.spy(global, 'setTimeout')
       clearTimeoutSpy = sinon.spy(global, 'clearTimeout')
     })
 
-    afterEach(done => {
+    afterEach(() => {
       setTimeoutSpy.restore()
       clearTimeoutSpy.restore()
       clock.restore()
-      qw.shutdown()
-        .then(_ => tasksRef.set(null))
-        .then(done)
     })
 
     it.skip('should use taskWorker to select tasks in progress', () => {})
 
-    it('should not set up timeouts when no task timeout is set', () => {
-      qw.setTaskSpec(th.validBasicTaskSpec)
-      return chain(
-        tasksRef.push().set({
-          '_state': th.validBasicTaskSpec.inProgressState,
-          '_state_changed': now()
-        }),
-        _ => { expect(setTimeoutSpy.called).to.be.false }
+    it('should not set up timeouts when no task timeout is set', () =>
+      withTasksRef(tasksRef =>
+        withQueueWorkerFor({ tasksRef, spec: th.validBasicTaskSpec }, qw => {
+          qw.start()
+          return chain(
+            tasksRef.push().set({
+              '_state': th.validBasicTaskSpec.inProgressState,
+              '_state_changed': now()
+            }),
+            _ => { expect(setTimeoutSpy.called).to.be.false }
+          )
+        })
       )
-    })
+    )
 
-    it('should not set up timeouts when a task not in progress is added and a task timeout is set', () => {
-      qw.setTaskSpec(th.validTaskSpecWithTimeout)
-      return chain(
-        tasksRef.push({
-          '_state': th.validTaskSpecWithFinishedState.finishedState,
-          '_state_changed': now()
-        }),
-        _ => { expect(setTimeoutSpy.called).to.be.false }
+    it('should not set up timeouts when a task not in progress is added and a task timeout is set', () => 
+      withTasksRef(tasksRef =>
+        withQueueWorkerFor({ tasksRef, spec: th.validTaskSpecWithTimeout }, qw => {
+          qw.start()
+          return chain(
+            tasksRef.push({
+              '_state': th.validTaskSpecWithFinishedState.finishedState,
+              '_state_changed': now()
+            }),
+            _ => { expect(setTimeoutSpy.called).to.be.false }
+          )
+        })
       )
-    })
+    )
 
-    it('should set up timeout listeners when a task timeout is set', () => {
-      qw.setTaskSpec(th.validBasicTaskSpec)
-      return chain(
-        tasksRef.push({
-          '_state': th.validBasicTaskSpec.inProgressState,
-          '_state_changed': now()
-        }),
-        _ => { expect(setTimeoutSpy.called).to.be.false },
-        _ => { qw.setTaskSpec(th.validTaskSpecWithTimeout) },
-        _ => tasksRef.once('child_added'),
-        _ => { expect(setTimeoutSpy.called).to.be.true }
+    it.skip('should set up timeout listeners when a task timeout is set', () => 
+      withTasksRef(tasksRef =>
+        withQueueWorkerFor({ tasksSpec, spec: th.validBasicTaskSpec }, qw => {
+          qw.start()
+          return chain(
+            tasksRef.push({
+              '_state': th.validBasicTaskSpec.inProgressState,
+              '_state_changed': now()
+            }),
+            _ => { expect(setTimeoutSpy.called).to.be.false },
+            _ => { qw.setTaskSpec(th.validTaskSpecWithTimeout) }, // in the new version this is a shutdown and initialize with new spec
+            _ => tasksRef.once('child_added'),
+            _ => { expect(setTimeoutSpy.called).to.be.true }
+          )
+        })
       )
-    })
+    )
 
     it.skip('should do xyz when a task in progress is removed', () => {})
     it.skip('should do xyz when a task in progress is changed', () => {})
 
-    it('should remove timeout listeners when a task timeout is not specified after a previous task specified a timeout', () => {
+    it.skip('should remove timeout listeners when a task timeout is not specified after a previous task specified a timeout', () => {
+      // in the new version this is creating a new instance
       qw.setTaskSpec(th.validTaskSpecWithTimeout)
       qw.setTaskSpec(th.validBasicTaskSpec)
       return chain(
@@ -804,64 +779,81 @@ describe('QueueWorker', () => {
       )
     })
 
-    it('should set up a timeout when a task timeout is set and a task added', () => {
-      qw.setTaskSpec(th.validTaskSpecWithTimeout);
-      const testRef = tasksRef.push({
-        '_state': th.validTaskSpecWithTimeout.inProgressState,
-        '_state_changed': now() - 5
-      })
+    it('should set up a timeout when a task timeout is set and a task added', () =>
+      withTasksRef(tasksRef =>
+        withQueueWorkerFor({ tasksRef, spec: th.validTaskSpecWithTimeout }, qw => {
+          qw.start()
+          const testRef = tasksRef.push({
+            '_state': th.validTaskSpecWithTimeout.inProgressState,
+            '_state_changed': now() - 5
+          })
 
-      return testRef.then(_ => {
-          expect(setTimeoutSpy.firstCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5)
+          return testRef.then(_ => {
+              expect(setTimeoutSpy.firstCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5)
+            })
         })
-    })
+      )
+    )
 
-    it('should set up a timeout when a task timeout is set and a task owner changed', () => {
-      qw.setTaskSpec(th.validTaskSpecWithTimeout)
-      const testRef = tasksRef.push({
-        '_owner': qw._processId + ':0',
-        '_state': th.validTaskSpecWithTimeout.inProgressState,
-        '_state_changed': now() - 10
-      })
+    it('should set up a timeout when a task timeout is set and a task owner changed', () =>
+      withTasksRef(tasksRef =>
+        withQueueWorkerFor({ tasksRef, spec: th.validTaskSpecWithTimeout }, qw => {
+          qw.start()
+          const testRef = tasksRef.push({
+            '_owner': qw._processId + ':0',
+            '_state': th.validTaskSpecWithTimeout.inProgressState,
+            '_state_changed': now() - 10
+          })
 
-      return testRef
-        .then(_ => testRef.update({ '_owner': qw._processId + ':1', '_state_changed': now() - 5 }))
-        .then(_ => {
-          expect(setTimeoutSpy.lastCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5)
+          return testRef
+            .then(_ => testRef.update({ '_owner': qw._processId + ':1', '_state_changed': now() - 5 }))
+            .then(_ => {
+              expect(setTimeoutSpy.lastCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5)
+            })
         })
-    })
+      )
+    )
 
-    it('should not set up a timeout when a task timeout is set and a task updated', () => {
-      qw.setTaskSpec(th.validTaskSpecWithTimeout)
+    it('should not set up a timeout when a task timeout is set and a task updated', () =>
+      withTasksRef(tasksRef =>
+        withQueueWorkerFor({ tasksRef, spec: th.validTaskSpecWithTimeout }, qw => {
+          qw.start()
 
-      const testRef = tasksRef.push({
-        '_owner': qw._processId + ':0',
-        '_progress': 0,
-        '_state': th.validTaskSpecWithTimeout.inProgressState,
-        '_state_changed': now() - 5
-      })
+          const testRef = tasksRef.push({
+            '_owner': qw._processId + ':0',
+            '_progress': 0,
+            '_state': th.validTaskSpecWithTimeout.inProgressState,
+            '_state_changed': now() - 5
+          })
 
-      return testRef
-        .then(_ => testRef.update({ '_progress': 1 }))
-        .then(_ => {
-          expect(setTimeoutSpy.firstCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5)
+          return testRef
+            .then(_ => testRef.update({ '_progress': 1 }))
+            .then(_ => {
+              expect(setTimeoutSpy.firstCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout - 5)
+            })
         })
-    })
+      )
+    )
 
-    it('should set up a timeout when a task timeout is set and a task added without a _state_changed time', () => {
-      qw.setTaskSpec(th.validTaskSpecWithTimeout)
+    it('should set up a timeout when a task timeout is set and a task added without a _state_changed time', () =>
+      withTasksRef(tasksRef =>
+        withQueueWorkerFor({ tasksRef, spec: th.validTaskSpecWithTimeout }, qw => {
+          qw.start()
 
-      const testRef = tasksRef.push({
-        '_state': th.validTaskSpecWithTimeout.inProgressState
-      })
+          const testRef = tasksRef.push({
+            '_state': th.validTaskSpecWithTimeout.inProgressState
+          })
 
-      return testRef
-        .then(_ => {
-          expect(setTimeoutSpy.firstCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout);
+          return testRef
+            .then(_ => {
+              expect(setTimeoutSpy.firstCall.args[1]).to.equal(th.validTaskSpecWithTimeout.timeout);
+            })
         })
-    })
+      )
+    )
 
-    it('should clear timeouts when a task timeout is not set and a timeout exists', () => {
+    it.skip('should clear timeouts when a task timeout is not set and a timeout exists', () => {
+      // in the new version this is creating a new instance
       qw.setTaskSpec(th.validTaskSpecWithTimeout)
 
       const task = {
@@ -882,26 +874,30 @@ describe('QueueWorker', () => {
 
     it.skip('check the different types of listeners child_added, child_removed and child_changed (and also cleanup of listeners)', () => {})
 
-    it('should clear a timeout when a task is completed', () => {
-      const taskSpec = _.clone(th.validTaskSpecWithTimeout)
-      taskSpec.finishedState = th.validTaskSpecWithFinishedState.finishedState
-      qw.setTaskSpec(taskSpec);
+    it('should clear a timeout when a task is completed', () => 
+      withTasksRef(tasksRef => {
+        const spec = _.clone(th.validTaskSpecWithTimeout)
+        spec.finishedState = th.validTaskSpecWithFinishedState.finishedState
+        return withQueueWorkerFor({ tasksRef, spec }, qw => {
+          qw.start()
 
-      const task = {
-        '_state': taskSpec.inProgressState,
-        '_state_changed': now()
-      }
+          const task = {
+            '_state': spec.inProgressState,
+            '_state_changed': now()
+          }
 
-      const testRef = tasksRef.push()
-      return testRef.set(task)
-        .then(_ => testRef.update({ '_state': taskSpec.finishedState }))
-        .then(_ => {
-          expect(setTimeoutSpy.callCount).to.equal(1, 'setTimeout was not called')
-          const clearId = setTimeoutSpy.firstCall.returnValue
-          expect(clearTimeoutSpy.callCount).to.equal(1, 'clearTimeout was not called')
-          expect(clearTimeoutSpy.firstCall.calledWith(clearId)).to.be.equal(true, 'clearTimeout was not called with correct Id')
+          const testRef = tasksRef.push()
+          return testRef.set(task)
+            .then(_ => testRef.update({ '_state': spec.finishedState }))
+            .then(_ => {
+              expect(setTimeoutSpy.callCount).to.equal(1, 'setTimeout was not called')
+              const clearId = setTimeoutSpy.firstCall.returnValue
+              expect(clearTimeoutSpy.callCount).to.equal(1, 'clearTimeout was not called')
+              expect(clearTimeoutSpy.firstCall.calledWith(clearId)).to.be.equal(true, 'clearTimeout was not called with correct Id')
+            })
         })
-    })
+      })
+    )
   })
 
   describe('#QueueWorker.isValidTaskSpec', () => {
@@ -1048,216 +1044,12 @@ describe('QueueWorker', () => {
     })
   })
 
-  describe('#setTaskSpec', () => {
-    let qw
-
-    before(done => {
-      tasksRef.set(null).then(done)
-    })
-
-    beforeEach(() => {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts({ tasksRef, spec: null, processIdBase: '0', sanitize: true, suppressStack: false, processingFunction: _.noop })
-    })
-
-    afterEach(done => {
-      qw.shutdown()
-        .then(_ => tasksRef.set(null))
-        .then(done)
-    })
-
-    /*
-      These are quite problematic, the code inhere it very much tied to 
-      the implementation.
-
-      My guess is that these were created after the fact and have been copied
-      and pasted. It will be rough to dig through them and turn them into specs
-      that test the behaviour or effect of a certain call.
-    */
-
+  describe('#start', () => {
     it.skip('should use task worker to select new tasks', () => {})
 
-    it('should reset the worker when called with an invalid task spec', () => {
-      let result = null
-      let cloneCalled = false
-      function TaskWorker({ spec }) {
-        result = spec
-        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
-        this.hasTimeout = () => false
-      }
-      return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-        result = null
-        cloneCalled = false
-        invalidTaskSpecs.forEach(invalidTaskSpec => {
-          qw.setTaskSpec(invalidTaskSpec)
-          expect(cloneCalled).to.be.true
-          expect(result.startState).to.be.null
-          expect(result.inProgressState).to.be.null
-          expect(result.finishedState).to.be.null
-          expect(result.timeout).to.be.null
-          expect(qw._newTaskRef()).to.be.null
-          expect(qw._newTaskListener()).to.be.null
-        })
-      })
-    })
+    it.skip('something with calling start more than once', () => {})
 
-    it('should reset the worker when called with an invalid task spec after a valid task spec', () => {
-      let result = null
-      let cloneCalled = false
-      function TaskWorker({ spec }) {
-        result = spec
-        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
-        this.hasTimeout = () => false
-        this.getNextFrom = ref => ref
-      }
-      return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-        invalidTaskSpecs.forEach(invalidTaskSpec => {
-          qw.setTaskSpec(th.validBasicTaskSpec)
-          expect(cloneCalled).to.be.true
-          cloneCalled = false
-          qw.setTaskSpec(invalidTaskSpec)
-          expect(cloneCalled).to.be.true
-          expect(result.startState).to.be.null
-          expect(result.inProgressState).to.be.null
-          expect(result.finishedState).to.be.null
-          expect(result.timeout).to.be.null
-          expect(qw._newTaskRef()).to.be.null
-          expect(qw._newTaskListener()).to.be.null
-        })
-      })
-    })
-
-    it('should reset the worker when called with an invalid task spec after a valid task spec with everythin', () => {
-      let result = null
-      let cloneCalled = false
-      function TaskWorker({ spec }) {
-        result = spec
-        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
-        this.hasTimeout = () => false
-        this.getNextFrom = ref => ref
-      }
-      return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-        invalidTaskSpecs.forEach(invalidTaskSpec => {
-          qw.setTaskSpec(th.validTaskSpecWithEverything)
-          expect(cloneCalled).to.be.true
-          cloneCalled = false
-          qw.setTaskSpec(invalidTaskSpec)
-          expect(cloneCalled).to.be.true
-          expect(result.startState).to.be.null
-          expect(result.inProgressState).to.be.null
-          expect(result.finishedState).to.be.null
-          expect(result.timeout).to.be.null
-          expect(qw._newTaskRef()).to.be.null
-          expect(qw._newTaskListener()).to.be.null
-        })
-      })
-    })
-
-    it('should reset a worker when called with a basic valid task spec', () => {
-      let result = null
-      let cloneCalled = false
-      function TaskWorker({ spec }) {
-        result = spec
-        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
-        this.hasTimeout = () => false
-        this.getNextFrom = ref => ref
-      }
-      return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-        qw.setTaskSpec(th.validBasicTaskSpec)
-        expect(cloneCalled).to.be.true
-        expect(result.startState).to.be.null
-        expect(result.inProgressState).to.equal(th.validBasicTaskSpec.inProgressState)
-        expect(result.finishedState).to.be.null
-        expect(result.timeout).to.be.null
-        expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
-        expect(qw._newTaskListener()).to.be.a('function')
-      })
-    })
-
-    it('should reset a worker when called with a valid task spec with a startState', () => {
-      let result = null
-      let cloneCalled = false
-      function TaskWorker({ spec }) {
-        result = spec
-        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
-        this.hasTimeout = () => false
-        this.getNextFrom = ref => ref
-      }
-      return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-        qw.setTaskSpec(th.validTaskSpecWithStartState)
-        expect(cloneCalled).to.be.true
-        expect(result.startState).to.equal(th.validTaskSpecWithStartState.startState)
-        expect(result.inProgressState).to.equal(th.validTaskSpecWithStartState.inProgressState)
-        expect(result.finishedState).to.be.null
-        expect(result.timeout).to.be.null
-        expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
-        expect(qw._newTaskListener()).to.be.a('function')
-      })
-    })
-
-    it('should reset a worker when called with a valid task spec with a finishedState', () => {
-      let result = null
-      let cloneCalled = false
-      function TaskWorker({ spec }) {
-        result = spec
-        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
-        this.hasTimeout = () => false
-        this.getNextFrom = ref => ref
-      }
-      return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-        qw.setTaskSpec(th.validTaskSpecWithFinishedState)
-        expect(cloneCalled).to.be.true
-        expect(result.startState).to.be.null
-        expect(result.inProgressState).to.equal(th.validTaskSpecWithFinishedState.inProgressState)
-        expect(result.finishedState).to.equal(th.validTaskSpecWithFinishedState.finishedState)
-        expect(result.timeout).to.be.null
-        expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
-        expect(qw._newTaskListener()).to.be.a('function')
-      })
-    })
-
-    it('should reset a worker when called with a valid task spec with a timeout', () => {
-      let result = null
-      let cloneCalled = false
-      function TaskWorker({ spec }) {
-        result = spec
-        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
-        this.hasTimeout = () => false
-        this.getNextFrom = ref => ref
-      }
-      return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-        qw.setTaskSpec(th.validTaskSpecWithTimeout)
-        expect(cloneCalled).to.be.true
-        expect(result.startState).to.be.null
-        expect(result.inProgressState).to.equal(th.validTaskSpecWithTimeout.inProgressState)
-        expect(result.finishedState).to.be.null
-        expect(result.timeout).to.equal(th.validTaskSpecWithTimeout.timeout)
-        expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
-        expect(qw._newTaskListener()).to.be.a('function')
-      })
-    })
-
-    it('should reset a worker when called with a valid task spec with everything', () => {
-      let result = null
-      let cloneCalled = false
-      function TaskWorker({ spec }) {
-        result = spec
-        this.cloneForNextTask = () => (cloneCalled = true, new TaskWorker({ spec }))
-        this.hasTimeout = () => false
-        this.getNextFrom = ref => ref
-      }
-      return withQueueWorkerFor({ tasksRef, TaskWorker, spec: null }, qw => {
-        qw.setTaskSpec(th.validTaskSpecWithEverything)
-        expect(cloneCalled).to.be.true
-        expect(result.startState).to.equal(th.validTaskSpecWithEverything.startState)
-        expect(result.inProgressState).to.equal(th.validTaskSpecWithEverything.inProgressState)
-        expect(result.finishedState).to.equal(th.validTaskSpecWithEverything.finishedState)
-        expect(result.timeout).to.equal(th.validTaskSpecWithEverything.timeout)
-        expect(qw._newTaskRef()).to.have.property('on').and.be.a('function')
-        expect(qw._newTaskListener()).to.be.a('function')
-      })
-    })
-
-    it('should not pick up tasks on the queue not for the current worker', () => {
+    it('should not pick up tasks on the queue not for the current worker', () =>
       // This current version of the spec shows that it causes the worker to stall.
       // A different implementation of the worker might make this spec succeed,
       // in that case this spec should be written differently:
@@ -1265,44 +1057,54 @@ describe('QueueWorker', () => {
       // Make 2 queues where one contains [b1, b2] and the other [c, c, c, b3]
       // Both queues respond to `b` tasks. If the implementation is correct, b3
       // will be faster, if incorrect b2 will be faster
+      withTasksRef(tasksRef => 
+        withQueueWorkerFor({ tasksRef, spec: { startState: '2.start', inProgressState: 'in_progress', finishedState: 'done'} }, qw => 
+          Promise.all([
+            tasksRef.push({ '_state': '1.start' }),
+            tasksRef.push({ '_state': '2.start', test: 'check' })
+          ]).then(([_, ref]) => {
+            qw.start()
+            return Promise.race([
+              th.waitForState(ref, 'done').then(snapshot => snapshot.val()),
+              th.timeout(1000)
+            ])
+          }).then(val => {
+            expect(val).to.have.a.property('test').that.equals('check')
+          })
+        )
+      )
+    )
 
-      qw = new th.QueueWorker({ tasksRef, spec: null, processIdBase: '0', sanitize: true, suppressStack: false, processingFunction: th.echo })
-      return Promise.all([
-        tasksRef.push({ '_state': '1.start' }),
-        tasksRef.push({ '_state': '2.start', test: 'check' })
-      ]).then(([_, ref]) => {
-        qw.setTaskSpec({ startState: '2.start', inProgressState: 'in_progress', finishedState: 'done'})
-        return Promise.race([
-          th.waitForState(ref, 'done').then(snapshot => snapshot.val()),
-          th.timeout(1000)
-        ])
-      }).then(val => {
-        expect(val).to.have.a.property('test').that.equals('check')
+    it('should pick up tasks on the queue with no "_state" when a task is specified without a startState', () => 
+      withTasksRef(tasksRef => {
+        let result = null
+        return withQueueWorkerFor({ tasksRef, spec: th.validBasicTaskSpec, processingFunction: th.withData(data => { result = data }) }, qw => {
+          qw.start()
+          const task = { foo: 'bar' }
+          return tasksRef.push(task)
+            .then(_ => th.waitFor(() => !!result, 500))
+            .then(_ => {
+              expect(result).to.deep.equal(task)
+            })
+        })
       })
-    })
+    )
 
-    it('should pick up tasks on the queue with no "_state" when a task is specified without a startState', () => {
-      let result = null
-      qw = new th.QueueWorker({ tasksRef, spec: th.validBasicTaskSpec, processIdBase: '0', sanitize: true, suppressStack: false, processingFunction: th.withData(data => { result = data }) })
-      const task = { foo: 'bar' }
-      return tasksRef.push(task)
-        .then(_ => th.waitFor(() => !!result, 500))
-        .then(_ => {
-          expect(result).to.deep.equal(task)
+    it('should pick up tasks on the queue with the corresponding "_state" when a task is specifies a startState', () =>
+      withTasksRef(tasksRef => {
+        let result = null
+        return withQueueWorkerFor({ tasksRef, spec: th.validTaskSpecWithStartState, processingFunction: th.withData(data => { result = data }) }, qw => {
+          qw.start()
+          const task = { foo: 'bar', '_state': th.validTaskSpecWithStartState.startState }
+          return tasksRef.push(task)
+            .then(_ => th.waitFor(() => !!result, 500))
+            .then(_ => {
+              delete task._state
+              expect(result).to.deep.equal(task)
+            })
         })
-    })
-
-    it('should pick up tasks on the queue with the corresponding "_state" when a task is specifies a startState', () => {
-      let result = null
-      qw = new th.QueueWorker({ tasksRef, spec: th.validTaskSpecWithStartState, processIdBase: '0', sanitize: true, suppressStack: false, processingFunction: th.withData(data => { result = data }) })
-      const task = { foo: 'bar', '_state': th.validTaskSpecWithStartState.startState }
-      return tasksRef.push(task)
-        .then(_ => th.waitFor(() => !!result, 500))
-        .then(_ => {
-          delete task._state
-          expect(result).to.deep.equal(task)
-        })
-    })
+      })
+    )
   })
 
   describe('#shutdown', () => {
@@ -1320,6 +1122,7 @@ describe('QueueWorker', () => {
           resolve()
         }, 500)
       } })
+      qw.start()
 
       tasksRef.push().set(null).then(done)
     })
@@ -1353,5 +1156,10 @@ describe('QueueWorker', () => {
           return firstPromise
       })
     })
+
+    it.skip('should not process any new tasks', () => {})
+    it.skip('stop listenening to the change of owner, if not busy -- this is probably not needed because stop will not be called if not busy', () => {})
+    it.skip('should put the task worker in `invalid` state', () => {})
+    it.skip('should stop with the timeouts', () => {})
   })
 })

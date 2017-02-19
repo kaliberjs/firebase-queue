@@ -44,42 +44,34 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   if (Boolean(sanitize) !== sanitize) throwError('Invalid sanitize option.')
   if (Boolean(suppressStack) !== suppressStack) throwError('Invalid suppressStack option.')
   if (typeof processingFunction !== 'function') throwError('No processing function provided.')
-  if (!isValidTaskSpec(spec) && /* for tests I think */ spec !== null) throwError('Invalid task spec provided')
+  if (!isValidTaskSpec(spec)) throwError('Invalid task spec provided')
 
   const processId = processIdBase + ':' + uuid.v4()
 
   let shutdownDeferred = null
   let taskWorker = null
-  let newTaskRef = null
 
   let stopWatchingOwner = null
-  let newTaskListener = null
+  let stop = null
   let stopTimeouts = null
 
   let busy = false
 
-  this.setTaskSpec = setTaskSpec
+  this.start = start
   this.shutdown = shutdown
 
-  // we can not remove usage of `self` here because
-  // the tests either override or spy on these methods 
-  const self = this
+  // used in tests
   this._tryToProcess = _tryToProcess
   this._setUpTimeouts = _setUpTimeouts
-
-  // used in tests
   this._resetTask = _resetTask
   this._resetTaskIfTimedOut = _resetTaskIfTimedOut
   this._resolve = _resolve
   this._updateProgress = _updateProgress
   this._reject = _reject
-  this._setTaskSpec = _setTaskSpec
   this._processId = processId
-  this._newTaskRef = (val) => val ? (newTaskRef = val, undefined) : newTaskRef
   this._busy = (val) => val !== undefined ? (busy = val, undefined) : busy
-  this._newTaskListener = () => newTaskListener
 
-  setTaskSpec(spec)
+  _setTaskSpec(spec)
 
   return this
 
@@ -241,14 +233,14 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   /**
    * Attempts to claim the next task in the queue.
    */
-  function _tryToProcess(deferred = createDeferred()) {
+  function _tryToProcess(newTaskRef, deferred = createDeferred()) {
     let retries = 0
 
     if (busy) deferred.resolve()
     else {
       if (shutdownDeferred) {
         deferred.reject(new Error('Shutting down - can no longer process new tasks'))
-        setTaskSpec(null);
+        if (stop) stop()
         // finished shutdown
         shutdownDeferred.resolve()
       } else {
@@ -290,7 +282,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
                 Promise.race([resolvePromise, rejectPromise])
                   .then(_ => {
                     busy = false
-                    _tryToProcess()
+                    _tryToProcess(newTaskRef)
                   })
                   .catch(_ => {
                     // the original implementation did not handle this situation
@@ -308,7 +300,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
           })
           .catch(_ => {
             // errored while attempting to claim a new task, retrying
-            if (++retries < MAX_TRANSACTION_ATTEMPTS) return setImmediate(_tryToProcess, deferred)
+            if (++retries < MAX_TRANSACTION_ATTEMPTS) return setImmediate(_tryToProcess, newTaskRef, deferred)
             else return deferred.reject(new Error('errored while attempting to claim a new task too many times, no longer retrying'))
           })
       }
@@ -382,42 +374,19 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
     }
   }
 
-  /**
-   * Sets up the listeners to claim tasks and reset them if they timeout. Called
-   *   any time the task spec changes.
-   * @param {Object} taskSpec The specification for the task.
-   */
-  function setTaskSpec(taskSpec) {
-    /*
-
-    Original comment and code:
-
-    // Increment the taskNumber so that a task being processed before the change
-    // doesn't continue to use incorrect data
-    taskNumber += 1 // <-- this is problematic in the following scenario: 
-      // processing has started (inProgress), setTaskSpec is called, taskNumber is changed, resolve is called, 
-      // resolve does not mark task as done, task times out, task is processed again 
-
-    This problem still exists. The mechanism involved in this is the mutability of taskWorker and the various
-    interactions with `.owner`, `.cloneForNextTask` and `.nextOwner`
-    */
-  
-    if (newTaskListener !== null) newTaskRef.off('child_added', newTaskListener)
-
-    if (stopWatchingOwner !== null) stopWatchingOwner()
-
-    _setTaskSpec(taskSpec) // dangerous construct involving the taskworker
-    _prepareTaskWorkerForNextTask()
-
-    if (isValidTaskSpec(taskSpec)) {
-      newTaskRef = taskWorker.getNextFrom(tasksRef)
-      newTaskListener = newTaskRef.on('child_added', () => { self._tryToProcess() })
-    } else {
-      newTaskRef = null
-      newTaskListener = null
+  function start() {
+    const newTaskRef = taskWorker.getNextFrom(tasksRef)
+    const newTaskListener = newTaskRef.on('child_added', () => { _tryToProcess(newTaskRef) })
+    stop = () => {
+      stop = null
+      newTaskRef.off('child_added', newTaskListener)
+      if (stopWatchingOwner) stopWatchingOwner()
+      _setTaskSpec(null)
+      // this will not setup timeouts because a taskworker without timeouts is instantiated
+      // we can do better, small steps :-)
+      _setUpTimeouts()
     }
-
-    self._setUpTimeouts()
+    _setUpTimeouts()
   }
 
   // The mechanism of creating and updating the task worker is a refactoring of the original code
@@ -452,7 +421,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
 
     // We can report success immediately if we're not busy
     if (!busy) {
-      setTaskSpec(null)
+      if (stop) stop()
       // finished shutdown
       shutdownDeferred.resolve()
     }
