@@ -191,28 +191,6 @@ describe('QueueWorker', () => {
     )
 
     it.skip('should correctly handle transaction retries', () => {})
-
-    it('should not call the task worker if a new task is being processed', () =>
-      withTasksRef(tasksRef => {
-        const tasks = []
-        function TaskWorker() {
-          this.owner = 'newOwner'
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
-          this.resolveWith = newTask => task => (tasks.push([newTask, task]), task)
-        }
-
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
-          return withTestRefFor(tasksRef, testRef =>
-            testRef.set({ foo: 'bar' })
-              .then(_ => qw._resolve(testRef, 'owner')[0]({ baz: 'qux' }))
-              .then(_ => {
-                expect(tasks).to.deep.equal([])
-              })
-          )
-        })
-      })
-    )
   })
 
   describe('#_reject', () => {
@@ -316,28 +294,6 @@ describe('QueueWorker', () => {
         })
       })
     )
-
-    it('should not call the task worker if a new task is being processed', () =>
-      withTasksRef(tasksRef => {
-        const tasks = []
-        function TaskWorker() {
-          this.owner = 'newOwner'
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
-          this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
-        }
-
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
-          return withTestRefFor(tasksRef, testRef =>
-            testRef.set({ foo: 'bar' })
-              .then(_ => qw._reject(testRef, 'owner')[0](null))
-              .then(_ => {
-                expect(tasks).to.deep.equal([])
-              })
-          )
-        })
-      })
-    )
   })
 
   describe('#_updateProgress', () => {
@@ -405,28 +361,6 @@ describe('QueueWorker', () => {
         return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           qw._updateProgress(null, 'owner')(1)
             .should.eventually.be.rejectedWith('Can\'t update progress - no task currently being processed')
-        })
-      })
-    )
-
-    it('should not call the task worker if a new task is being processed', () =>
-      withTasksRef(tasksRef => {
-        const tasks = []
-        function TaskWorker() {
-          this.owner = 'newOwner'
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
-          this.updateProgressWith = progress => task => (tasks.push([progress, task]), task)
-        }
-
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
-          return withTestRefFor(tasksRef, testRef =>
-            testRef.set({ foo: 'bar' })
-              .then(_ => qw._updateProgress(testRef, 'owner')(1).catch(_ => undefined))
-              .then(_ => {
-                expect(tasks).to.deep.equal([])
-              })
-          )
         })
       })
     )
@@ -498,7 +432,6 @@ describe('QueueWorker', () => {
         const error = new Error('Error thrown in processingFunction')
         function TaskWorker() {
           this.cloneForNextTask = () => new TaskWorker()
-          this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.rejectWith = (message, stack) => task => ({ foo: null, message, stack })
@@ -527,7 +460,6 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         function TaskWorker() {
           this.cloneForNextTask = () => new TaskWorker()
-          this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.resolveWith = newTask => task => undefined
@@ -604,47 +536,12 @@ describe('QueueWorker', () => {
       })
     )
 
-    it('should invalidate callbacks if another process times the task out', () => 
-      withTasksRef(tasksRef => {
-        let resolveCalled = false
-        function TaskWorker(owner = 'owner') {
-          this.owner = owner
-          this.cloneForNextTask = () => new TaskWorker(owner + '1')
-          this.getOwnerRef = ref => ref
-          this.hasTimeout = () => false
-          this.isInErrorState = _ => false
-          this.resolveWith = newTask => task => (resolveCalled = true, undefined)
-          this.claimFor = getOwner => task => task 
-        }
-
-        let resolve
-
-        function test(data, _, r) { resolve = r }
-
-        return withQueueWorkerFor({ tasksRef, TaskWorker, sanitize: false, processingFunction: test, spec: th.validBasicTaskSpec }, qw => {
-          return withTestRefFor(tasksRef, testRef =>
-            testRef.set({ foo: 'bar' })
-              .then(_ => qw._tryToProcess(tasksRef))
-              .then(_ => {
-                expect(qw._busy()).to.be.true
-              })
-              .then(_ => testRef.update({ _owner: null }))
-              .then(_ => resolve())
-              .then(_ => {
-                expect(resolveCalled).to.be.false
-              })
-          )
-        })
-      })
-    )
-
     it('should sanitize data passed to the processing function when specified', done => {
       withTasksRef(tasksRef => {
         const task = { foo: 'bar' }
         function TaskWorker() {
           this.cloneForNextTask = () => new TaskWorker()
           this.sanitize = task => (delete task._owner, task)
-          this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.claimFor = getOwner => task => (task && { foo: task.foo, _owner: 'owner' } || task)
@@ -668,7 +565,6 @@ describe('QueueWorker', () => {
         const queueTask = Object.assign({ _owner: 'owner' }, task)
         function TaskWorker() {
           this.cloneForNextTask = () => new TaskWorker()
-          this.getOwnerRef = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.claimFor = getOwner => task => queueTask

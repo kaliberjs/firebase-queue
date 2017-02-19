@@ -12,9 +12,9 @@ function TaskWorker({ serverOffset, taskNumber = 0, processId, spec }) {
 
   if (!processId) throw new Error('no processId')
 
-  const owner = processId + ':' + taskNumber
+  const owner = createOwner(processId, taskNumber)
   const nextTaskNumber = taskNumber + 1
-  const nextOwner = processId + ':' + nextTaskNumber
+  const nextOwner = createOwner(processId, nextTaskNumber)
 
   this.nextOwner = nextOwner
   this.owner = owner
@@ -30,9 +30,10 @@ function TaskWorker({ serverOffset, taskNumber = 0, processId, spec }) {
   this.hasTimeout = hasTimeout
   this.expiresIn = expiresIn
   this.getOwner = getOwner
-  this.getOwnerRef = getOwnerRef
   this.sanitize = sanitize
   this.cloneForNextTask = cloneForNextTask
+
+  function createOwner(processId, taskNumber) { return processId + ':' + taskNumber }
 
   function cloneForNextTask() {
     return new TaskWorker({ serverOffset, taskNumber: nextTaskNumber, processId, spec })
@@ -164,10 +165,6 @@ function TaskWorker({ serverOffset, taskNumber = 0, processId, spec }) {
 
   function getOwner(snapshot) {
     return snapshot.child('_owner').val()
-  }
-
-  function getOwnerRef(ref) {
-    return ref.child('_owner')
   }
 
   function sanitize(task) {

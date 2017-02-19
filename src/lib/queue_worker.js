@@ -51,7 +51,6 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   let shutdownDeferred = null
   let taskWorker = null
 
-  let stopWatchingOwner = null
   let stop = null
   let stopTimeouts = null
 
@@ -74,12 +73,6 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   _setTaskSpec(spec)
 
   return this
-
-  function isInvalidTask(owner) {
-    const notCurrentTask = taskWorker.owner !== owner
-
-    return notCurrentTask
-  }
 
   /**
    * Returns the state of a task to the start state.
@@ -125,10 +118,9 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
 
   /**
    * Creates a resolve callback function, storing the current task number.
-   * @param {Number} owner the current owner
    * @returns {Function} the resolve callback function.
    */
-  function _resolve(taskRef, owner) {
+  function _resolve(taskRef) {
     let retries = 0
     const deferred = createDeferred()
 
@@ -141,17 +133,14 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
      */
     function resolve(newTask) {
 
-      if (isInvalidTask(owner)) deferred.resolve()
-      else {
-        taskRef
-          .transaction(taskWorker.resolveWith(newTask), undefined, false)
-          .then(_ => { deferred.resolve() })
-          .catch(_ => {
-            // resolve task errored, retrying
-            if (++retries < MAX_TRANSACTION_ATTEMPTS) setImmediate(resolve, newTask)
-            else deferred.reject(new Error('resolve task errored too many times, no longer retrying'))
-          })
-      }
+      taskRef
+        .transaction(taskWorker.resolveWith(newTask), undefined, false)
+        .then(_ => { deferred.resolve() })
+        .catch(_ => {
+          // resolve task errored, retrying
+          if (++retries < MAX_TRANSACTION_ATTEMPTS) setImmediate(resolve, newTask)
+          else deferred.reject(new Error('resolve task errored too many times, no longer retrying'))
+        })
 
       return deferred.promise
     }
@@ -159,10 +148,9 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
 
   /**
    * Creates a reject callback function, storing the current task number.
-   * @param {Number} owner the current owner
    * @returns {Function} the reject callback function.
    */
-  function _reject(taskRef, owner) {
+  function _reject(taskRef) {
     let retries = 0
     const deferred = createDeferred()
 
@@ -175,25 +163,22 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
      * @returns {Promise} Whether the task was able to be rejected.
      */
     function reject(error) {
-      if (isInvalidTask(owner)) deferred.resolve()
-      else {
-        const errorString = 
-          _.isError(error) ? error.message
-          : typeof error === 'string' ? error
-          : error !== undefined && error !== null ? error.toString()
-          : null
+      const errorString =
+        _.isError(error) ? error.message
+        : typeof error === 'string' ? error
+        : error !== undefined && error !== null ? error.toString()
+        : null
 
-        const errorStack = (!suppressStack && error && error.stack) || null
+      const errorStack = (!suppressStack && error && error.stack) || null
 
-        taskRef
-          .transaction(taskWorker.rejectWith(errorString, errorStack), undefined, false)
-          .then(_ => { deferred.resolve() })
-          .catch(_ => {
-            // reject task errored, retrying
-            if (++retries < MAX_TRANSACTION_ATTEMPTS) setImmediate(reject, error)
-            else deferred.reject(new Error('reject task errored too many times, no longer retrying'))
-          })
-      }
+      taskRef
+        .transaction(taskWorker.rejectWith(errorString, errorStack), undefined, false)
+        .then(_ => { deferred.resolve() })
+        .catch(_ => {
+          // reject task errored, retrying
+          if (++retries < MAX_TRANSACTION_ATTEMPTS) setImmediate(reject, error)
+          else deferred.reject(new Error('reject task errored too many times, no longer retrying'))
+        })
 
       return deferred.promise
     }
@@ -201,10 +186,9 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
 
   /**
    * Creates an update callback function, storing the current task number.
-   * @param {Number} owner the current owner
    * @returns {Function} the update callback function.
    */
-  function _updateProgress(taskRef, owner) {
+  function _updateProgress(taskRef) {
 
     return updateProgress
 
@@ -216,8 +200,6 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
     function updateProgress(progress) {
       if (typeof progress !== 'number' || _.isNaN(progress) || progress < 0 || progress > 100) 
         return Promise.reject(new Error('Invalid progress'))
-
-      if (isInvalidTask(owner)) return Promise.reject(new Error('Can\'t update progress - no task currently being processed'))
 
       return new Promise((resolve, reject) => {
         taskRef.transaction(taskWorker.updateProgressWith(progress), undefined, false)
@@ -263,8 +245,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
               if (busy) _resetTask(snapshot.ref)
               else {
                 busy = true
-
-                _prepareTaskWorkerForNextTask()
+                taskWorker = taskWorker.cloneForNextTask()
 
                 const currentTaskRef = snapshot.ref
 
@@ -272,12 +253,9 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
                 if (sanitize) taskWorker.sanitize(data)
                 else { data._id = snapshot.key } // this should be independent of `sanitize` and behind the flag `includeKey` or similar
 
-                const { owner } = taskWorker
-                const progress = _updateProgress(currentTaskRef, owner)
-                const [resolve, resolvePromise] = _resolve(currentTaskRef, owner)
-                const [reject, rejectPromise] = _reject(currentTaskRef, owner)
-
-                startWatchingOwner(currentTaskRef)
+                const progress = _updateProgress(currentTaskRef)
+                const [resolve, resolvePromise] = _resolve(currentTaskRef)
+                const [reject, rejectPromise] = _reject(currentTaskRef)
 
                 Promise.race([resolvePromise, rejectPromise])
                   .then(_ => {
@@ -308,22 +286,6 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
 
     return deferred.promise
   }
-
-  function startWatchingOwner(taskRef) {
-    const ownerRef = taskWorker.getOwnerRef(taskRef)
-    ownerRef.on('value', onOwnerChanged)
-
-    function onOwnerChanged(snapshot) {
-      /* istanbul ignore else */
-      if (snapshot.val() !== taskWorker.owner && stopWatchingOwner) stopWatchingOwner()
-    }
-
-    stopWatchingOwner = () => {
-      _prepareTaskWorkerForNextTask() // this is to stop processing
-      ownerRef.off('value', onOwnerChanged)
-      stopWatchingOwner = null
-    }
-  } 
 
   /**
    * Sets up timeouts to reclaim tasks that fail due to taking too long.
@@ -380,7 +342,6 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
     stop = () => {
       stop = null
       newTaskRef.off('child_added', newTaskListener)
-      if (stopWatchingOwner) stopWatchingOwner()
       _setTaskSpec(null)
       // this will not setup timeouts because a taskworker without timeouts is instantiated
       // we can do better, small steps :-)
@@ -398,10 +359,6 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   function _setTaskSpec(taskSpec) {
     const spec = isValidTaskSpec(taskSpec) ? getSanitizedTaskSpec(taskSpec) : getSanitizedTaskSpec()
     taskWorker = new TaskWorker({ serverOffset: 0, processId, spec })
-  }
-
-  function _prepareTaskWorkerForNextTask() {
-    taskWorker = taskWorker.cloneForNextTask()
   }
 
   function getSanitizedTaskSpec({

@@ -279,6 +279,8 @@ describe('TaskWorker', () => {
       const result = tw.cloneForNextTask().reset({ _owner: tw.owner, _state: 'inProgress' })
       expect(result).to.be.undefined
     })
+
+    it.skip('should set error state when the task is no longer owned or in progress, this should probably only be done for tasks without a timeout', () => {})
   })
 
   describe('#rejectWith', () => {
@@ -430,6 +432,8 @@ describe('TaskWorker', () => {
       const result = tw.cloneForNextTask().reset({ _owner: tw.owner, _state: 'inProgress' })
       expect(result).to.be.undefined
     })
+
+    it.skip('should set error state when the task is no longer owned or in progress, this should probably only be done for tasks without a timeout', () => {})
   })
 
   describe('#updateProgressWith', () => {
@@ -479,6 +483,8 @@ describe('TaskWorker', () => {
       const result = tw.cloneForNextTask().reset({ _owner: tw.owner, _state: 'inProgress' })
       expect(result).to.be.undefined
     })
+
+    it.skip('should set error state when the task is no longer owned or in progress, this should probably only be done for tasks without a timeout', () => {})
   })
 
   describe('#claimFor', () => {
@@ -749,30 +755,6 @@ describe('TaskWorker', () => {
           expect(tw.getOwner(snapshot)).to.equal('owner')
         }
       )
-    )
-  })
-
-  describe('#getOwnerRef', () => {
-
-    it('should return a reference for the owner', () =>
-      withTasksRef(tasksRef => {
-        let result = []
-        const tw = new TaskWorker({ processId: 'p', spec: {} })
-        const ref = tw.getOwnerRef(tasksRef)
-        ref.on('value', snapshot => { result.push(snapshot.val()) })
-
-        return chain(
-          ref.set('owner1'),
-          _ => ref.set('owner2'),
-          _ => tasksRef.set({ _other: 'other' }),
-          _ => tasksRef.set({ _owner: 'owner3' }),
-          _ => tasksRef.set({ _owner: 'owner4' }),
-          _ => {
-            expect(result).to.deep.equal(['owner1', 'owner2', null, 'owner3', 'owner4'])
-          },
-          _ => ref.off()
-        )
-      })
     )
   })
 
