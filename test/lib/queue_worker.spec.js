@@ -29,22 +29,22 @@ describe('QueueWorker', () => {
   
   describe('initialize', () => {
 
-    function initialize({ tasksRef = _tasksRef, processId = '0', sanitize = true, suppressStack = false, processingFunction = _.noop } = {}) {
-      return new th.QueueWorker(tasksRef, processId, sanitize, suppressStack, processingFunction)
+    function initialize({ tasksRef = _tasksRef, processIdBase = '0', sanitize = true, suppressStack = false, processingFunction = _.noop } = {}) {
+      return new th.QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, processingFunction })
     }
 
     // we should probably replace the `throws(strings)` with `throws(CONSTANT)`
 
     it('should not create a QueueWorker with no parameters', () => 
-      expect(() => new th.QueueWorker()).to.throw('No tasks reference provided.')
+      expect(() => new th.QueueWorker({})).to.throw('No tasks reference provided.')
     )
 
     it('should not create a QueueWorker with only a tasksRef', () =>
-      expect(() => new th.QueueWorker(tasksRef)).to.throw('Invalid process ID provided.')
+      expect(() => new th.QueueWorker({ tasksRef })).to.throw('Invalid process ID provided.')
     )
 
     it('should not create a QueueWorker with only a tasksRef, process ID, sanitize and suppressStack option', () =>
-      expect(() => new th.QueueWorker(tasksRef, '0', true, false)).to.throw('No processing function provided.')
+      expect(() => new th.QueueWorker({ tasksRef, processIdBase: '0', sanitize: true, suppressStack: false })).to.throw('No processing function provided.')
     )
 
     it('should not create a QueueWorker with a tasksRef, processId, sanitize option and an invalid processing function', () => 
@@ -59,7 +59,7 @@ describe('QueueWorker', () => {
 
     it('should not create a QueueWorker with a non-string processId specified', () => 
       nonStrings.forEach(nonStringObject =>
-        expect(() => initialize({ processId: nonStringObject })).to.throw('Invalid process ID provided.')
+        expect(() => initialize({ processIdBase: nonStringObject })).to.throw('Invalid process ID provided.')
       )
     )
 
@@ -77,6 +77,9 @@ describe('QueueWorker', () => {
   })
 
   describe('# Resetting tasks', () => {
+
+    // we should not use `on` but use chain `once` calls. That way we don't need to 
+    // worry about handling multiple tasks at the same time
 
     it('should reset a task when another task is currently being processed', () =>
       withTasksRef(tasksRef => 
@@ -510,9 +513,9 @@ describe('QueueWorker', () => {
           this.rejectWith = (message, stack) => task => ({ foo: null, message, stack })
           this.claimFor = getOwner => task => (task && task.foo && task) 
         }
-        function processFunction() { throw error }
+        function processingFunction() { throw error }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, processFunction, sanitize: false }, qw => {
+        return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction, sanitize: false }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
           qw._newTaskRef(tasksRef)
           return withTestRefFor(tasksRef, testRef =>
@@ -637,7 +640,7 @@ describe('QueueWorker', () => {
 
         function test(data, _, r) { resolve = r }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, sanitize: false, processFunction: test }, qw => {
+        return withQueueWorkerFor({ tasksRef, TaskWorker, sanitize: false, processingFunction: test }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
           qw._newTaskRef(tasksRef)
           return withTestRefFor(tasksRef, testRef =>
@@ -667,11 +670,11 @@ describe('QueueWorker', () => {
           this.isInErrorState = _ => false
           this.claimFor = getOwner => task => (task && { foo: task.foo, _owner: 'owner' } || task)
         }
-        function processFunction(data) {
+        function processingFunction(data) {
           try { expect(data).to.deep.equal(task); done() } catch (e) { done(e) }
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, processFunction }, qw => {
+        return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
           qw._newTaskRef(tasksRef)
           return withTestRefFor(tasksRef, testRef =>
@@ -693,14 +696,14 @@ describe('QueueWorker', () => {
           this.isInErrorState = _ => false
           this.claimFor = getOwner => task => queueTask
         }
-        function processFunction(data) {
+        function processingFunction(data) {
           try { 
             expect(data).to.deep.equal(Object.assign({ _id: id }, queueTask))
             done() 
           } catch (e) { done(e) }
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, processFunction, sanitize: false }, qw => {
+        return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction, sanitize: false }, qw => {
           qw._setTaskSpec(th.validBasicTaskSpec)
           qw._newTaskRef(tasksRef)
           return withTestRefFor(tasksRef, testRef => {
@@ -725,7 +728,7 @@ describe('QueueWorker', () => {
     })
 
     beforeEach(() => {
-      qw = new th.QueueWorkerWithoutProcessing(tasksRef, '0', true, false, _.noop)
+      qw = new th.QueueWorkerWithoutProcessing({ tasksRef, processIdBase: '0', sanitize: true, suppressStack: false, processingFunction: _.noop })
       clock = sinon.useFakeTimers(now())
       setTimeoutSpy = sinon.spy(global, 'setTimeout')
       clearTimeoutSpy = sinon.spy(global, 'clearTimeout')
@@ -1045,7 +1048,7 @@ describe('QueueWorker', () => {
     })
 
     beforeEach(() => {
-      qw = new th.QueueWorkerWithoutProcessingOrTimeouts(tasksRef, '0', true, false, _.noop)
+      qw = new th.QueueWorkerWithoutProcessingOrTimeouts({ tasksRef, processIdBase: '0', sanitize: true, suppressStack: false, processingFunction: _.noop })
     })
 
     afterEach(done => {
@@ -1253,7 +1256,7 @@ describe('QueueWorker', () => {
       // Both queues respond to `b` tasks. If the implementation is correct, b3
       // will be faster, if incorrect b2 will be faster
 
-      qw = new th.QueueWorker(tasksRef, '0', true, false, th.echo)
+      qw = new th.QueueWorker({ tasksRef, processIdBase: '0', sanitize: true, suppressStack: false, processingFunction: th.echo })
       return Promise.all([
         tasksRef.push({ '_state': '1.start' }),
         tasksRef.push({ '_state': '2.start', test: 'check' })
@@ -1270,7 +1273,7 @@ describe('QueueWorker', () => {
 
     it('should pick up tasks on the queue with no "_state" when a task is specified without a startState', () => {
       let result = null
-      qw = new th.QueueWorker(tasksRef, '0', true, false, th.withData(data => { result = data }))
+      qw = new th.QueueWorker({ tasksRef, processIdBase: '0', sanitize: true, suppressStack: false, processingFunction: th.withData(data => { result = data }) })
       qw.setTaskSpec(th.validBasicTaskSpec)
       const task = { foo: 'bar' }
       return tasksRef.push(task)
@@ -1282,7 +1285,7 @@ describe('QueueWorker', () => {
 
     it('should pick up tasks on the queue with the corresponding "_state" when a task is specifies a startState', () => {
       let result = null
-      qw = new th.QueueWorker(tasksRef, '0', true, false, th.withData(data => { result = data }))
+      qw = new th.QueueWorker({ tasksRef, processIdBase: '0', sanitize: true, suppressStack: false, processingFunction: th.withData(data => { result = data }) })
       qw.setTaskSpec(th.validTaskSpecWithStartState)
       const task = { foo: 'bar', '_state': th.validTaskSpecWithStartState.startState }
       return tasksRef.push(task)
@@ -1302,13 +1305,13 @@ describe('QueueWorker', () => {
     beforeEach((done) => {
       callbackStarted = false
       callbackComplete = false
-      qw = new th.QueueWorker(tasksRef, '0', true, false, function(data, progress, resolve) {
+      qw = new th.QueueWorker({ tasksRef, processIdBase: '0', sanitize: true, suppressStack: false, processingFunction: function(data, progress, resolve) {
         callbackStarted = true
         setTimeout(() => {
           callbackComplete = true
           resolve()
         }, 500)
-      })
+      } })
 
       tasksRef.push().set(null).then(done)
     })

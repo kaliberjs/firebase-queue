@@ -115,7 +115,7 @@ describe('Queue', () => {
 
     it('should create a Queue with a specific specId when specified', () => {
       let processIdBase = null
-      function QueueWorker(_, p) {
+      function QueueWorker({ processIdBase: p }) {
         this.setTaskSpec = () => {}
         this.shutdown = () => {}
         processIdBase = p
@@ -141,7 +141,7 @@ describe('Queue', () => {
     bools.forEach(bool => {
       it('should create a Queue with a ' + bool + ' sanitize option when specified', () => {
         let sanitize = null
-        function QueueWorker(_1, _2, s) {
+        function QueueWorker({ sanitize: s }) {
           this.setTaskSpec = () => {}
           sanitize = s
         }
@@ -153,7 +153,7 @@ describe('Queue', () => {
     bools.forEach(bool => {
       it('should create a Queue with a ' + bool + ' suppressStack option when specified', () => {
         let suppressStack = null
-        function QueueWorker(_1, _2, _3, s) {
+        function QueueWorker({ suppressStack: s }) {
           this.setTaskSpec = () => {}
           suppressStack = s
         }
@@ -188,7 +188,7 @@ describe('Queue', () => {
     it('should add worker with correct process id', () => {
       let processIdBase = null
       let queueWorkers = 0
-      function QueueWorker(_, p) {
+      function QueueWorker({ processIdBase: p }) {
         this.setTaskSpec = () => {}
         this.shutdown = () => {}
         processIdBase = p

@@ -186,14 +186,15 @@ module.exports = function Queue() {
   }
 
   function createWorker(spec, id = workers.length) {
-    const processId = (specId ? specId + ':' : '') + id
-    const worker = new QueueWorker(
+    const processIdBase = (specId ? specId + ':' : '') + id
+    const worker = new QueueWorker({
       tasksRef,
-      processId,
+      processIdBase,
+      spec,
       sanitize,
       suppressStack,
       processingFunction
-    )
+    })
     worker.setTaskSpec(spec)
     return worker
   }

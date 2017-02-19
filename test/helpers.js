@@ -181,8 +181,8 @@ module.exports = function() {
     return Promise.all(tasks.map(task => ref.push(task))) // if libraries stopped using `this` internally we could have used `.map(ref.push)`
   }
 
-  function withQueueWorkerFor({ tasksRef, processFunction = echo, TaskWorker, sanitize = true, suppressStack = false }, f) {
-    const qw = new QueueWorker(tasksRef, '0', sanitize, suppressStack, processFunction, TaskWorker)
+  function withQueueWorkerFor({ tasksRef, processingFunction = echo, TaskWorker, sanitize = true, spec, suppressStack = false }, f) {
+    const qw = new QueueWorker({ tasksRef, processIdBase: '0', sanitize, suppressStack, processingFunction, spec, TaskWorker })
     return allways(f(qw), () => qw.shutdown()) /* as soon as we removed all `this` references in QueueWorker we can simplify to `qw.shutdown` */
   }
 

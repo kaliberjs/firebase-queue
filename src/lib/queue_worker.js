@@ -37,7 +37,7 @@ module.exports = QueueWorker
 
 QueueWorker.isValidTaskSpec = isValidTaskSpec
 
-function QueueWorker(tasksRef, processIdBase, sanitize, suppressStack, processingFunction, TaskWorker = DefaultTaskWorker) {
+function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, processingFunction, TaskWorker = DefaultTaskWorker }) {
 
   if (!tasksRef) throwError('No tasks reference provided.')
   if (typeof processIdBase !== 'string') throwError('Invalid process ID provided.')
