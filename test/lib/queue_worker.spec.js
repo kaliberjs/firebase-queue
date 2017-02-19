@@ -84,57 +84,56 @@ describe('QueueWorker', () => {
     it.skip('should instantiate task worker with correct values', () => {})
   })
 
-  describe('# Resetting tasks', () => {
+  describe('when processing tasks', () => {
 
-    // we should not use `on` but use chain `once` calls. That way we don't need to 
-    // worry about handling multiple tasks at the same time
-
-    it('should reset a task when another task is currently being processed', () =>
-      withTasksRef(tasksRef => 
+    it('should be able to process multiple tasks', () =>
+      withTasksRef(tasksRef =>
         withQueueWorkerFor({ tasksRef, spec: validTaskSpecWithFinishedState }, qw => {
           qw.start()
-          const { startState, inProgressState, finishedState } = validTaskSpecWithFinishedState
+          const { inProgressState, finishedState } = validTaskSpecWithFinishedState
           return chain(
             pushTasks(tasksRef, { task: 1 }, { task: 2 }),
             ([task1, task2]) => waitForState([task1, task2], inProgressState),
-            ([_, task2]) => waitForState(task2, startState),
-            task2 => {
-              const task = task2.val()
-              expect(task).to.not.have.any.keys('_owner', '_progress', '_state')
-              expect(task).to.have.property('task').that.equals(2)
-              expect(task).to.have.property('_state_changed').that.is.closeTo(serverNow(), 250)
+            ([task1, task2]) => waitForState([task1, task2], finishedState),
+            ([task1, task2]) => {
+              expect(task1.val()).to.have.property('task').that.equals(1)
+              expect(task2.val()).to.have.property('task').that.equals(2)
             }
           )
         })
       )
     )
-  })
 
-  describe('#_resetTask', () => {
-
-    it('should use TaskWorker in the transaction', () => 
-      withTasksRef(tasksRef => {
-        const tasks = []
-        function TaskWorker() {
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
-          this.reset = task => (tasks.push(task), task)
-        }
-
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
-          const task = { foo: 'bar' }
-          return withTestRefFor(tasksRef, testRef =>
-            testRef.set(task)
-              .then(_ => qw._resetTask(testRef))
-              .then(_ => {
-                expect(tasks).to.deep.equal([null, task])
-              })
+    it('should be able to process tasks after the first batch has been completed', () =>
+      withTasksRef(tasksRef =>
+        withQueueWorkerFor({ tasksRef, spec: validTaskSpecWithFinishedState }, qw => {
+          qw.start()
+          const { inProgressState, finishedState } = validTaskSpecWithFinishedState
+          return chain(
+            pushTasks(tasksRef, { task: 1 }, { task: 2 }),
+            ([task1, task2]) => waitForState([task1, task2], inProgressState),
+            ([task1, task2]) => waitForState([task1, task2], finishedState),
+            _ => new Promise(r => setTimeout(r, 100)),
+            _ => pushTasks(tasksRef, { task: 3 }, { task: 4 }),
+            ([task3, task4]) => waitForState([task3, task4], inProgressState),
+            ([task3, task4]) => waitForState([task3, task4], finishedState),
+            ([task3, task4]) => {
+              expect(task3.val()).to.have.property('task').that.equals(3)
+              expect(task4.val()).to.have.property('task').that.equals(4)
+            }
           )
         })
-      })
+      )
     )
 
-    it.skip('should correctly handle transaction retries', () => {})
+    it.skip('should continue to continue to pick up tasks if a task was no successfully picked up', () => {}
+      // right now in the current implementation, where we switched to `once` it will not continue to 
+      // process tasks when:
+      // - the transaction was canceled
+      // - the transaction had an error
+      // - the transaction was on a removed item
+      // - the transaction marked the task as invalid
+    )
   })
 
   describe('#_resetTaskIfTimedOut', () => {
@@ -373,30 +372,6 @@ describe('QueueWorker', () => {
       workings of tryToProcess. We have to eventually fix that
     */
 
-    it('should not try and process a task if busy', () => 
-      withTasksRef(tasksRef => {
-        let claimForCalled = false
-        function TaskWorker() {
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
-          this.claimFor = getOwner => task => (claimForCalled = true, null)
-        }
-
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
-          qw._busy(true)
-          const task = { foo: 'bar' }
-          return withTestRefFor(tasksRef, testRef =>
-            testRef.set(task)
-              .then(_ => qw._tryToProcess(tasksRef))
-              .then(_ => {
-                expect(claimForCalled).to.be.false
-                qw._busy(false)
-              })
-          )
-        })
-      })
-    )
-    
     it('should use TaskWorker in the transaction', () =>
       withTasksRef(tasksRef => {
         const tasks = []

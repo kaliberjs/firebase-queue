@@ -11,69 +11,6 @@ const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
 
 describe('TaskWorker', () => {
 
-  describe('#reset', () => {
-
-    it('should not reset a task that no longer exists and explicitly return null', () => {
-      const tw = new TaskWorker({ processId: 'p', spec: {} })
-      const result = tw.reset(null)
-      expect(result).to.be.null
-    })
-
-    it('should reset a task that is currently in progress and owned by the TaskWorker', () => {
-      const spec = { inProgressState: 'inProgress', startState: 'start' }
-      const tw = new TaskWorker({ processId: 'p', spec })
-
-      const result = tw.reset({ 
-        _state: spec.inProgressState,
-        _owner: tw.owner,
-        _progress: 10,
-        _state_changed: 1,
-        _error_details: {},
-        prop: 'value'
-      })
-
-      expect(result).to.deep.equal({
-        _state: spec.startState,
-        _owner: null,
-        _progress: null,
-        _state_changed: SERVER_TIMESTAMP,
-        _error_details: null,
-        prop: 'value'
-      })
-
-      expect(result).to.have.property('_state').that.equals(spec.startState)
-      expect(result).to.have.property('_owner').that.is.null
-      expect(result).to.have.property('_progress').that.is.null
-      expect(result).to.have.property('_state_changed').that.deep.equals(SERVER_TIMESTAMP)
-      expect(result).to.have.property('_error_details').that.is.null
-      expect(result).to.have.property('prop').that.equals('value')
-    })
-
-    it('should not reset a task that is not owned by the TaskWorker', () => {
-      const tw = new TaskWorker({ processId: 'us', spec: {} })
-      const result = tw.reset({ _owner: 'them' })
-      expect(result).to.be.undefined
-    })
-
-    it('should not reset a task if it is not in progress', () => {
-      const tw = new TaskWorker({ processId: 'p', spec: { inProgressState: 'inProgress'} })
-      const result = tw.reset({ _owner: tw.owner, _state: 'notInProgress' })
-      expect(result).to.be.undefined
-    })
-
-    it('should not reset a task if it has no state', () => {
-      const tw = new TaskWorker({ processId: 'p', spec: { inProgressState: 'inProgress'} })
-      const result = tw.reset({ _owner: tw.owner })
-      expect(result).to.be.undefined
-    })
-    
-    it('should not reset a task if it was cloned with a new non-matching owner', () => {
-      const tw = new TaskWorker({ processId: 'p', spec: { inProgressState: 'inProgress'} })
-      const result = tw.cloneForNextTask().reset({ _owner: tw.owner, _state: 'inProgress' })
-      expect(result).to.be.undefined
-    })
-  })
-
   describe('#resetIfTimedOut', () => {
 
     it.skip('should take serverOffset into account', () => {})
@@ -276,7 +213,7 @@ describe('TaskWorker', () => {
 
     it('should not resolve a task if it was cloned with a new non-matching owner', () => {
       const tw = new TaskWorker({ processId: 'p', spec: { inProgressState: 'inProgress'} })
-      const result = tw.cloneForNextTask().reset({ _owner: tw.owner, _state: 'inProgress' })
+      const result = tw.cloneForNextTask().resolveWith({ foo: 'bar' })({ _owner: tw.owner, _state: 'inProgress' })
       expect(result).to.be.undefined
     })
 
@@ -429,7 +366,7 @@ describe('TaskWorker', () => {
 
     it('should not reject a task if it was cloned with a new non-matching owner', () => {
       const tw = new TaskWorker({ processId: 'p', spec: { inProgressState: 'inProgress'} })
-      const result = tw.cloneForNextTask().reset({ _owner: tw.owner, _state: 'inProgress' })
+      const result = tw.cloneForNextTask().rejectWith(null, null)({ _owner: tw.owner, _state: 'inProgress' })
       expect(result).to.be.undefined
     })
 
@@ -480,7 +417,7 @@ describe('TaskWorker', () => {
 
     it('should not update the progress of a task if it was cloned with a new non-matching owner', () => {
       const tw = new TaskWorker({ processId: 'p', spec: { inProgressState: 'inProgress'} })
-      const result = tw.cloneForNextTask().reset({ _owner: tw.owner, _state: 'inProgress' })
+      const result = tw.cloneForNextTask().updateProgressWith(10)({ _owner: tw.owner, _state: 'inProgress' })
       expect(result).to.be.undefined
     })
 

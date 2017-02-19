@@ -49,10 +49,11 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   const processId = processIdBase + ':' + uuid.v4()
 
   let shutdownDeferred = null
-  let taskWorker = null
+  let taskWorker = new TaskWorker({ serverOffset: 0, processId, spec: getSanitizedTaskSpec(spec) })
 
   let stop = null
   let stopTimeouts = null
+  let goTry = null
 
   let busy = false
 
@@ -62,38 +63,15 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   // used in tests
   this._tryToProcess = _tryToProcess
   this._setUpTimeouts = _setUpTimeouts
-  this._resetTask = _resetTask
   this._resetTaskIfTimedOut = _resetTaskIfTimedOut
   this._resolve = _resolve
   this._updateProgress = _updateProgress
   this._reject = _reject
   this._processId = processId
-  this._busy = (val) => val !== undefined ? (busy = val, undefined) : busy
+  this._busy = () => busy
 
-  _setTaskSpec(spec)
 
   return this
-
-  /**
-   * Returns the state of a task to the start state.
-   * @param {firebase.database.Reference} taskRef Firebase Realtime Database
-   *   reference to the Firebase location of the task that's timed out.
-   * @returns {Promise} Whether the task was able to be reset.
-   */
-  function _resetTask(taskRef, deferred = createDeferred()) {
-    const retries = 0;
-
-    taskRef
-      .transaction(taskWorker.reset, undefined, false)
-      .then(_ => { deferred.resolve() })
-      .catch(_ => {
-        // reset task errored, retrying
-        if ((retries + 1) < MAX_TRANSACTION_ATTEMPTS) setImmediate(() => _resetTask(taskRef, deferred))
-        else deferred.reject(new Error('reset task errored too many times, no longer retrying'))
-      })
-
-    return deferred.promise
-  }
 
   /**
    * Returns the state of a task to the start state if timedout.
@@ -215,73 +193,73 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   /**
    * Attempts to claim the next task in the queue.
    */
-  function _tryToProcess(newTaskRef, deferred = createDeferred()) {
+  function _tryToProcess(newTaskRef /* this should be the snapshot */, deferred = createDeferred()) {
     let retries = 0
 
-    if (busy) deferred.resolve()
-    else {
-      if (shutdownDeferred) {
-        deferred.reject(new Error('Shutting down - can no longer process new tasks'))
-        if (stop) stop()
-        // finished shutdown
-        shutdownDeferred.resolve()
-      } else {
-        if (!newTaskRef) deferred.resolve()
-        else newTaskRef.once('value')
-          .then(taskSnap => {
-            if (!taskSnap.exists()) return deferred.resolve() //<-- this is problematic
-            
-            let nextTaskRef = null
-            taskSnap.forEach(childSnap => { nextTaskRef = childSnap.ref })
-            return nextTaskRef.transaction(taskWorker/* cloneForNextTask().claim */.claimFor(() => taskWorker.nextOwner), undefined, false)
-          })
-          .then(result => {
-            if (!result) return
-            const { committed, snapshot } = result
-            if (committed && snapshot.exists() && !taskWorker.isInErrorState(snapshot)) {
-              // Worker has become busy while the transaction was processing
-              // so give up the task for now so another worker can claim it
-              /* istanbul ignore if */
-              if (busy) _resetTask(snapshot.ref)
-              else {
-                busy = true
-                taskWorker = taskWorker.cloneForNextTask()
+    if (shutdownDeferred) {
+      deferred.reject(new Error('Shutting down - can no longer process new tasks'))
+      if (stop) stop()
+      // finished shutdown
+      shutdownDeferred.resolve()
+    } else {
+      newTaskRef.once('value')
+        .then(taskSnap => {
+          if (!taskSnap.exists()) return deferred.resolve() //<-- this is problematic
+          
+          let nextTaskRef = null
+          taskSnap.forEach(childSnap => { nextTaskRef = childSnap.ref })
+          return nextTaskRef.transaction(taskWorker/* cloneForNextTask().claim */.claimFor(() => taskWorker.nextOwner), undefined, false)
+        })
+        .then(result => {
+          if (!result) return
+          const { committed, snapshot } = result
+          if (committed && snapshot.exists() && !taskWorker.isInErrorState(snapshot)) {
+            // Worker has become busy while the transaction was processing
+            // so give up the task for now so another worker can claim it
+            /* istanbul ignore if */
+            busy = true
+            taskWorker = taskWorker.cloneForNextTask()
 
-                const currentTaskRef = snapshot.ref
+            const currentTaskRef = snapshot.ref
 
-                const data = snapshot.val()
-                if (sanitize) taskWorker.sanitize(data)
-                else { data._id = snapshot.key } // this should be independent of `sanitize` and behind the flag `includeKey` or similar
+            const data = snapshot.val()
+            if (sanitize) taskWorker.sanitize(data)
+            else { data._id = snapshot.key } // this should be independent of `sanitize` and behind the flag `includeKey` or similar
 
-                const progress = _updateProgress(currentTaskRef)
-                const [resolve, resolvePromise] = _resolve(currentTaskRef)
-                const [reject, rejectPromise] = _reject(currentTaskRef)
+            const progress = _updateProgress(currentTaskRef)
+            const [resolve, resolvePromise] = _resolve(currentTaskRef)
+            const [reject, rejectPromise] = _reject(currentTaskRef)
 
-                Promise.race([resolvePromise, rejectPromise])
-                  .then(_ => {
-                    busy = false
-                    _tryToProcess(newTaskRef)
-                  })
-                  .catch(_ => {
-                    // the original implementation did not handle this situation
-                    // we should probably set the error and free ourselves:
-                    // busy = false and _tryToProcess
-                  })
+            Promise.race([resolvePromise, rejectPromise])
+              .then(_ => {
+                busy = false
+                if (shutdownDeferred) {
+                  deferred.reject(new Error('Shutting down - can no longer process new tasks'))
+                  if (stop) stop()
+                  // finished shutdown
+                  shutdownDeferred.resolve()
+                } else {
+                  newTaskRef.once('child_added', goTry)
+                }
+              })
+              .catch(_ => {
+                // the original implementation did not handle this situation
+                // we should probably set the error and free ourselves:
+                // busy = false and _tryToProcess
+              })
 
-                setImmediate(() => {
-                  try { processingFunction.call(null, data, progress, resolve, reject) }
-                  catch (err) { reject(err) }
-                })
-              }  
-            }
-            return deferred.resolve()
-          })
-          .catch(_ => {
-            // errored while attempting to claim a new task, retrying
-            if (++retries < MAX_TRANSACTION_ATTEMPTS) return setImmediate(_tryToProcess, newTaskRef, deferred)
-            else return deferred.reject(new Error('errored while attempting to claim a new task too many times, no longer retrying'))
-          })
-      }
+            setImmediate(() => {
+              try { processingFunction.call(null, data, progress, resolve, reject) }
+              catch (err) { reject(err) }
+            })
+          }
+          return deferred.resolve()
+        })
+        .catch(_ => {
+          // errored while attempting to claim a new task, retrying
+          if (++retries < MAX_TRANSACTION_ATTEMPTS) return setImmediate(_tryToProcess, newTaskRef, deferred)
+          else return deferred.reject(new Error('errored while attempting to claim a new task too many times, no longer retrying'))
+        })
     }
 
     return deferred.promise
@@ -296,6 +274,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
     if (taskWorker.hasTimeout()) {
       const expiryTimeouts = {}
       const owners = {}
+
       const ref = taskWorker.getInProgressFrom(tasksRef)
 
       const onChildAdded = ref.on('child_added', setUpTimeout)
@@ -337,12 +316,15 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   }
 
   function start() {
+    // we should probably move the non-owner related stuff away from the TaskWorker
+    // once we fixed some issues we can move the creation of newTaskRef to the constructor
     const newTaskRef = taskWorker.getNextFrom(tasksRef)
-    const newTaskListener = newTaskRef.on('child_added', () => { _tryToProcess(newTaskRef) })
+    goTry = () => { _tryToProcess(newTaskRef) }
+    newTaskRef.once('child_added', goTry)
     stop = () => {
       stop = null
-      newTaskRef.off('child_added', newTaskListener)
-      _setTaskSpec(null)
+      newTaskRef.off('child_added', goTry)
+      _disableTaskWorker()
       // this will not setup timeouts because a taskworker without timeouts is instantiated
       // we can do better, small steps :-)
       _setUpTimeouts()
@@ -356,9 +338,8 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   // we end up with a task worker in 'default' state. It seems this does not give any problems
   // in practice but this is a pure side-effect from the other moving parts. 
 
-  function _setTaskSpec(taskSpec) {
-    const spec = isValidTaskSpec(taskSpec) ? getSanitizedTaskSpec(taskSpec) : getSanitizedTaskSpec()
-    taskWorker = new TaskWorker({ serverOffset: 0, processId, spec })
+  function _disableTaskWorker() {
+    taskWorker = new TaskWorker({ serverOffset: 0, processId, spec: getSanitizedTaskSpec() })
   }
 
   function getSanitizedTaskSpec({

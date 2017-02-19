@@ -18,7 +18,6 @@ function TaskWorker({ serverOffset, taskNumber = 0, processId, spec }) {
 
   this.nextOwner = nextOwner
   this.owner = owner
-  this.reset = reset
   this.resetIfTimedOut = resetIfTimedOut
   this.resolveWith = resolveWith
   this.rejectWith = rejectWith
@@ -39,18 +38,20 @@ function TaskWorker({ serverOffset, taskNumber = 0, processId, spec }) {
     return new TaskWorker({ serverOffset, taskNumber: nextTaskNumber, processId, spec })
   }
 
-  function reset(task) {
-    if (task === null) return null
-    if (_isOwner(task) && _isInProgress(task)) return _reset(task)
-  }
-
   function resetIfTimedOut(task) {
     if (task === null) return null
 
     const timeSinceUpdate = Date.now() + serverOffset - (task._state_changed || 0)
     const timedOut = (timeout && timeSinceUpdate >= timeout)
 
-    if (_isInProgress(task) && timedOut) return _reset(task)
+    if (_isInProgress(task) && timedOut) {
+      task._state = startState
+      task._state_changed = SERVER_TIMESTAMP
+      task._owner = null
+      task._progress = null
+      task._error_details = null
+      return task
+    }
   }
 
   function resolveWith(newTask) {
@@ -174,13 +175,4 @@ function TaskWorker({ serverOffset, taskNumber = 0, processId, spec }) {
 
   function _isOwner({ _owner }) { return _owner === owner }
   function _isInProgress({ _state }) { return _state === inProgressState } 
-
-  function _reset(task) {
-    task._state = startState
-    task._state_changed = SERVER_TIMESTAMP
-    task._owner = null
-    task._progress = null
-    task._error_details = null
-    return task
-  }
 }
