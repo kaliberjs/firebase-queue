@@ -142,6 +142,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.getNextFrom = ref => ref
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.resetIfTimedOut = task => (tasks.push(task), task)
@@ -164,11 +165,12 @@ describe('QueueWorker', () => {
   })
 
   describe('#_resolve', () => {
-    
+
     it('should use TaskWorker in the transaction', () => 
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.getNextFrom = ref => ref
           this.owner = 'owner'
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
@@ -198,6 +200,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.getNextFrom = ref => ref
           this.owner = 'owner'
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
@@ -226,6 +229,7 @@ describe('QueueWorker', () => {
         withTasksRef(tasksRef => {
           const tasks = []
           function TaskWorker() {
+            this.getNextFrom = ref => ref
             this.owner = 'owner'
             this.cloneForNextTask = () => new TaskWorker()
             this.hasTimeout = () => false
@@ -250,6 +254,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.getNextFrom = ref => ref
           this.owner = 'owner'
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
@@ -274,6 +279,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.getNextFrom = ref => ref
           this.owner = 'owner'
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
@@ -301,6 +307,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.getNextFrom = ref => ref
           this.owner = 'owner'
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
@@ -322,8 +329,10 @@ describe('QueueWorker', () => {
 
     invalidPercentageValues.forEach(invalidPercentageValue => 
       it('should ignore invalid input ' + invalidPercentageValue + ' to update the progress', () =>
-        withQueueWorkerFor({ tasksRef: {}, spec: th.validBasicTaskSpec }, qw =>
-          qw._updateProgress(null, null)(invalidPercentageValue).should.eventually.be.rejectedWith('Invalid progress')
+        withTasksRef(tasksRef =>
+          withQueueWorkerFor({ tasksRef, spec: th.validBasicTaskSpec }, qw =>
+            qw._updateProgress(null, null)(invalidPercentageValue).should.eventually.be.rejectedWith('Invalid progress')
+          )
         )
       )
     )
@@ -332,6 +341,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
 
         function TaskWorker() {
+          this.getNextFrom = ref => ref
           this.owner = 'owner'
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
@@ -352,6 +362,7 @@ describe('QueueWorker', () => {
     it('should not update the progress of a task if a new task is being processed', () =>
       withTasksRef(tasksRef => {
         function TaskWorker() {
+          this.getNextFrom = ref => ref
           this.owner = 'newOwner'
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false 
@@ -376,6 +387,7 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         const tasks = []
         function TaskWorker() {
+          this.getNextFrom = ref => ref
           this.nextOwner = 'owner'
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
@@ -386,7 +398,8 @@ describe('QueueWorker', () => {
           const task = { foo: 'bar' }
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
-              .then(_ => qw._tryToProcess(tasksRef))
+              .then(_ => testRef.once('value'))
+              .then(snapshot => qw._tryToProcess(snapshot))
               .then(_ => {
                 expect(tasks).to.have.a.lengthOf(2)
                 expect(tasks).to.have.deep.property('[0]').that.is.an.array
@@ -407,6 +420,7 @@ describe('QueueWorker', () => {
         const error = new Error('Error thrown in processingFunction')
         function TaskWorker() {
           this.cloneForNextTask = () => new TaskWorker()
+          this.getNextFrom = ref => ref
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.rejectWith = (message, stack) => task => ({ foo: null, message, stack })
@@ -417,7 +431,8 @@ describe('QueueWorker', () => {
         return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction, sanitize: false, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
-              .then(_ => qw._tryToProcess(tasksRef))
+              .then(_ => testRef.once('value'))
+              .then(snapshot => qw._tryToProcess(snapshot))
               .then(_ => {
                 expect(qw._busy()).to.be.true
               })
@@ -434,6 +449,7 @@ describe('QueueWorker', () => {
     it('should set busy for a valid task', () =>
       withTasksRef(tasksRef => {
         function TaskWorker() {
+          this.getNextFrom = ref => ref
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
@@ -444,7 +460,8 @@ describe('QueueWorker', () => {
         return withQueueWorkerFor({ tasksRef, TaskWorker, sanitize: false, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
-              .then(_ => qw._tryToProcess(tasksRef))
+              .then(_ => testRef.once('value'))
+              .then(snapshot => qw._tryToProcess(snapshot))
               .then(_ => {
                 expect(qw._busy()).to.be.true
               })
@@ -456,6 +473,7 @@ describe('QueueWorker', () => {
     it('should not set busy for an invalid task', () =>
       withTasksRef(tasksRef => {
         function TaskWorker() {
+          this.getNextFrom = ref => ref
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.claimFor = getOwner => task => undefined
@@ -464,7 +482,8 @@ describe('QueueWorker', () => {
         return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
-              .then(_ => qw._tryToProcess(tasksRef))
+              .then(_ => testRef.once('value'))
+              .then(snapshot => qw._tryToProcess(snapshot))
               .then(_ => {
                 expect(qw._busy()).to.be.false
               })
@@ -476,6 +495,7 @@ describe('QueueWorker', () => {
     it('should not set busy for a deleted task', () =>
       withTasksRef(tasksRef => {
         function TaskWorker() {
+          this.getNextFrom = ref => ref
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.claimFor = getOwner => task => null
@@ -484,7 +504,8 @@ describe('QueueWorker', () => {
         return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
-              .then(_ => qw._tryToProcess(tasksRef))
+              .then(_ => testRef.once('value'))
+              .then(snapshot => qw._tryToProcess(snapshot))
               .then(_ => {
                 expect(qw._busy()).to.be.false
               })
@@ -493,28 +514,11 @@ describe('QueueWorker', () => {
       })
     )
 
-    it('should not try and process a task if no task to process', () => 
-      withTasksRef(tasksRef => {
-        const notCalled = true
-        function TaskWorker() {
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
-          this.claimFor = getOwner => task => (notCalled = false, 'task')
-        }
-
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
-          return qw._tryToProcess(tasksRef)
-            .then(_ => {
-              expect(notCalled).to.be.true
-            })
-        })
-      })
-    )
-
     it('should sanitize data passed to the processing function when specified', done => {
       withTasksRef(tasksRef => {
         const task = { foo: 'bar' }
         function TaskWorker() {
+          this.getNextFrom = ref => ref
           this.cloneForNextTask = () => new TaskWorker()
           this.sanitize = task => (delete task._owner, task)
           this.hasTimeout = () => false
@@ -527,7 +531,9 @@ describe('QueueWorker', () => {
 
         return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef =>
-            testRef.set(task).then(_ => qw._tryToProcess(tasksRef))
+            testRef.set(task)
+              .then(_ => testRef.once('value'))
+              .then(snapshot => qw._tryToProcess(snapshot))
           )
         })
       })
@@ -539,6 +545,7 @@ describe('QueueWorker', () => {
         let id = null
         const queueTask = Object.assign({ _owner: 'owner' }, task)
         function TaskWorker() {
+          this.getNextFrom = ref => ref
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
@@ -554,7 +561,9 @@ describe('QueueWorker', () => {
         return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction, sanitize: false, spec: th.validBasicTaskSpec }, qw => {
           return withTestRefFor(tasksRef, testRef => {
             id = testRef.key
-            return testRef.set(task).then(_ => qw._tryToProcess(tasksRef))
+            return testRef.set(task)
+              .then(_ => testRef.once('value'))
+              .then(snapshot => qw._tryToProcess(snapshot))
           })
         })
       })

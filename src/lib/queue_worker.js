@@ -50,10 +50,11 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
 
   let shutdownDeferred = null
   let taskWorker = new TaskWorker({ serverOffset: 0, processId, spec: getSanitizedTaskSpec(spec) })
+  // we should probably move the non-owner related stuff away from the TaskWorker
+  // once we fixed some issues we can move the creation of newTaskRef to the constructor
+  const newTaskRef = taskWorker.getNextFrom(tasksRef)
 
   let stop = null
-  let stopTimeouts = null
-  let goTry = null
 
   let busy = false
 
@@ -193,7 +194,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   /**
    * Attempts to claim the next task in the queue.
    */
-  function _tryToProcess(newTaskRef /* this should be the snapshot */, deferred = createDeferred()) {
+  function _tryToProcess(taskSnapshot, deferred = createDeferred()) {
     let retries = 0
 
     if (shutdownDeferred) {
@@ -202,17 +203,8 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
       // finished shutdown
       shutdownDeferred.resolve()
     } else {
-      newTaskRef.once('value')
-        .then(taskSnap => {
-          if (!taskSnap.exists()) return deferred.resolve() //<-- this is problematic
-          
-          let nextTaskRef = null
-          taskSnap.forEach(childSnap => { nextTaskRef = childSnap.ref })
-          return nextTaskRef.transaction(taskWorker/* cloneForNextTask().claim */.claimFor(() => taskWorker.nextOwner), undefined, false)
-        })
-        .then(result => {
-          if (!result) return
-          const { committed, snapshot } = result
+      taskSnapshot.ref.transaction(taskWorker/* cloneForNextTask().claim */.claimFor(() => taskWorker.nextOwner), undefined, false)
+        .then(({ committed, snapshot }) => {
           if (committed && snapshot.exists() && !taskWorker.isInErrorState(snapshot)) {
             // Worker has become busy while the transaction was processing
             // so give up the task for now so another worker can claim it
@@ -239,7 +231,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
                   // finished shutdown
                   shutdownDeferred.resolve()
                 } else {
-                  newTaskRef.once('child_added', goTry)
+                  newTaskRef.once('child_added', _tryToProcess)
                 }
               })
               .catch(_ => {
@@ -257,7 +249,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
         })
         .catch(_ => {
           // errored while attempting to claim a new task, retrying
-          if (++retries < MAX_TRANSACTION_ATTEMPTS) return setImmediate(_tryToProcess, newTaskRef, deferred)
+          if (++retries < MAX_TRANSACTION_ATTEMPTS) return setImmediate(_tryToProcess, taskSnapshot, deferred)
           else return deferred.reject(new Error('errored while attempting to claim a new task too many times, no longer retrying'))
         })
     }
@@ -269,77 +261,54 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
    * Sets up timeouts to reclaim tasks that fail due to taking too long.
    */
   function _setUpTimeouts() {
-    if (stopTimeouts) stopTimeouts()
+    const expiryTimeouts = {}
+    const owners = {}
 
-    if (taskWorker.hasTimeout()) {
-      const expiryTimeouts = {}
-      const owners = {}
+    const ref = taskWorker.getInProgressFrom(tasksRef)
 
-      const ref = taskWorker.getInProgressFrom(tasksRef)
+    const onChildAdded = ref.on('child_added', setUpTimeout)
+    const onChildRemoved = ref.on('child_removed', ({ key }) => {
+      clearTimeout(expiryTimeouts[key])
+      delete expiryTimeouts[key]
+      delete owners[key]
+    })
+    const onChildChanged = ref.on('child_changed', snapshot => {
+      // This catches de-duped events from the server - if the task was removed
+      // and added in quick succession, the server may squash them into a
+      // single update
+      if (taskWorker.getOwner(snapshot) !== owners[snapshot.key])
+        setUpTimeout(snapshot)
+    })
 
-      const onChildAdded = ref.on('child_added', setUpTimeout)
-      const onChildRemoved = ref.on('child_removed', ({ key }) => {
+    return () => {
+      ref.off('child_added', onChildAdded)
+      ref.off('child_removed', onChildRemoved)
+      ref.off('child_changed', onChildChanged)
+
+      Object.keys(expiryTimeouts).forEach(key => {
         clearTimeout(expiryTimeouts[key])
-        delete expiryTimeouts[key]
-        delete owners[key]
       })
-      const onChildChanged = ref.on('child_changed', snapshot => {
-        // This catches de-duped events from the server - if the task was removed
-        // and added in quick succession, the server may squash them into a
-        // single update
-        if (taskWorker.getOwner(snapshot) !== owners[snapshot.key])
-          setUpTimeout(snapshot)
-      })
+    }
 
-      stopTimeouts = () => {
-        stopTimeouts = null
-
-        ref.off('child_added', onChildAdded)
-        ref.off('child_removed', onChildRemoved)
-        ref.off('child_changed', onChildChanged)
-
-        Object.keys(expiryTimeouts).forEach(key => {
-          clearTimeout(expiryTimeouts[key])
-        })
-      }
-
-      function setUpTimeout(snapshot) {
-        const taskName = snapshot.key
-        const expires = taskWorker.expiresIn(snapshot)
-        owners[taskName] = taskWorker.getOwner(snapshot)
-        expiryTimeouts[taskName] = setTimeout(
-          () => _resetTaskIfTimedOut(snapshot.ref),
-          expires
-        )
-      }
+    function setUpTimeout(snapshot) {
+      const taskName = snapshot.key
+      const expires = taskWorker.expiresIn(snapshot)
+      owners[taskName] = taskWorker.getOwner(snapshot)
+      expiryTimeouts[taskName] = setTimeout(
+        () => _resetTaskIfTimedOut(snapshot.ref),
+        expires
+      )
     }
   }
 
   function start() {
-    // we should probably move the non-owner related stuff away from the TaskWorker
-    // once we fixed some issues we can move the creation of newTaskRef to the constructor
-    const newTaskRef = taskWorker.getNextFrom(tasksRef)
-    goTry = () => { _tryToProcess(newTaskRef) }
-    newTaskRef.once('child_added', goTry)
+    newTaskRef.once('child_added', _tryToProcess)
+    const removeTimeouts = taskWorker.hasTimeout() ? _setUpTimeouts() : null
     stop = () => {
       stop = null
-      newTaskRef.off('child_added', goTry)
-      _disableTaskWorker()
-      // this will not setup timeouts because a taskworker without timeouts is instantiated
-      // we can do better, small steps :-)
-      _setUpTimeouts()
+      newTaskRef.off('child_added', _tryToProcess)
+      if (removeTimeouts) removeTimeouts()
     }
-    _setUpTimeouts()
-  }
-
-  // The mechanism of creating and updating the task worker is a refactoring of the original code
-  // it now however clearly shows an inbalance. When a QueueWorker is created its state is 
-  // different from the state left after a shutdown (_setTaskSpec(null)). In the latter case 
-  // we end up with a task worker in 'default' state. It seems this does not give any problems
-  // in practice but this is a pure side-effect from the other moving parts. 
-
-  function _disableTaskWorker() {
-    taskWorker = new TaskWorker({ serverOffset: 0, processId, spec: getSanitizedTaskSpec() })
   }
 
   function getSanitizedTaskSpec({

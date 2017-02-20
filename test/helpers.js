@@ -136,12 +136,14 @@ module.exports = function() {
     return Promise.race([
       timeout(time, `while waiting for ${toString(val)} to reach the ${state} state`),
       new Promise(resolve => {
-        const handler = val.ref.on('value', snapshot => {
+        val.ref.on('value', onValue)
+
+        function onValue(snapshot) {
           if (snapshot.exists() && snapshot.val()._state === state) {
-            val.ref.off('value', handler)
+            val.ref.off('value', onValue)
             resolve(snapshot)
           }
-        })
+        }
       })
     ])
   }
