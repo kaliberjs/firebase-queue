@@ -138,24 +138,19 @@ describe('QueueWorker', () => {
 
   describe('#_resetTaskIfTimedOut', () => {
 
-    it('should use TaskWorker in the transaction', () => 
+    it('should use TransactionHelper in the transaction', () => 
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() {
-          this.getNextFrom = ref => ref
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
+        function TransactionHelper() {
           this.resetIfTimedOut = task => (tasks.push(task), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
+        return withQueueWorkerFor({ tasksRef, TransactionHelper }, qw => {
           const task = { foo: 'bar' }
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
               .then(_ => qw._resetTaskIfTimedOut(testRef))
-              .then(_ => {
-                expect(tasks).to.deep.equal([null, task])
-              })
+              .then(_ => { expect(tasks).to.deep.equal([null, task]) })
           )
         })
       })
@@ -166,26 +161,20 @@ describe('QueueWorker', () => {
 
   describe('#_resolve', () => {
 
-    it('should use TaskWorker in the transaction', () => 
+    it('should use TransactionHelper in the transaction', () => 
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() {
-          this.getNextFrom = ref => ref
-          this.owner = 'owner'
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
+        function TransactionHelper() {
           this.resolveWith = newTask => task => (tasks.push([newTask, task]), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
+        return withQueueWorkerFor({ tasksRef, TransactionHelper }, qw => {
           const task = { foo: 'bar' }
           const newTask = { baz: 'qux' }
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
-              .then(_ => qw._resolve(testRef, 'owner')[0](newTask))
-              .then(_ => {
-                expect(tasks).to.deep.equal([[newTask, null], [newTask, task]])
-              })
+              .then(_ => qw._resolve(testRef)[0](newTask))
+              .then(_ => { expect(tasks).to.deep.equal([[newTask, null], [newTask, task]]) })
           )
         })
       })
@@ -196,27 +185,21 @@ describe('QueueWorker', () => {
 
   describe('#_reject', () => {
 
-    it('should use TaskWorker in the transaction', () => 
+    it('should use TransactionHelper in the transaction', () => 
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() {
-          this.getNextFrom = ref => ref
-          this.owner = 'owner'
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
+        function TransactionHelper() {
           this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
+        return withQueueWorkerFor({ tasksRef, TransactionHelper }, qw => {
           const task = { foo: 'bar' }
           const error = new Error('test error')
           const { message, stack } = error
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
-              .then(_ => qw._reject(testRef, 'owner')[0](error))
-              .then(_ => {
-                expect(tasks).to.deep.equal([[message, stack, null], [message, stack, task]])
-              })
+              .then(_ => qw._reject(testRef)[0](error))
+              .then(_ => { expect(tasks).to.deep.equal([[message, stack, null], [message, stack, task]]) })
           )
         })
       })
@@ -228,19 +211,15 @@ describe('QueueWorker', () => {
       it('should reject a task owned by the current worker and convert the error to a string if not a string: ' + nonStringObject, () =>
         withTasksRef(tasksRef => {
           const tasks = []
-          function TaskWorker() {
-            this.getNextFrom = ref => ref
-            this.owner = 'owner'
-            this.cloneForNextTask = () => new TaskWorker()
-            this.hasTimeout = () => false
+          function TransactionHelper() {
             this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
           }
 
-          return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
+          return withQueueWorkerFor({ tasksRef, TransactionHelper }, qw => {
             const task = { foo: 'bar' }
             return withTestRefFor(tasksRef, testRef =>
               testRef.set(task)
-                .then(_ => qw._reject(testRef, 'owner')[0](nonStringObject))
+                .then(_ => qw._reject(testRef)[0](nonStringObject))
                 .then(_ => {
                   expect(tasks).to.deep.equal([[nonStringObject.toString(), null, null], [nonStringObject.toString(), null, task]])
                 })
@@ -253,20 +232,16 @@ describe('QueueWorker', () => {
     it('should reject a task owned by the current worker and append the error string to the _error_details', () =>
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() {
-          this.getNextFrom = ref => ref
-          this.owner = 'owner'
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
+        function TransactionHelper() {
           this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
+        return withQueueWorkerFor({ tasksRef, TransactionHelper }, qw => {
           const task = { foo: 'bar' }
           const error = 'My error message'
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
-              .then(_ => qw._reject(testRef, 'owner')[0](error))
+              .then(_ => qw._reject(testRef)[0](error))
               .then(_ => {
                 expect(tasks).to.deep.equal([[error, null, null], [error, null, task]])
               })
@@ -278,20 +253,16 @@ describe('QueueWorker', () => {
     it('should reject a task owned by the current worker and append only the error string to the _error_details if suppressStack is set to true', () =>
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() {
-          this.getNextFrom = ref => ref
-          this.owner = 'owner'
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
+        function TransactionHelper() {
           this.rejectWith = (error, stack) => task => (tasks.push([error, stack, task]), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, suppressStack: true, spec: th.validBasicTaskSpec }, qw => {
+        return withQueueWorkerFor({ tasksRef, TransactionHelper, suppressStack: true }, qw => {
           const task = { foo: 'bar' }
           const error = new Error('test error')
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
-              .then(_ => qw._reject(testRef, 'owner')[0](error))
+              .then(_ => qw._reject(testRef)[0](error))
               .then(_ => {
                 expect(tasks).to.deep.equal([[error.message, null, null], [error.message, null, task]])
               })
@@ -303,25 +274,19 @@ describe('QueueWorker', () => {
 
   describe('#_updateProgress', () => {
 
-    it('should use TaskWorker in the transaction', () =>
+    it('should use TransactionHelper in the transaction', () =>
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() {
-          this.getNextFrom = ref => ref
-          this.owner = 'owner'
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
+        function TransactionHelper() {
           this.updateProgressWith = progress => task => (tasks.push([progress, task]), task)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
+        return withQueueWorkerFor({ tasksRef, TransactionHelper }, qw => {
           const task = { foo: 'bar' }
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
-              .then(_ => qw._updateProgress(testRef, 'owner')(1))
-              .then(_ => {
-                expect(tasks).to.deep.equal([[1, null], [1, task]])
-              })
+              .then(_ => qw._updateProgress(testRef)(1))
+              .then(_ => { expect(tasks).to.deep.equal([[1, null], [1, task]]) })
           )
         })
       })
@@ -330,8 +295,8 @@ describe('QueueWorker', () => {
     invalidPercentageValues.forEach(invalidPercentageValue => 
       it('should ignore invalid input ' + invalidPercentageValue + ' to update the progress', () =>
         withTasksRef(tasksRef =>
-          withQueueWorkerFor({ tasksRef, spec: th.validBasicTaskSpec }, qw =>
-            qw._updateProgress(null, null)(invalidPercentageValue).should.eventually.be.rejectedWith('Invalid progress')
+          withQueueWorkerFor({ tasksRef }, qw =>
+            qw._updateProgress(null)(invalidPercentageValue).should.eventually.be.rejectedWith('Invalid progress')
           )
         )
       )
@@ -339,39 +304,19 @@ describe('QueueWorker', () => {
 
     it('should not update the progress of a task no longer owned by the current worker', () =>
       withTasksRef(tasksRef => {
-
-        function TaskWorker() {
-          this.getNextFrom = ref => ref
-          this.owner = 'owner'
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
+        function TransactionHelper() {
           this.updateProgressWith = progress => task => undefined
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
-
-          return withTestRefFor(tasksRef, testRef =>
+        return withQueueWorkerFor({ tasksRef, TransactionHelper }, qw =>
+          withTestRefFor(tasksRef, testRef =>
             testRef.set({})
-              .then(_ => qw._updateProgress(testRef, 'owner')(1))
-              .should.eventually.be.rejectedWith('Can\'t update progress - current task no longer owned by this process')
+              .then(_ => qw._updateProgress(testRef)(1))
+              .catch(({ message }) => {
+                expect(message).to.equal('Can\'t update progress - current task no longer owned by this process')
+              })
           )
-        })
-      })
-    )
-
-    it('should not update the progress of a task if a new task is being processed', () =>
-      withTasksRef(tasksRef => {
-        function TaskWorker() {
-          this.getNextFrom = ref => ref
-          this.owner = 'newOwner'
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false 
-        }
-
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
-          qw._updateProgress(null, 'owner')(1)
-            .should.eventually.be.rejectedWith('Can\'t update progress - no task currently being processed')
-        })
+        )
       })
     )
   })
@@ -383,18 +328,15 @@ describe('QueueWorker', () => {
       workings of tryToProcess. We have to eventually fix that
     */
 
-    it('should use TaskWorker in the transaction', () =>
+    it('should use TransactionHelper in the transaction', () =>
       withTasksRef(tasksRef => {
         const tasks = []
-        function TaskWorker() {
-          this.getNextFrom = ref => ref
-          this.nextOwner = 'owner'
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
+        function TransactionHelper() {
+          this.cloneForNextTask = () => new TransactionHelper()
           this.claim = task => (tasks.push(task), null)
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
+        return withQueueWorkerFor({ tasksRef, TransactionHelper }, qw => {
           const task = { foo: 'bar' }
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
@@ -414,24 +356,18 @@ describe('QueueWorker', () => {
     it('should try and process a task if not busy, rejecting it if it throws', () => 
       withTasksRef(tasksRef => {
         const error = new Error('Error thrown in processingFunction')
-        function TaskWorker() {
-          this.cloneForNextTask = () => new TaskWorker()
-          this.getNextFrom = ref => ref
-          this.hasTimeout = () => false
-          this.isInErrorState = _ => false
+        function TransactionHelper() {
+          this.cloneForNextTask = () => new TransactionHelper()
           this.rejectWith = (message, stack) => task => ({ foo: null, message, stack })
           this.claim = task => (task && task.foo && task) 
         }
         function processingFunction() { throw error }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction, sanitize: false, spec: th.validBasicTaskSpec }, qw => {
+        return withQueueWorkerFor({ tasksRef, TransactionHelper, processingFunction, sanitize: false }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
               .then(_ => testRef.once('value'))
               .then(snapshot => qw._tryToProcess(snapshot))
-              .then(_ => {
-                expect(qw._busy()).to.be.true
-              })
               .then(_ => testRef.once('child_removed'))
               .then(_ => testRef.once('value'))
               .then(snapshot => {
@@ -443,68 +379,58 @@ describe('QueueWorker', () => {
     )
 
     it('should set busy for a valid task', () =>
+      // should be tested for it's effect: shutdown
       withTasksRef(tasksRef => {
-        function TaskWorker() {
-          this.getNextFrom = ref => ref
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
-          this.isInErrorState = _ => false
-          this.resolveWith = newTask => task => undefined
-          this.claim = task => task 
+        function TransactionHelper() {
+          this.cloneForNextTask = () => new TransactionHelper()
+          this.resolveWith = _ => task => undefined
+          this.claim = task => task
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, sanitize: false, spec: th.validBasicTaskSpec }, qw => {
+        return withQueueWorkerFor({ tasksRef, TransactionHelper, sanitize: false }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
               .then(_ => testRef.once('value'))
               .then(snapshot => qw._tryToProcess(snapshot))
-              .then(_ => {
-                expect(qw._busy()).to.be.true
-              })
+              .then(_ => { expect(qw._busy()).to.be.true })
           )
         })
       })
     )
 
     it('should not set busy for an invalid task', () =>
+      // again, this should be tested against the effect
       withTasksRef(tasksRef => {
-        function TaskWorker() {
-          this.getNextFrom = ref => ref
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
+        function TransactionHelper() {
+          this.cloneForNextTask = () => new TransactionHelper()
           this.claim = task => undefined
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
+        return withQueueWorkerFor({ tasksRef, TransactionHelper }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
               .then(_ => testRef.once('value'))
               .then(snapshot => qw._tryToProcess(snapshot))
-              .then(_ => {
-                expect(qw._busy()).to.be.false
-              })
+              .then(_ => { expect(qw._busy()).to.be.false })
           )
         })
       })
     )
     
     it('should not set busy for a deleted task', () =>
+      // again, effect instead of internal state
       withTasksRef(tasksRef => {
-        function TaskWorker() {
-          this.getNextFrom = ref => ref
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
+        function TransactionHelper() {
+          this.cloneForNextTask = () => new TransactionHelper()
           this.claim = task => null
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
+        return withQueueWorkerFor({ tasksRef, TransactionHelper }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set({ foo: 'bar' })
               .then(_ => testRef.once('value'))
               .then(snapshot => qw._tryToProcess(snapshot))
-              .then(_ => {
-                expect(qw._busy()).to.be.false
-              })
+              .then(_ => { expect(qw._busy()).to.be.false })
           )
         })
       })
@@ -513,19 +439,16 @@ describe('QueueWorker', () => {
     it('should sanitize data passed to the processing function when specified', done => {
       withTasksRef(tasksRef => {
         const task = { foo: 'bar' }
-        function TaskWorker() {
-          this.getNextFrom = ref => ref
-          this.cloneForNextTask = () => new TaskWorker()
-          this.sanitize = task => (delete task._owner, task)
-          this.hasTimeout = () => false
-          this.isInErrorState = _ => false
-          this.claim = task => (task && { foo: task.foo, _owner: 'owner' } || task)
+        function TransactionHelper() {
+          this.cloneForNextTask = () => new TransactionHelper()
+          this.claim = task => (task && { foo: task.foo, _owner: 'owner' }) || task
         }
+
         function processingFunction(data) {
           try { expect(data).to.deep.equal(task); done() } catch (e) { done(e) }
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction, spec: th.validBasicTaskSpec }, qw => {
+        return withQueueWorkerFor({ tasksRef, TransactionHelper, processingFunction }, qw => {
           return withTestRefFor(tasksRef, testRef =>
             testRef.set(task)
               .then(_ => testRef.once('value'))
@@ -540,11 +463,8 @@ describe('QueueWorker', () => {
         const task = { foo: 'bar' }
         let id = null
         const queueTask = Object.assign({ _owner: 'owner' }, task)
-        function TaskWorker() {
-          this.getNextFrom = ref => ref
-          this.cloneForNextTask = () => new TaskWorker()
-          this.hasTimeout = () => false
-          this.isInErrorState = _ => false
+        function TransactionHelper() {
+          this.cloneForNextTask = () => new TransactionHelper()
           this.claim = task => queueTask
         }
         function processingFunction(data) {
@@ -554,7 +474,7 @@ describe('QueueWorker', () => {
           } catch (e) { done(e) }
         }
 
-        return withQueueWorkerFor({ tasksRef, TaskWorker, processingFunction, sanitize: false, spec: th.validBasicTaskSpec }, qw => {
+        return withQueueWorkerFor({ tasksRef, TransactionHelper, processingFunction, sanitize: false }, qw => {
           return withTestRefFor(tasksRef, testRef => {
             id = testRef.key
             return testRef.set(task)
@@ -589,11 +509,11 @@ describe('QueueWorker', () => {
       clock.restore()
     })
 
-    it.skip('should use taskWorker to select tasks in progress', () => {})
+    it.skip('should use TransactionHelper to select tasks in progress', () => {})
 
     it('should not set up timeouts when no task timeout is set', () =>
       withTasksRef(tasksRef =>
-        withQueueWorkerFor({ tasksRef, spec: th.validBasicTaskSpec }, qw => {
+        withQueueWorkerFor({ tasksRef }, qw => {
           qw.start()
           return chain(
             tasksRef.push().set({
@@ -623,7 +543,7 @@ describe('QueueWorker', () => {
 
     it.skip('should set up timeout listeners when a task timeout is set', () => 
       withTasksRef(tasksRef =>
-        withQueueWorkerFor({ tasksSpec, spec: th.validBasicTaskSpec }, qw => {
+        withQueueWorkerFor({ tasksSpec }, qw => {
           qw.start()
           return chain(
             tasksRef.push({
@@ -954,7 +874,7 @@ describe('QueueWorker', () => {
     it('should pick up tasks on the queue with no "_state" when a task is specified without a startState', () => 
       withTasksRef(tasksRef => {
         let result = null
-        return withQueueWorkerFor({ tasksRef, spec: th.validBasicTaskSpec, processingFunction: th.withData(data => { result = data }) }, qw => {
+        return withQueueWorkerFor({ tasksRef, processingFunction: th.withData(data => { result = data }) }, qw => {
           qw.start()
           const task = { foo: 'bar' }
           return tasksRef.push(task)
@@ -1037,5 +957,91 @@ describe('QueueWorker', () => {
     it.skip('stop listenening to the change of owner, if not busy -- this is probably not needed because stop will not be called if not busy', () => {})
     it.skip('should put the task worker in `invalid` state', () => {})
     it.skip('should stop with the timeouts', () => {})
+  })
+
+  describe.skip('#getInProgressFrom', () => {
+    // this should be moved and tested differently (directly on the worker)
+    it('should select only tasks in progress', () =>
+      withTasksRef(tasksRef => {
+        const spec = { inProgressState: '2.inProgress' }
+        const tw = new TransactionHelper({ processId: 'p', spec })
+        const [t1, t2, t3, t4] = [
+          { id: 1, _state: '1.other' },
+          { id: 2, _state: spec.inProgressState },
+          { id: 3, _state: spec.inProgressState },
+          { id: 4, _state: '3.other' }
+        ]
+        return chain(
+          pushTasks(tasksRef, t1, t2, t3, t4),
+          _ => tw.getInProgressFrom(tasksRef).once('value'),
+          snapshot => {
+            const result = []
+            snapshot.forEach(x => { result.push(x.val()) })
+            return result
+          },
+          result => {
+            expect(result).to.have.a.lengthOf(2)
+            expect(result).to.deep.equal([t2, t3])
+          }
+        )
+      })
+    )
+  })
+
+  describe.skip('#getNextFrom', () => {
+    // this should be moved and tested differently (directly on the worker)
+
+    function getNext(spec, tasks) {
+      const tw = new TransactionHelper({ processId: 'p', spec })
+      return withTasksRef(tasksRef =>
+        chain(
+          pushTasks(tasksRef, ...tasks),
+          _ => tw.getNextFrom(tasksRef).once('value'),
+          snapshot => {
+            const result = []
+            snapshot.forEach(x => { result.push(x.val()) })
+            return result
+          }
+        )
+      )
+    }
+
+    it('should select a single task in start state', () => {
+      const spec = { startState: '2.start' }
+      const tasks = [
+        { id: 1, _state: '1.other' },
+        { id: 2, _state: spec.startState },
+        { id: 3, _state: spec.startState },
+        { id: 4, _state: '3.other' }
+      ]
+      const [t1, t2, t3, t4] = tasks
+
+      return chain(
+        getNext(spec, tasks),
+        result => {
+          expect(result).to.have.a.lengthOf(1)
+          expect(result).to.deep.equal([t2])
+        }
+      )
+    })
+
+    it('should select a single task in start state if start state is null', () => {
+      const spec = { startState: null }
+      const tasks = [
+        { id: 1, _state: '1.other' },
+        { id: 2 },
+        { id: 3 },
+        { id: 4, _state: '3.other' }
+      ]
+      const [t1, t2, t3, t4] = tasks
+
+      return chain(
+        getNext(spec, tasks),
+        result => {
+          expect(result).to.have.a.lengthOf(1)
+          expect(result).to.deep.equal([t2])
+        }
+      )
+    })
   })
 })

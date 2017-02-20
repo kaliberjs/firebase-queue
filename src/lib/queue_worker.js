@@ -2,7 +2,8 @@
 
 const uuid = require('uuid')
 const _ = require('lodash')
-const DefaultTaskWorker = require('./task_worker')
+const DefaultTransactionHelper = require('./transaction_helper')
+const TaskUtilities = require('./task_utilities')
 
 const MAX_TRANSACTION_ATTEMPTS = 10
 const DEFAULT_ERROR_STATE = 'error'
@@ -37,7 +38,7 @@ module.exports = QueueWorker
 
 QueueWorker.isValidTaskSpec = isValidTaskSpec
 
-function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, processingFunction, spec, TaskWorker = DefaultTaskWorker }) {
+function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, processingFunction, spec, TransactionHelper = DefaultTransactionHelper }) {
 
   if (!tasksRef) throwError('No tasks reference provided.')
   if (typeof processIdBase !== 'string') throwError('Invalid process ID provided.')
@@ -46,12 +47,19 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   if (typeof processingFunction !== 'function') throwError('No processing function provided.')
   if (!isValidTaskSpec(spec)) throwError('Invalid task spec provided')
 
+
+  const serverOffset = 0
   const processId = processIdBase + ':' + uuid.v4()
 
   let shutdownDeferred = null
-  let taskWorker = new TaskWorker({ serverOffset: 0, processId, spec: getSanitizedTaskSpec(spec) })
-  // we should probably move the non-owner related stuff away from the TaskWorker
-  const newTaskRef = taskWorker.getNextFrom(tasksRef)
+
+  const sanitizedSpec = getSanitizedTaskSpec(spec)
+  const { startState, inProgressState, timeout } = sanitizedSpec
+  const taskUtilities = new TaskUtilities({ serverOffset, spec: sanitizedSpec })
+  let transactionHelper = new TransactionHelper({ serverOffset, processId, spec: sanitizedSpec })
+
+  const newTaskRef = tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
+  const hasTimeout = !!timeout
 
   let stop = null
   let busy = false
@@ -82,7 +90,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
     const retries = 0;
 
     taskRef
-      .transaction(taskWorker.resetIfTimedOut, undefined, false)
+      .transaction(transactionHelper.resetIfTimedOut, undefined, false)
       .then(_ => { deferred.resolve() })
       .catch(_ => {
         // reset task errored, retrying
@@ -111,7 +119,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
     function resolve(newTask) {
 
       taskRef
-        .transaction(taskWorker.resolveWith(newTask), undefined, false)
+        .transaction(transactionHelper.resolveWith(newTask), undefined, false)
         .then(_ => { deferred.resolve() })
         .catch(_ => {
           // resolve task errored, retrying
@@ -149,7 +157,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
       const errorStack = (!suppressStack && error && error.stack) || null
 
       taskRef
-        .transaction(taskWorker.rejectWith(errorString, errorStack), undefined, false)
+        .transaction(transactionHelper.rejectWith(errorString, errorStack), undefined, false)
         .then(_ => { deferred.resolve() })
         .catch(_ => {
           // reject task errored, retrying
@@ -179,7 +187,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
         return Promise.reject(new Error('Invalid progress'))
 
       return new Promise((resolve, reject) => {
-        taskRef.transaction(taskWorker.updateProgressWith(progress), undefined, false)
+        taskRef.transaction(transactionHelper.updateProgressWith(progress), undefined, false)
         .then(({ committed, snapshot }) => { 
           if (committed && snapshot.exists()) resolve()
           else reject(new Error('Can\'t update progress - current task no longer owned by this process'))
@@ -199,17 +207,17 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
       deferred.reject(new Error('Shutting down - can no longer process new tasks'))
       finishShutdown()
     } else {
-      const nextTaskWorker = taskWorker.cloneForNextTask()
-      taskSnapshot.ref.transaction(nextTaskWorker.claim, undefined, false)
+      const nextTransactionHelper = transactionHelper.cloneForNextTask()
+      taskSnapshot.ref.transaction(nextTransactionHelper.claim, undefined, false)
         .then(({ committed, snapshot }) => {
-          if (committed && snapshot.exists() && !taskWorker.isInErrorState(snapshot)) {
+          if (committed && snapshot.exists() && !taskUtilities.isInErrorState(snapshot)) {
             busy = true
-            taskWorker = nextTaskWorker
+            transactionHelper = nextTransactionHelper
 
             const currentTaskRef = snapshot.ref
 
             const data = snapshot.val()
-            if (sanitize) taskWorker.sanitize(data)
+            if (sanitize) taskUtilities.sanitize(data)
             else { data._id = snapshot.key } // this should be independent of `sanitize` and behind the flag `includeKey` or similar
 
             const progress = _updateProgress(currentTaskRef)
@@ -256,7 +264,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
     const expiryTimeouts = {}
     const owners = {}
 
-    const ref = taskWorker.getInProgressFrom(tasksRef)
+    const ref = tasksRef.orderByChild('_state').equalTo(inProgressState)
 
     const onChildAdded = ref.on('child_added', setUpTimeout)
     const onChildRemoved = ref.on('child_removed', ({ key }) => {
@@ -268,7 +276,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
       // This catches de-duped events from the server - if the task was removed
       // and added in quick succession, the server may squash them into a
       // single update
-      if (taskWorker.getOwner(snapshot) !== owners[snapshot.key])
+      if (taskUtilities.getOwner(snapshot) !== owners[snapshot.key])
         setUpTimeout(snapshot)
     })
 
@@ -284,8 +292,8 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
 
     function setUpTimeout(snapshot) {
       const taskName = snapshot.key
-      const expires = taskWorker.expiresIn(snapshot)
-      owners[taskName] = taskWorker.getOwner(snapshot)
+      const expires = taskUtilities.expiresIn(snapshot)
+      owners[taskName] = taskUtilities.getOwner(snapshot)
       expiryTimeouts[taskName] = setTimeout(
         () => _resetTaskIfTimedOut(snapshot.ref),
         expires
@@ -295,7 +303,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
 
   function start() {
     newTaskRef.once('child_added', _tryToProcess)
-    const removeTimeouts = taskWorker.hasTimeout() ? _setUpTimeouts() : null
+    const removeTimeouts = hasTimeout && _setUpTimeouts()
     stop = () => {
       stop = null
       newTaskRef.off('child_added', _tryToProcess)

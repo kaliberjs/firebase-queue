@@ -1,36 +1,27 @@
 const _ = require('lodash')
 
-module.exports = TaskWorker
+module.exports = TransactionHelper
 
 const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
 
-function TaskWorker({ serverOffset, taskNumber = 0, processId, spec }) {
+function TransactionHelper({ serverOffset, taskNumber = 0, processId, spec }) {
 
   const { startState, inProgressState, finishedState, errorState, timeout, retries } = spec
-
-  const fields = ['_state', '_state_changed', '_owner', '_progress', '_error_details']
 
   if (!processId) throw new Error('no processId')
 
   const owner = processId + ':' + taskNumber
 
   this.owner = owner
+  this.cloneForNextTask = cloneForNextTask
   this.resetIfTimedOut = resetIfTimedOut
   this.resolveWith = resolveWith
   this.rejectWith = rejectWith
   this.updateProgressWith = updateProgressWith
   this.claim = claim
-  this.getInProgressFrom = getInProgressFrom
-  this.getNextFrom = getNextFrom
-  this.isInErrorState = isInErrorState
-  this.hasTimeout = hasTimeout
-  this.expiresIn = expiresIn
-  this.getOwner = getOwner
-  this.sanitize = sanitize
-  this.cloneForNextTask = cloneForNextTask
 
   function cloneForNextTask() {
-    return new TaskWorker({ serverOffset, taskNumber: taskNumber + 1, processId, spec })
+    return new TransactionHelper({ serverOffset, taskNumber: taskNumber + 1, processId, spec })
   }
 
   function resetIfTimedOut(task) {
@@ -132,37 +123,6 @@ function TaskWorker({ serverOffset, taskNumber = 0, processId, spec }) {
       task._progress = 0
       return task
     }
-  }
-
-  function getInProgressFrom(tasksRef) {
-    return tasksRef.orderByChild('_state').equalTo(inProgressState)
-  }
-
-  function getNextFrom(tasksRef) {
-    return tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
-  }
-
-  function isInErrorState(snapshot) {
-    return snapshot.child('_state').val() === errorState
-  }
-
-  function hasTimeout() {
-    return !!timeout
-  }
-
-  function expiresIn(snapshot) {
-    const now = Date.now() + serverOffset
-    const startTime = (snapshot.child('_state_changed').val() || now)
-    return Math.max(0, startTime - now + timeout)
-  }
-
-  function getOwner(snapshot) {
-    return snapshot.child('_owner').val()
-  }
-
-  function sanitize(task) {
-    fields.forEach(field => { delete task[field] })
-    return task
   }
 
   function _isOwner({ _owner }) { return _owner === owner }
