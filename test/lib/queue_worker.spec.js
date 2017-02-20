@@ -391,7 +391,7 @@ describe('QueueWorker', () => {
           this.nextOwner = 'owner'
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
-          this.claimFor = getOwner => task => (tasks.push([getOwner, task]), null)
+          this.claim = task => (tasks.push(task), null)
         }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
@@ -402,11 +402,7 @@ describe('QueueWorker', () => {
               .then(snapshot => qw._tryToProcess(snapshot))
               .then(_ => {
                 expect(tasks).to.have.a.lengthOf(2)
-                expect(tasks).to.have.deep.property('[0]').that.is.an.array
-                expect(tasks).to.have.deep.property('[1]').that.is.an.array
-                const [[f1, task1], [f2, task2]] = tasks
-                expect(f1).to.equal(f2)
-                expect(f1()).to.equal('owner')
+                const [task1, task2] = tasks
                 expect(task1).to.be.null
                 expect(task2).to.deep.equal(task)
               })
@@ -424,7 +420,7 @@ describe('QueueWorker', () => {
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.rejectWith = (message, stack) => task => ({ foo: null, message, stack })
-          this.claimFor = getOwner => task => (task && task.foo && task) 
+          this.claim = task => (task && task.foo && task) 
         }
         function processingFunction() { throw error }
 
@@ -454,7 +450,7 @@ describe('QueueWorker', () => {
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
           this.resolveWith = newTask => task => undefined
-          this.claimFor = getOwner => task => task 
+          this.claim = task => task 
         }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker, sanitize: false, spec: th.validBasicTaskSpec }, qw => {
@@ -476,7 +472,7 @@ describe('QueueWorker', () => {
           this.getNextFrom = ref => ref
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
-          this.claimFor = getOwner => task => undefined
+          this.claim = task => undefined
         }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
@@ -498,7 +494,7 @@ describe('QueueWorker', () => {
           this.getNextFrom = ref => ref
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
-          this.claimFor = getOwner => task => null
+          this.claim = task => null
         }
 
         return withQueueWorkerFor({ tasksRef, TaskWorker, spec: th.validBasicTaskSpec }, qw => {
@@ -523,7 +519,7 @@ describe('QueueWorker', () => {
           this.sanitize = task => (delete task._owner, task)
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
-          this.claimFor = getOwner => task => (task && { foo: task.foo, _owner: 'owner' } || task)
+          this.claim = task => (task && { foo: task.foo, _owner: 'owner' } || task)
         }
         function processingFunction(data) {
           try { expect(data).to.deep.equal(task); done() } catch (e) { done(e) }
@@ -549,7 +545,7 @@ describe('QueueWorker', () => {
           this.cloneForNextTask = () => new TaskWorker()
           this.hasTimeout = () => false
           this.isInErrorState = _ => false
-          this.claimFor = getOwner => task => queueTask
+          this.claim = task => queueTask
         }
         function processingFunction(data) {
           try { 

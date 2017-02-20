@@ -424,22 +424,22 @@ describe('TaskWorker', () => {
     it.skip('should set error state when the task is no longer owned or in progress, this should probably only be done for tasks without a timeout', () => {})
   })
 
-  describe('#claimFor', () => {
+  describe('#claim', () => {
 
     it('should not claim a task that no longer exists and explicitly return null', () => {
       const tw = new TaskWorker({ processId: 'p', spec: {} })
-      const result = tw.claimFor(undefined)(null)
+      const result = tw.claim(null)
       expect(result).to.be.null
     })
 
     it('should claim a task without a _state if the startState is null', () => {
       const spec = { startState: null, inProgressState: 'inProgress' }
       const tw = new TaskWorker({ processId: 'p', spec })
-      const result = tw.claimFor(() => 'owner')({ foo: 'bar' })
+      const result = tw.claim({ foo: 'bar' })
       expect(result).to.deep.equal({
         _state: spec.inProgressState,
         _state_changed: SERVER_TIMESTAMP,
-        _owner: 'owner',
+        _owner: tw.owner,
         _progress: 0,
         foo: 'bar'
       })
@@ -448,11 +448,11 @@ describe('TaskWorker', () => {
     it('should claim a task with the _state set to the startState', () => {
       const spec = { startState: 'start', inProgressState: 'inProgress' }
       const tw = new TaskWorker({ processId: 'p', spec })
-      const result = tw.claimFor(() => 'owner')({ foo: 'bar', _state: spec.startState })
+      const result = tw.claim({ foo: 'bar', _state: spec.startState })
       expect(result).to.deep.equal({
         _state: spec.inProgressState,
         _state_changed: SERVER_TIMESTAMP,
-        _owner: 'owner',
+        _owner: tw.owner,
         _progress: 0,
         foo: 'bar'
       })
@@ -461,7 +461,7 @@ describe('TaskWorker', () => {
     it('should not claim a task if not a plain object', () => {
       const spec = { errorState: 'error' }
       const tw = new TaskWorker({ processId: 'p', spec })
-      const result = tw.claimFor(undefined)('invalid')
+      const result = tw.claim('invalid')
       expect(result).to.deep.equal({
         _state: spec.errorState,
         _state_changed: SERVER_TIMESTAMP,
@@ -475,7 +475,7 @@ describe('TaskWorker', () => {
     it('should not claim a task if no longer in correct startState', () => {
       const spec = { startState: null }
       const tw = new TaskWorker({ processId: 'p', spec })
-      const result = tw.claimFor(undefined)({ foo: 'bar', _state: 'inProgress' })
+      const result = tw.claim({ foo: 'bar', _state: 'inProgress' })
       expect(result).to.be.undefined
     })
   })

@@ -12,17 +12,14 @@ function TaskWorker({ serverOffset, taskNumber = 0, processId, spec }) {
 
   if (!processId) throw new Error('no processId')
 
-  const owner = createOwner(processId, taskNumber)
-  const nextTaskNumber = taskNumber + 1
-  const nextOwner = createOwner(processId, nextTaskNumber)
+  const owner = processId + ':' + taskNumber
 
-  this.nextOwner = nextOwner
   this.owner = owner
   this.resetIfTimedOut = resetIfTimedOut
   this.resolveWith = resolveWith
   this.rejectWith = rejectWith
   this.updateProgressWith = updateProgressWith
-  this.claimFor = claimFor
+  this.claim = claim
   this.getInProgressFrom = getInProgressFrom
   this.getNextFrom = getNextFrom
   this.isInErrorState = isInErrorState
@@ -32,10 +29,8 @@ function TaskWorker({ serverOffset, taskNumber = 0, processId, spec }) {
   this.sanitize = sanitize
   this.cloneForNextTask = cloneForNextTask
 
-  function createOwner(processId, taskNumber) { return processId + ':' + taskNumber }
-
   function cloneForNextTask() {
-    return new TaskWorker({ serverOffset, taskNumber: nextTaskNumber, processId, spec })
+    return new TaskWorker({ serverOffset, taskNumber: taskNumber + 1, processId, spec })
   }
 
   function resetIfTimedOut(task) {
@@ -116,29 +111,26 @@ function TaskWorker({ serverOffset, taskNumber = 0, processId, spec }) {
     }
   }
 
-  function claimFor(getOwner) {
-    return task => {
-      if (task === null) return null
+  function claim(task) {
+    if (task === null) return null
 
-      if (!_.isPlainObject(task)) {
-        return {
-          _state: errorState,
-          _state_changed: SERVER_TIMESTAMP,
-          _error_details: {
-            error: 'Task was malformed',
-            original_task: task
-          }
+    if (!_.isPlainObject(task)) {
+      return {
+        _state: errorState,
+        _state_changed: SERVER_TIMESTAMP,
+        _error_details: {
+          error: 'Task was malformed',
+          original_task: task
         }
       }
+    }
 
-      if ((task._state || null) === startState) {
-
-        task._state = inProgressState
-        task._state_changed = SERVER_TIMESTAMP
-        task._owner = getOwner()
-        task._progress = 0
-        return task
-      }
+    if ((task._state || null) === startState) {
+      task._state = inProgressState
+      task._state_changed = SERVER_TIMESTAMP
+      task._owner = owner
+      task._progress = 0
+      return task
     }
   }
 

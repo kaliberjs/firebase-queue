@@ -51,11 +51,9 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   let shutdownDeferred = null
   let taskWorker = new TaskWorker({ serverOffset: 0, processId, spec: getSanitizedTaskSpec(spec) })
   // we should probably move the non-owner related stuff away from the TaskWorker
-  // once we fixed some issues we can move the creation of newTaskRef to the constructor
   const newTaskRef = taskWorker.getNextFrom(tasksRef)
 
   let stop = null
-
   let busy = false
 
   this.start = start
@@ -199,18 +197,14 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
 
     if (shutdownDeferred) {
       deferred.reject(new Error('Shutting down - can no longer process new tasks'))
-      if (stop) stop()
-      // finished shutdown
-      shutdownDeferred.resolve()
+      finishShutdown()
     } else {
-      taskSnapshot.ref.transaction(taskWorker/* cloneForNextTask().claim */.claimFor(() => taskWorker.nextOwner), undefined, false)
+      const nextTaskWorker = taskWorker.cloneForNextTask()
+      taskSnapshot.ref.transaction(nextTaskWorker.claim, undefined, false)
         .then(({ committed, snapshot }) => {
           if (committed && snapshot.exists() && !taskWorker.isInErrorState(snapshot)) {
-            // Worker has become busy while the transaction was processing
-            // so give up the task for now so another worker can claim it
-            /* istanbul ignore if */
             busy = true
-            taskWorker = taskWorker.cloneForNextTask()
+            taskWorker = nextTaskWorker
 
             const currentTaskRef = snapshot.ref
 
@@ -227,9 +221,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
                 busy = false
                 if (shutdownDeferred) {
                   deferred.reject(new Error('Shutting down - can no longer process new tasks'))
-                  if (stop) stop()
-                  // finished shutdown
-                  shutdownDeferred.resolve()
+                  finishShutdown()
                 } else {
                   newTaskRef.once('child_added', _tryToProcess)
                 }
@@ -327,13 +319,15 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
     shutdownDeferred = createDeferred()
 
     // We can report success immediately if we're not busy
-    if (!busy) {
-      if (stop) stop()
-      // finished shutdown
-      shutdownDeferred.resolve()
-    }
+    if (!busy) finishShutdown()
 
     return shutdownDeferred.promise
+  }
+
+  function finishShutdown() {
+    if (stop) stop()
+    // finished shutdown
+    shutdownDeferred.resolve()
   }
 }
 
