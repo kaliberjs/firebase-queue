@@ -51,7 +51,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   const serverOffset = 0
   const processId = processIdBase + ':' + uuid.v4()
 
-  let shutdownDeferred = null
+  let shutdownStarted = null
 
   const sanitizedSpec = getSanitizedTaskSpec(spec)
   const { startState, inProgressState, timeout } = sanitizedSpec
@@ -203,7 +203,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   function _tryToProcess(taskSnapshot, deferred = createDeferred()) {
     let retries = 0
 
-    if (shutdownDeferred) {
+    if (shutdownStarted) {
       deferred.reject(new Error('Shutting down - can no longer process new tasks'))
       finishShutdown()
     } else {
@@ -227,12 +227,8 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
             Promise.race([resolvePromise, rejectPromise])
               .then(_ => {
                 busy = false
-                if (shutdownDeferred) {
-                  deferred.reject(new Error('Shutting down - can no longer process new tasks'))
-                  finishShutdown()
-                } else {
-                  newTaskRef.once('child_added', _tryToProcess)
-                }
+                if (shutdownStarted) finishShutdown()
+                else newTaskRef.once('child_added', _tryToProcess)
               })
               .catch(_ => {
                 // the original implementation did not handle this situation
@@ -318,24 +314,24 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
     errorState = DEFAULT_ERROR_STATE,
     timeout = null,
     retries = DEFAULT_RETRIES
-  } = {}) { return { startState, inProgressState, finishedState, errorState, timeout, retries } }
+  }) { return { startState, inProgressState, finishedState, errorState, timeout, retries } }
 
   function shutdown() {
-    if (shutdownDeferred) return shutdownDeferred.promise
+    if (shutdownStarted) return shutdownStarted.promise
 
     // Set the global shutdown deferred promise, which signals we're shutting down
-    shutdownDeferred = createDeferred()
+    shutdownStarted = createDeferred()
 
     // We can report success immediately if we're not busy
     if (!busy) finishShutdown()
 
-    return shutdownDeferred.promise
+    return shutdownStarted.promise
   }
 
   function finishShutdown() {
     if (stop) stop()
     // finished shutdown
-    shutdownDeferred.resolve()
+    shutdownStarted.resolve()
   }
 }
 
