@@ -150,7 +150,7 @@ module.exports = function() {
     ])
   }
 
-  function waitFor(check, time) {
+  function waitFor(check, time = 500) {
     return Promise.race([
       timeout(time),
       new Promise(resolve => {

@@ -47,7 +47,6 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   if (typeof processingFunction !== 'function') throwError('No processing function provided.')
   if (!isValidTaskSpec(spec)) throwError('Invalid task spec provided')
 
-
   const serverOffset = 0
   const processId = processIdBase + ':' + uuid.v4()
 

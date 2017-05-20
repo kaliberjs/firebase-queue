@@ -47,10 +47,10 @@ module.exports = function Queue() {
 
   var constructorArguments = arguments
 
-  let currentTaskSpec = undefined
-  let shuttingDown = false
-
   let specChangeListener = null
+  // let currentTaskSpec = undefined
+  // let shuttingDown = false
+
 
   const options = constructorArguments.length === 3
     ? (isObject(constructorArguments[1]) && constructorArguments[1]) || throwError('Options parameter must be a plain object.')
@@ -64,7 +64,9 @@ module.exports = function Queue() {
     ? constructorArguments[2]
     : throwError('Queue can only take at most three arguments - queueRef, options (optional), and processingFunction.')
 
-  const numWorkers = options.numWorkers === undefined
+  if (typeof processingFunction !== 'function') throwError('No processing function provided.')
+
+  let numWorkers = options.numWorkers === undefined
     ? DEFAULT_NUM_WORKERS
     : ((typeof options.numWorkers == 'number' && options.numWorkers > 0 && options.numWorkers % 1 === 0) || throwError('options.numWorkers must be a positive integer.')) &&
       options.numWorkers
@@ -76,30 +78,33 @@ module.exports = function Queue() {
 
   const sanitize = options.sanitize === undefined
     ? DEFAULT_SANITIZE
-    : ((Boolean(options.sanitize) === options.sanitize) || throwError('options.sanitize must be a boolean.')) &&
+    : (Boolean(options.sanitize) === options.sanitize || throwError('options.sanitize must be a boolean.')) &&
       options.sanitize
       
   const suppressStack = options.suppressStack === undefined
     ? DEFAULT_SUPPRESS_STACK
-    : ((options.suppressStack === true || options.suppressStack === false) || throwError('options.suppressStack must be a boolean.')) &&
+    : (Boolean(options.suppressStack) === options.suppressStack || throwError('options.suppressStack must be a boolean.')) &&
       options.suppressStack
 
   const [tasksRef, specsRef] = constructorArguments[0].tasksRef && (!specId || constructorArguments[0].specsRef)
-    ? [constructorArguments[0].tasksRef, constructorArguments[0].specsRef]
+    ? [constructorArguments[0].tasksRef]//, constructorArguments[0].specsRef]
     : isObject(constructorArguments[0])
-    ? throwError('When ref is an object it must contain both keys \'tasksRef\' and \'specsRef\'')
+    ? (specId 
+        ? throwError('When ref is an object and \'specId\' is given it must contain both keys \'tasksRef\' and \'specsRef\'')
+        : throwError('When ref is an object it must contain the key \'tasksRef\'')
+      ) 
     : [constructorArguments[0].child('tasks'), constructorArguments[0].child('specs')]
 
-  const QueueWorker = options.QueueWorker ? options.QueueWorker : DefaultQueueWorker
+  const QueueWorker = options.QueueWorker || DefaultQueueWorker
 
   const workers = []
 
-  if (!specId) {
-    workers.push(...createWorkers(DEFAULT_TASK_SPEC))
-  } else {
+  if (!specId) workers.push(...createWorkers(DEFAULT_TASK_SPEC))
+  else {
     specChangeListener = specsRef.child(specId).on(
       'value', 
       taskSpecSnap => {
+
         const taskSpec = {
           startState: val('start_state'),
           inProgressState: val('in_progress_state'),
@@ -112,7 +117,7 @@ module.exports = function Queue() {
         shutdownWorkers()
           .then(_ => { workers.push(...createWorkers(taskSpec)) })
 
-        currentTaskSpec = taskSpec
+        // currentTaskSpec = taskSpec
 
         function val(key) { return taskSpecSnap.child(key).val() }
       },
@@ -120,40 +125,42 @@ module.exports = function Queue() {
     )
   }
 
-  this.addWorker = addWorker
+  // this.addWorker = addWorker
   this.getWorkerCount = getWorkerCount
-  this.shutdownWorker = shutdownWorker
+  // this.removeWorker = removeWorker
   this.shutdown = shutdown
 
-  return this
+  // return this
 
-  /**
-   * Gracefully shuts down a queue.
-   * @returns {Promise} A promise fulfilled when all the worker processes
-   *   have finished their current tasks and are no longer listening for new ones.
-   */
+  // /**
+  //  * Gracefully shuts down a queue.
+  //  * @returns {Promise} A promise fulfilled when all the worker processes
+  //  *   have finished their current tasks and are no longer listening for new ones.
+  //  */
   function shutdown() {
-    shuttingDown = true
+    // shuttingDown = true
 
     if (specChangeListener) {
       specsRef.child(specId).off('value', specChangeListener)
       specChangeListener = null
     }
 
-    return shutdownWorkers()
+    // return shutdownWorkers()
   }
 
-  /**
-   * Adds a queue worker.
-   * @returns {QueueWorker} the worker created.
-   */
-  function addWorker() {
-    if (shuttingDown) throwError('Cannot add worker while queue is shutting down')
+  // /**
+  //  * Adds a queue worker.
+  //  * @returns {QueueWorker} the worker created.
+  //  */
+  // function addWorker() {
+  //   if (shuttingDown) throwError('Cannot add worker while queue is shutting down')
 
-    if (!specId) workers.push(createWorker(DEFAULT_TASK_SPEC))
-    else if (currentTaskSpec) workers.push(createWorker(currentTaskSpec))
-    // if the currentTaskSpec is not yet set it will be called once it's fetched
-  }
+  //   numWorkers++
+
+  //   if (!specId) workers.push(createWorker(DEFAULT_TASK_SPEC))
+  //   else if (currentTaskSpec) workers.push(createWorker(currentTaskSpec))
+  //   // if the currentTaskSpec is not yet set it will be called once it's fetched
+  // }
 
   /**
    * Gets queue worker count.
@@ -163,26 +170,27 @@ module.exports = function Queue() {
     return workers.length
   }
 
-  /**
-   * Shutdowns a queue worker if one exists.
-   * @returns {RSVP.Promise} A promise fulfilled once the worker is shutdown
-   *   or rejected if there are no workers left to shutdown.
-   */
-  function shutdownWorker() {
-    const worker = workers.pop()
+  // /**
+  //  * Removes a queue worker if one exists.
+  //  * @returns {RSVP.Promise} A promise fulfilled once the worker is shutdown
+  //  *   or rejected if there are no workers left to shutdown.
+  //  */
+  // function removeWorker() {
+  //   return shutdownWorker().then(_ => { numWorkers-- })
+  // }
 
-    return worker
-      ? worker.shutdown()
-      : Promise.reject(new Error('No workers to shutdown'))
-  }
+  // function shutdownWorker() {
+  //   const worker = workers.pop()
+
+  //   return worker
+  //     ? worker.shutdown()
+  //     : Promise.reject(new Error('No workers to shutdown'))
+  // }
 
   function shutdownWorkers() {
     const removedWorkers = workers.slice()
     workers.splice(0)
-    return Promise.all(removedWorkers.map(worker => {
-      if (!worker.shutdown) console.log(worker)
-      worker.shutdown()
-    }))
+    return Promise.all(removedWorkers.map(worker => worker.shutdown() ))
   }
 
   function createWorker(spec, id = workers.length) {
@@ -200,8 +208,8 @@ module.exports = function Queue() {
   }
 
   function createWorkers(spec) {
-    const startId = workers.length
-    return Array(numWorkers).fill().map((_, i) => createWorker(spec, startId + i))
+    //const startId = workers.length
+    return Array(numWorkers).fill().map((_, i) => createWorker(spec/*, startId + i*/))
   }
 
   function isObject(value) {

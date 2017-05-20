@@ -80,8 +80,6 @@ describe('QueueWorker', () => {
         expect(() => initialize({ spec })).to.throw('Invalid task spec provided')
       })
     )
-
-    it.skip('should instantiate task worker with correct values', () => {})
   })
 
   describe('when processing tasks', () => {
