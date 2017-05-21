@@ -150,12 +150,11 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
           busy = true
           transactionHelper = nextTransactionHelper
 
-          const currentTaskRef = snapshot.ref
-
           const data = snapshot.val()
           if (sanitize) taskUtilities.sanitize(data)
           else { data._id = snapshot.key } // this should be independent of `sanitize` and behind the flag `includeKey` or similar
 
+          const currentTaskRef = snapshot.ref
           const progress = _updateProgress(currentTaskRef)
           const [resolve, resolvePromise] = _resolve(currentTaskRef)
           const [reject, rejectPromise] = _reject(currentTaskRef)
