@@ -66,21 +66,10 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   this.start = start
   this.shutdown = shutdown
 
-  // used in tests
-  this._tryToProcess = _tryToProcess
-  this._setUpTimeouts = _setUpTimeouts
-  this._resetTaskIfTimedOut = _resetTaskIfTimedOut
-  this._resolve = _resolve
-  this._updateProgress = _updateProgress
-  this._reject = _reject
-  this._processId = processId
-  this._busy = () => busy
-
-
   return this
 
   function _resetTaskIfTimedOut(taskRef) {
-    return transactionWithRetries({
+    transactionWithRetries({
       ref: taskRef,
       transaction: transactionHelper.resetIfTimedOut
     })
