@@ -47,7 +47,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   if (typeof processingFunction !== 'function') throwError('No processing function provided.')
   if (!isValidTaskSpec(spec)) throwError('Invalid task spec provided')
 
-  const serverOffset = 0
+  const serverOffset = 0 // this should be passed in by the queue
   const processId = processIdBase + ':' + uuid.v4()
 
   let shutdownStarted = null
