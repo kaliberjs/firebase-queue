@@ -311,7 +311,7 @@ describe('QueueWorker', () => {
             testRef.set({})
               .then(_ => qw._updateProgress(testRef)(1))
               .catch(({ message }) => {
-                expect(message).to.equal('Can\'t update progress - current task no longer owned by this process')
+                expect(message).to.equal('Can\'t update progress - current task no longer owned by this process or task no longer in progress')
               })
           )
         )

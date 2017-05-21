@@ -79,73 +79,32 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
 
   return this
 
-  /**
-   * Returns the state of a task to the start state if timedout.
-   * @param {firebase.database.Reference} taskRef Firebase Realtime Database
-   *   reference to the Firebase location of the task that's timed out.
-   * @returns {Promise} Whether the task was able to be reset.
-   */
-  function _resetTaskIfTimedOut(taskRef, deferred = createDeferred()) {
-    const retries = 0;
-
-    taskRef
-      .transaction(transactionHelper.resetIfTimedOut, undefined, false)
-      .then(_ => { deferred.resolve() })
-      .catch(_ => {
-        // reset task errored, retrying
-        if ((retries + 1) < MAX_TRANSACTION_ATTEMPTS) setImmediate(() => _resetTaskIfTimedOut(taskRef, deferred))
-        else deferred.reject(new Error('reset task errored too many times, no longer retrying'))
-      })
-
-    return deferred.promise
+  function _resetTaskIfTimedOut(taskRef) {
+    return transactionWithRetries({
+      ref: taskRef,
+      transaction: transactionHelper.resetIfTimedOut
+    })
   }
 
-  /**
-   * Creates a resolve callback function, storing the current task number.
-   * @returns {Function} the resolve callback function.
-   */
   function _resolve(taskRef) {
-    let retries = 0
     const deferred = createDeferred()
 
     return [resolve, deferred.promise]
 
-    /*
-     * Resolves the current task and changes the state to the finished state.
-     * @param {Object} newTask The new data to be stored at the location.
-     * @returns {Promise} Whether the task was able to be resolved.
-     */
     function resolve(newTask) {
-
-      taskRef
-        .transaction(transactionHelper.resolveWith(newTask), undefined, false)
-        .then(_ => { deferred.resolve() })
-        .catch(_ => {
-          // resolve task errored, retrying
-          if (++retries < MAX_TRANSACTION_ATTEMPTS) setImmediate(resolve, newTask)
-          else deferred.reject(new Error('resolve task errored too many times, no longer retrying'))
-        })
-
-      return deferred.promise
+      return transactionWithRetries({
+        ref: taskRef, 
+        transaction: transactionHelper.resolveWith(newTask),
+        deferred
+      })
     }
   }
 
-  /**
-   * Creates a reject callback function, storing the current task number.
-   * @returns {Function} the reject callback function.
-   */
   function _reject(taskRef) {
-    let retries = 0
     const deferred = createDeferred()
 
     return [reject, deferred.promise]
 
-    /**
-     * Rejects the current task and changes the state to errorState,
-     * adding additional data to the '_error_details' sub key.
-     * @param {Object} error The error message or object to be logged.
-     * @returns {Promise} Whether the task was able to be rejected.
-     */
     function reject(error) {
       const errorString =
         _.isError(error) ? error.message
@@ -155,101 +114,82 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
 
       const errorStack = (!suppressStack && error && error.stack) || null
 
-      taskRef
-        .transaction(transactionHelper.rejectWith(errorString, errorStack), undefined, false)
-        .then(_ => { deferred.resolve() })
-        .catch(_ => {
-          // reject task errored, retrying
-          if (++retries < MAX_TRANSACTION_ATTEMPTS) setImmediate(reject, error)
-          else deferred.reject(new Error('reject task errored too many times, no longer retrying'))
-        })
-
-      return deferred.promise
+      return transactionWithRetries({
+        ref: taskRef,
+        transaction: transactionHelper.rejectWith(errorString, errorStack),
+        deferred
+      })
     }
   }
 
-  /**
-   * Creates an update callback function, storing the current task number.
-   * @returns {Function} the update callback function.
-   */
   function _updateProgress(taskRef) {
 
     return updateProgress
 
-    /**
-     * Updates the progress state of the task.
-     * @param {Number} progress The progress to report.
-     * @returns {Promise} Whether the progress was updated.
-     */
     function updateProgress(progress) {
       if (typeof progress !== 'number' || _.isNaN(progress) || progress < 0 || progress > 100) 
         return Promise.reject(new Error('Invalid progress'))
 
-      return new Promise((resolve, reject) => {
-        taskRef.transaction(transactionHelper.updateProgressWith(progress), undefined, false)
-        .then(({ committed, snapshot }) => { 
-          if (committed && snapshot.exists()) resolve()
-          else reject(new Error('Can\'t update progress - current task no longer owned by this process'))
-        })
-        .catch(_ => { reject(new Error('errored while attempting to update progress')) })
-      })
+      return transactionWithRetries({
+        ref: taskRef,
+        transaction: transactionHelper.updateProgressWith(progress)
+      }).then(({ committed, snapshot }) => committed && snapshot.exists()
+          ? Promise.resolve()
+          : Promise.reject(new Error('Can\'t update progress - current task no longer owned by this process or task no longer in progress'))
+        )
     }
   }
 
   /**
    * Attempts to claim the next task in the queue.
    */
-  function _tryToProcess(taskSnapshot, deferred = createDeferred()) {
+  function _tryToProcess(taskSnapshot) {
     let retries = 0
 
     if (shutdownStarted) {
-      deferred.reject(new Error('Shutting down - can no longer process new tasks'))
       finishShutdown()
-    } else {
-      const nextTransactionHelper = transactionHelper.cloneForNextTask()
-      taskSnapshot.ref.transaction(nextTransactionHelper.claim, undefined, false)
-        .then(({ committed, snapshot }) => {
-          if (committed && snapshot.exists() && !taskUtilities.isInErrorState(snapshot)) {
-            busy = true
-            transactionHelper = nextTransactionHelper
-
-            const currentTaskRef = snapshot.ref
-
-            const data = snapshot.val()
-            if (sanitize) taskUtilities.sanitize(data)
-            else { data._id = snapshot.key } // this should be independent of `sanitize` and behind the flag `includeKey` or similar
-
-            const progress = _updateProgress(currentTaskRef)
-            const [resolve, resolvePromise] = _resolve(currentTaskRef)
-            const [reject, rejectPromise] = _reject(currentTaskRef)
-
-            Promise.race([resolvePromise, rejectPromise])
-              .then(_ => {
-                busy = false
-                if (shutdownStarted) finishShutdown()
-                else newTaskRef.once('child_added', _tryToProcess)
-              })
-              .catch(_ => {
-                // the original implementation did not handle this situation
-                // we should probably set the error and free ourselves:
-                // busy = false and _tryToProcess
-              })
-
-            setImmediate(() => {
-              try { processingFunction.call(null, data, progress, resolve, reject) }
-              catch (err) { reject(err) }
-            })
-          }
-          return deferred.resolve()
-        })
-        .catch(_ => {
-          // errored while attempting to claim a new task, retrying
-          if (++retries < MAX_TRANSACTION_ATTEMPTS) return setImmediate(_tryToProcess, taskSnapshot, deferred)
-          else return deferred.reject(new Error('errored while attempting to claim a new task too many times, no longer retrying'))
-        })
+      return
     }
 
-    return deferred.promise
+    const nextTransactionHelper = transactionHelper.cloneForNextTask()
+    
+    return transactionWithRetries({
+      ref: taskSnapshot.ref,
+      transaction: nextTransactionHelper.claim
+    }).then(({ committed, snapshot }) => {
+        if (committed && snapshot.exists() && !taskUtilities.isInErrorState(snapshot)) {
+          busy = true
+          transactionHelper = nextTransactionHelper
+
+          const currentTaskRef = snapshot.ref
+
+          const data = snapshot.val()
+          if (sanitize) taskUtilities.sanitize(data)
+          else { data._id = snapshot.key } // this should be independent of `sanitize` and behind the flag `includeKey` or similar
+
+          const progress = _updateProgress(currentTaskRef)
+          const [resolve, resolvePromise] = _resolve(currentTaskRef)
+          const [reject, rejectPromise] = _reject(currentTaskRef)
+
+          Promise.race([resolvePromise, rejectPromise])
+            .then(_ => {
+              busy = false
+              if (shutdownStarted) finishShutdown()
+              else newTaskRef.once('child_added', _tryToProcess)
+            })
+            .catch(_ => {
+              // the original implementation did not handle this situation
+              // we should probably set the error and free ourselves:
+              // busy = false and _tryToProcess
+            })
+
+          setImmediate(() => {
+            try { processingFunction.call(null, data, progress, resolve, reject) }
+            catch (err) { reject(err) }
+          })
+        }
+      })
+      //.catch(e => { /* transaction failed */ })
   }
 
   /**
@@ -332,6 +272,18 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
     // finished shutdown
     shutdownStarted.resolve()
   }
+}
+
+function transactionWithRetries({ ref, transaction, deferred = createDeferred(), attempts = 0 }) {
+  ref.transaction(transaction, undefined, false)
+    .then(x => { deferred.resolve(x) })
+    .catch(e => {
+      if (attempts < MAX_TRANSACTION_ATTEMPTS) {
+        setImmediate(() => transactionWithRetries({ ref, transaction, deferred, attempts: attempts + 1 }))
+      } else deferred.reject(new Error('transaction failed too many times, no longer retrying, original error: ' + e.message))
+    })
+
+  return deferred.promise
 }
 
 /**
