@@ -47,7 +47,6 @@ module.exports = function Queue({
       suppressStack,
       processingFunction
     })
-    worker.start()
     return worker
   }
 

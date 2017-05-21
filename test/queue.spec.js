@@ -207,15 +207,6 @@ describe('Queue', () => {
       )
     })
 
-    it('should start the QueueWorker', () => {
-      let started = false
-      const QueueWorker = queueWorkerSpy({ start: () => started = true })
-
-      return withQueue({ options: { QueueWorker }}, q =>
-        expect(started).to.be.true
-      )
-    })
-
     it('should pass the correct spec to the worker', () => {
       let spec = null
       const QueueWorker = queueWorkerSpy({ init: ({ spec: s }) => spec = s })
@@ -244,14 +235,11 @@ describe('Queue', () => {
 
     it('should shutdown a queue initialized with the default spec', () => {
       let shutdownCalled = false
-      let startCalled = false
       const QueueWorker = queueWorkerSpy({ 
-        start: () => startCalled = true,
         shutdown: () => shutdownCalled = true
       })
 
       return withQueue({ options: { QueueWorker } }, q => {
-        expect(startCalled).to.be.true
         q.shutdown().then(_ => { expect(shutdownCalled).to.be.true })
       })
     })

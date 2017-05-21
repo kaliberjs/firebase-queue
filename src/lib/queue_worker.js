@@ -63,8 +63,9 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   let stop = null
   let busy = false
 
-  this.start = start
   this.shutdown = shutdown
+
+  start()
 
   return this
 

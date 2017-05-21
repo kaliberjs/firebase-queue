@@ -87,7 +87,6 @@ describe('QueueWorker', () => {
     it('should be able to process multiple tasks', () =>
       withTasksRef(tasksRef =>
         withQueueWorkerFor({ tasksRef, spec: validTaskSpecWithFinishedState }, qw => {
-          qw.start()
           const { inProgressState, finishedState } = validTaskSpecWithFinishedState
           return chain(
             pushTasks(tasksRef, { task: 1 }, { task: 2 }),
@@ -105,7 +104,6 @@ describe('QueueWorker', () => {
     it('should be able to process tasks after the first batch has been completed', () =>
       withTasksRef(tasksRef =>
         withQueueWorkerFor({ tasksRef, spec: validTaskSpecWithFinishedState }, qw => {
-          qw.start()
           const { inProgressState, finishedState } = validTaskSpecWithFinishedState
           return chain(
             pushTasks(tasksRef, { task: 1 }, { task: 2 }),
@@ -517,7 +515,6 @@ describe('QueueWorker', () => {
     it('should not set up timeouts when no task timeout is set', () =>
       withTasksRef(tasksRef =>
         withQueueWorkerFor({ tasksRef }, qw => {
-          qw.start()
           return chain(
             tasksRef.push().set({
               '_state': th.validBasicTaskSpec.inProgressState,
@@ -532,7 +529,6 @@ describe('QueueWorker', () => {
     it('should not set up timeouts when a task not in progress is added and a task timeout is set', () => 
       withTasksRef(tasksRef =>
         withQueueWorkerFor({ tasksRef, spec: th.validTaskSpecWithTimeout }, qw => {
-          qw.start()
           return chain(
             tasksRef.push({
               '_state': th.validTaskSpecWithFinishedState.finishedState,
@@ -547,7 +543,6 @@ describe('QueueWorker', () => {
     it.skip('should set up timeout listeners when a task timeout is set', () => 
       withTasksRef(tasksRef =>
         withQueueWorkerFor({ tasksSpec }, qw => {
-          qw.start()
           return chain(
             tasksRef.push({
               '_state': th.validBasicTaskSpec.inProgressState,
@@ -581,7 +576,6 @@ describe('QueueWorker', () => {
     it('should set up a timeout when a task timeout is set and a task added', () =>
       withTasksRef(tasksRef =>
         withQueueWorkerFor({ tasksRef, spec: th.validTaskSpecWithTimeout }, qw => {
-          qw.start()
           const testRef = tasksRef.push({
             '_state': th.validTaskSpecWithTimeout.inProgressState,
             '_state_changed': now() - 5
@@ -597,7 +591,6 @@ describe('QueueWorker', () => {
     it('should set up a timeout when a task timeout is set and a task owner changed', () =>
       withTasksRef(tasksRef =>
         withQueueWorkerFor({ tasksRef, spec: th.validTaskSpecWithTimeout }, qw => {
-          qw.start()
           const testRef = tasksRef.push({
             '_owner': ':0',
             '_state': th.validTaskSpecWithTimeout.inProgressState,
@@ -616,7 +609,6 @@ describe('QueueWorker', () => {
     it('should not set up a timeout when a task timeout is set and a task updated', () =>
       withTasksRef(tasksRef =>
         withQueueWorkerFor({ tasksRef, spec: th.validTaskSpecWithTimeout }, qw => {
-          qw.start()
 
           const testRef = tasksRef.push({
             '_owner': ':0',
@@ -637,7 +629,6 @@ describe('QueueWorker', () => {
     it('should set up a timeout when a task timeout is set and a task added without a _state_changed time', () =>
       withTasksRef(tasksRef =>
         withQueueWorkerFor({ tasksRef, spec: th.validTaskSpecWithTimeout }, qw => {
-          qw.start()
 
           const testRef = tasksRef.push({
             '_state': th.validTaskSpecWithTimeout.inProgressState
@@ -678,7 +669,6 @@ describe('QueueWorker', () => {
         const spec = _.clone(th.validTaskSpecWithTimeout)
         spec.finishedState = th.validTaskSpecWithFinishedState.finishedState
         return withQueueWorkerFor({ tasksRef, spec }, qw => {
-          qw.start()
 
           const task = {
             '_state': spec.inProgressState,
@@ -857,19 +847,18 @@ describe('QueueWorker', () => {
       // Both queues respond to `b` tasks. If the implementation is correct, b3
       // will be faster, if incorrect b2 will be faster
       withTasksRef(tasksRef => 
-        withQueueWorkerFor({ tasksRef, spec: { startState: '2.start', inProgressState: 'in_progress', finishedState: 'done'} }, qw => 
-          Promise.all([
-            tasksRef.push({ '_state': '1.start' }),
-            tasksRef.push({ '_state': '2.start', test: 'check' })
-          ]).then(([_, ref]) => {
-            qw.start()
-            return Promise.race([
+        Promise.all([
+          tasksRef.push({ '_state': '1.start' }),
+          tasksRef.push({ '_state': '2.start', test: 'check' })
+        ]).then(([_, ref]) => 
+          withQueueWorkerFor({ tasksRef, spec: { startState: '2.start', inProgressState: 'in_progress', finishedState: 'done'} }, qw => 
+            Promise.race([
               th.waitForState(ref, 'done').then(snapshot => snapshot.val()),
               th.timeout(1000)
-            ])
-          }).then(val => {
-            expect(val).to.have.a.property('test').that.equals('check')
-          })
+            ]).then(val => {
+              expect(val).to.have.a.property('test').that.equals('check')
+            })
+          )
         )
       )
     )
@@ -878,7 +867,6 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         let result = null
         return withQueueWorkerFor({ tasksRef, processingFunction: th.withData(data => { result = data }) }, qw => {
-          qw.start()
           const task = { foo: 'bar' }
           return tasksRef.push(task)
             .then(_ => th.waitFor(() => !!result, 500))
@@ -893,7 +881,6 @@ describe('QueueWorker', () => {
       withTasksRef(tasksRef => {
         let result = null
         return withQueueWorkerFor({ tasksRef, spec: th.validTaskSpecWithStartState, processingFunction: th.withData(data => { result = data }) }, qw => {
-          qw.start()
           const task = { foo: 'bar', '_state': th.validTaskSpecWithStartState.startState }
           return tasksRef.push(task)
             .then(_ => th.waitFor(() => !!result, 500))
@@ -921,7 +908,6 @@ describe('QueueWorker', () => {
           resolve()
         }, 500)
       } })
-      qw.start()
 
       tasksRef.push().set(null).then(done)
     })
