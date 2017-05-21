@@ -186,22 +186,19 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
    */
   function _setUpTimeouts() {
     const expiryTimeouts = {}
-    const owners = {}
 
     const ref = tasksRef.orderByChild('_state').equalTo(inProgressState)
 
-    const onChildAdded = ref.on('child_added', setUpTimeout)
-    const onChildRemoved = ref.on('child_removed', ({ key }) => {
-      clearTimeout(expiryTimeouts[key])
-      delete expiryTimeouts[key]
-      delete owners[key]
-    })
+    const onChildAdded = ref.on('child_added', addTimeoutHandling)
+    const onChildRemoved = ref.on('child_removed', removeTimeoutHandling)
     const onChildChanged = ref.on('child_changed', snapshot => {
       // This catches de-duped events from the server - if the task was removed
       // and added in quick succession, the server may squash them into a
       // single update
-      if (taskUtilities.getOwner(snapshot) !== owners[snapshot.key])
-        setUpTimeout(snapshot)
+      if (taskUtilities.getOwner(snapshot) !== expiryTimeouts[snapshot.key].owner) {
+        removeTimeoutHandling(snapshot)
+        addTimeoutHandling(snapshot)
+      }
     })
 
     return () => {
@@ -209,19 +206,22 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
       ref.off('child_removed', onChildRemoved)
       ref.off('child_changed', onChildChanged)
 
-      Object.keys(expiryTimeouts).forEach(key => {
-        clearTimeout(expiryTimeouts[key])
-      })
+      Object.keys(expiryTimeouts).forEach(key => { removeTimeoutHandling({ key }) })
     }
 
-    function setUpTimeout(snapshot) {
-      const taskName = snapshot.key
-      const expires = taskUtilities.expiresIn(snapshot)
-      owners[taskName] = taskUtilities.getOwner(snapshot)
-      expiryTimeouts[taskName] = setTimeout(
-        () => _resetTaskIfTimedOut(snapshot.ref),
-        expires
-      )
+    function addTimeoutHandling(snapshot) {
+      expiryTimeouts[snapshot.key] = {
+        owner: taskUtilities.getOwner(snapshot),
+        timeout: setTimeout(
+          () => _resetTaskIfTimedOut(snapshot.ref),
+          taskUtilities.expiresIn(snapshot)
+        )
+      }
+    }
+
+    function removeTimeoutHandling({ key }) {
+      clearTimeout(expiryTimeouts[key].timeout)
+      delete expiryTimeouts[key]
     }
   }
 
