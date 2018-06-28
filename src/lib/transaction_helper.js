@@ -1,24 +1,24 @@
-const _ = require('lodash')
-
 module.exports = TransactionHelper
 
 const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
+const MAX_TRANSACTION_ATTEMPTS = 10
 
-function TransactionHelper({ serverOffset, taskNumber = 0, processId, spec }) {
+function TransactionHelper({ serverOffset, processId, spec, taskNumber = 0 }) {
 
-  const { startState, inProgressState, finishedState, errorState, timeout, retries } = spec
+  const { startState, inProgressState, finishedState, errorState, timeout } = spec
 
   if (!processId) throw new Error('no processId')
 
   const owner = processId + ':' + taskNumber
 
-  this.owner = owner
   this.cloneForNextTask = cloneForNextTask
-  this.resetIfTimedOut = resetIfTimedOut
-  this.resolveWith = resolveWith
-  this.rejectWith = rejectWith
-  this.updateProgressWith = updateProgressWith
-  this.claim = claim
+
+  this.resetIfTimedOut    = async ref => withRetries(ref, resetIfTimedOut)
+  this.claim              = async ref => withRetries(ref, claim)
+
+  this.updateProgressWith = async (ref, progress) => withRetries(ref, updateProgressWith(progress))
+  this.resolveWith        = async (ref, newTask)  => withRetries(ref, resolveWith(newTask))
+  this.rejectWith         = async (ref, error)    => withRetries(ref, rejectWith(error))
 
   function cloneForNextTask() {
     return new TransactionHelper({ serverOffset, taskNumber: taskNumber + 1, processId, spec })
@@ -30,7 +30,7 @@ function TransactionHelper({ serverOffset, taskNumber = 0, processId, spec }) {
     const timeSinceUpdate = Date.now() + serverOffset - (task._state_changed || 0)
     const timedOut = (timeout && timeSinceUpdate >= timeout)
 
-    if (_isInProgress(task) && timedOut) {
+    if (isInProgress(task) && timedOut) {
       task._state = startState
       task._state_changed = SERVER_TIMESTAMP
       task._owner = null
@@ -40,51 +40,54 @@ function TransactionHelper({ serverOffset, taskNumber = 0, processId, spec }) {
     }
   }
 
+  function claim(task) {
+    if (task === null) return null
+    if ((task._state || null) === startState) {
+      task._state = inProgressState
+      task._state_changed = SERVER_TIMESTAMP
+      task._owner = owner
+      task._progress = 0
+      return task
+    }
+  }
+
   function resolveWith(newTask) {
     return task => {
       if (task === null) return null
 
-      if (_isOwner(task) && _isInProgress(task)) {
-        const replacement = _.isPlainObject(newTask) ? _.clone(newTask) : {}
-        const newState = replacement._new_state
-        delete replacement._new_state
-
-        const validNewState = newState === null || typeof newState === 'string'
-        const shouldRemove = newState === false || !(validNewState || finishedState)
-
-        if (shouldRemove) return null
-
-        replacement._state = validNewState ? newState : finishedState
-        replacement._state_changed = SERVER_TIMESTAMP
-        replacement._owner = null
-        replacement._progress = 100
-        replacement._error_details = null
-
-        return replacement
+      if (isProcessing(task)) {
+        if (newTask) return newTask
+        else if (finishedState) {
+          task._state = finishedState
+          task._state_changed = SERVER_TIMESTAMP
+          task._owner = null
+          task._progress = 100
+          task._error_details = null
+        }
+        else return null // remove
       }
     }
   }
 
-  function rejectWith(errorString, errorStack) {
+  function rejectWith(error) {
+    const errorString =
+      (error instanceof Error && error.message) ||
+      (typeof error === 'string' && error) ||
+      (error !== undefined && error !== null && error.toString()) ||
+      null
+
+    const errorStack = (error && error.stack) || null
+
     return task => {
       if (task === null) return null
 
-      if (_isOwner(task) && _isInProgress(task)) {
-        const {
-          attempts: previousAttempts = 0,
-          previous_state: previousState
-        } = task._error_details || {}
-
-        const attempts = previousState === inProgressState ? previousAttempts + 1 : 1
-
-        task._state = attempts > retries ? errorState : startState
+      if (isProcessing(task)) {
+        task._state = errorState
         task._state_changed = SERVER_TIMESTAMP
         task._owner = null
         task._error_details = {
-          previous_state: inProgressState,
           error: errorString,
           error_stack: errorStack,
-          attempts
         }
         return task
       }
@@ -95,36 +98,24 @@ function TransactionHelper({ serverOffset, taskNumber = 0, processId, spec }) {
     return task => {
       if (task === null) return null
 
-      if (_isOwner(task) && _isInProgress(task)) {
+      if (isProcessing(task)) {
         task._progress = progress
         return task
       }
     }
   }
 
-  function claim(task) {
-    if (task === null) return null
+  function isProcessing(x) { return isOwner(x) && isInProgress(x) }
+  function isOwner(x) { return x._owner === owner }
+  function isInProgress(x) { return x._state === inProgressState }
 
-    if (!_.isPlainObject(task)) {
-      return {
-        _state: errorState,
-        _state_changed: SERVER_TIMESTAMP,
-        _error_details: {
-          error: 'Task was malformed',
-          original_task: task
-        }
-      }
-    }
-
-    if ((task._state || null) === startState) {
-      task._state = inProgressState
-      task._state_changed = SERVER_TIMESTAMP
-      task._owner = owner
-      task._progress = 0
-      return task
+  async function withRetries(ref, transaction, attempts = 0) {
+    try {
+      const result = await ref.transaction(transaction, undefined, false)
+      return result
+    } catch (e) {
+      if (attempts < MAX_TRANSACTION_ATTEMPTS) return withRetries(ref, transaction, attempts + 1)
+      throw new Error(`transaction failed ${MAX_TRANSACTION_ATTEMPTS} times, error: ${e.message}`)
     }
   }
-
-  function _isOwner({ _owner }) { return _owner === owner }
-  function _isInProgress({ _state }) { return _state === inProgressState } 
 }

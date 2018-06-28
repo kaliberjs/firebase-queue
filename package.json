@@ -28,7 +28,7 @@
     "package.json"
   ],
   "dependencies": {
-    "firebase": "^3.6.9",
+    "firebase": "^5.1.0",
     "firebase-server": "^0.9.1",
     "lodash": "^4.6.1",
     "mocha": "^3.2.0",

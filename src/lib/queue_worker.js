@@ -1,15 +1,7 @@
 'use strict';
 
 const uuid = require('uuid')
-const _ = require('lodash')
-const DefaultTransactionHelper = require('./transaction_helper')
-const TaskUtilities = require('./task_utilities')
-
-const MAX_TRANSACTION_ATTEMPTS = 10
-const DEFAULT_ERROR_STATE = 'error'
-const DEFAULT_RETRIES = 0
-
-const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
+const TransactionHelper = require('./transaction_helper')
 
 function throwError(message) { throw new Error(message) }
 
@@ -19,166 +11,106 @@ function createDeferred() {
   return {
     resolve: (...args) => resolve(...args),
     reject: (...args) => reject(...args),
-    promise: new Promise((res, rej) => { 
+    promise: new Promise((res, rej) => {
       resolve = res
-      reject = rej 
+      reject = rej
     })
   }
 }
 
-/**
- * @param {firebase.database.Reference} tasksRef the Firebase Realtime Database
- *   reference for queue tasks.
- * @param {String} processId the ID of the current worker process.
- * @param {Function} processingFunction the function to be called each time a
- *   task is claimed.
- * @return {Object}
- */
 module.exports = QueueWorker
 
-QueueWorker.isValidTaskSpec = isValidTaskSpec
-
-function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, processingFunction, spec, TransactionHelper = DefaultTransactionHelper }) {
+function QueueWorker({ tasksRef, serverOffset, sanitize, processingFunction, spec }) {
 
   if (!tasksRef) throwError('No tasks reference provided.')
-  if (typeof processIdBase !== 'string') throwError('Invalid process ID provided.')
   if (Boolean(sanitize) !== sanitize) throwError('Invalid sanitize option.')
-  if (Boolean(suppressStack) !== suppressStack) throwError('Invalid suppressStack option.')
   if (typeof processingFunction !== 'function') throwError('No processing function provided.')
   if (!isValidTaskSpec(spec)) throwError('Invalid task spec provided')
 
-  const serverOffset = 0 // this should be passed in by the queue
-  const processId = processIdBase + ':' + uuid.v4()
+  const processId = uuid.v4()
 
-  let shutdownStarted = null
-
-  const sanitizedSpec = getSanitizedTaskSpec(spec)
-  const { startState, inProgressState, timeout } = sanitizedSpec
-  const taskUtilities = new TaskUtilities({ serverOffset, spec: sanitizedSpec })
-  let transactionHelper = new TransactionHelper({ serverOffset, processId, spec: sanitizedSpec })
-
+  const { startState, inProgressState, errorState, timeout } = spec
   const newTaskRef = tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
-  const hasTimeout = !!timeout
 
-  let stop = null
+  let transactionHelper = new TransactionHelper({ serverOffset, processId, spec })
+  let shutdownStarted = null
   let busy = false
 
   this.shutdown = shutdown
 
-  start()
+  const stop = start()
 
-  return this
-
-  function _resetTaskIfTimedOut(taskRef) {
-    transactionWithRetries({
-      ref: taskRef,
-      transaction: transactionHelper.resetIfTimedOut
-    })
-  }
-
-  function _resolve(taskRef) {
-    const deferred = createDeferred()
-
-    return [resolve, deferred.promise]
-
-    function resolve(newTask) {
-      return transactionWithRetries({
-        ref: taskRef, 
-        transaction: transactionHelper.resolveWith(newTask),
-        deferred
-      })
+  function start() {
+    const hasTimeout = !!timeout
+    waitForNextTask()
+    const removeTimeouts = hasTimeout && _setUpTimeouts()
+    return () => {
+      stopWaitingForNextTask()
+      if (removeTimeouts) removeTimeouts()
     }
   }
 
-  function _reject(taskRef) {
-    const deferred = createDeferred()
-
-    return [reject, deferred.promise]
-
-    function reject(error) {
-      const errorString =
-        _.isError(error) ? error.message
-        : typeof error === 'string' ? error
-        : error !== undefined && error !== null ? error.toString()
-        : null
-
-      const errorStack = (!suppressStack && error && error.stack) || null
-
-      return transactionWithRetries({
-        ref: taskRef,
-        transaction: transactionHelper.rejectWith(errorString, errorStack),
-        deferred
-      })
-    }
+  function waitForNextTask() {
+    newTaskRef.on('child_added', tryToProcessAndCatchError/*, report error */) // should not be once because that can not be cancelled
   }
 
-  function _updateProgress(taskRef) {
-
-    return updateProgress
-
-    function updateProgress(progress) {
-      if (typeof progress !== 'number' || _.isNaN(progress) || progress < 0 || progress > 100) 
-        return Promise.reject(new Error('Invalid progress'))
-
-      return transactionWithRetries({
-        ref: taskRef,
-        transaction: transactionHelper.updateProgressWith(progress)
-      }).then(({ committed, snapshot }) => committed && snapshot.exists()
-          ? Promise.resolve()
-          : Promise.reject(new Error('Can\'t update progress - current task no longer owned by this process or task no longer in progress'))
-        )
-    }
+  function stopWaitingForNextTask() {
+    newTaskRef.off('child_added', tryToProcessAndCatchError)
   }
 
-  /**
-   * Attempts to claim the next task in the queue.
-   */
-  function _tryToProcess(taskSnapshot) {
-    let retries = 0
+  async function tryToProcessAndCatchError({ ref }) {
+    stopWaitingForNextTask()
 
-    if (shutdownStarted) {
-      finishShutdown()
-      return
-    }
+    if (shutdownStarted) return finishShutdown()
+    busy = true
 
+    await claimAndProcess(ref).catch(_ => { /* report error */})
+
+    busy = false
+    if (shutdownStarted) return finishShutdown()
+
+    waitForNextTask()
+  }
+
+  async function claimAndProcess(ref) {
     const nextTransactionHelper = transactionHelper.cloneForNextTask()
-    
-    return transactionWithRetries({
-      ref: taskSnapshot.ref,
-      transaction: nextTransactionHelper.claim
-    }).then(({ committed, snapshot }) => {
-        if (committed && snapshot.exists() && !taskUtilities.isInErrorState(snapshot)) {
-          busy = true
-          transactionHelper = nextTransactionHelper
+    const { committed, snapshot } = await nextTransactionHelper.claim(ref)
+    if (committed && snapshot.exists() && !isInErrorState(snapshot)) {
+      transactionHelper = nextTransactionHelper
+      await process(snapshot)
+    }
 
-          const data = snapshot.val()
-          if (sanitize) taskUtilities.sanitize(data)
-          else { data._id = snapshot.key } // this should be independent of `sanitize` and behind the flag `includeKey` or similar
+    function isInErrorState(x) { return x.child('_state').val() === errorState }
+  }
 
-          const currentTaskRef = snapshot.ref
-          const progress = _updateProgress(currentTaskRef)
-          const [resolve, resolvePromise] = _resolve(currentTaskRef)
-          const [reject, rejectPromise] = _reject(currentTaskRef)
+  async function process(snapshot) {
+    const { ref } = snapshot
 
-          Promise.race([resolvePromise, rejectPromise])
-            .then(_ => {
-              busy = false
-              if (shutdownStarted) finishShutdown()
-              else newTaskRef.once('child_added', _tryToProcess)
-            })
-            .catch(_ => {
-              // the original implementation did not handle this situation
-              // we should probably set the error and free ourselves:
-              // busy = false and _tryToProcess
-            })
+    const data = snapshot.val()
+    if (sanitize) sanitize(data)
 
-          setImmediate(() => {
-            try { processingFunction.call(null, data, progress, resolve, reject) }
-            catch (err) { reject(err) }
-          })
-        }
-      })
-      //.catch(e => { /* transaction failed */ })
+    await processingFunction(data, { ref, setProgress })
+      .then(
+        newTask  => transactionHelper.resolveWith(ref, newTask),
+        error    => transactionHelper.rejectWith (ref, error)
+      )
+
+    function sanitize(task) {
+      const fields = ['_state', '_state_changed', '_owner', '_progress', '_error_details']
+      fields.forEach(field => { delete task[field] })
+      return task
+    }
+
+    async function setProgress(progress) {
+      const { committed, snapshot } = await transactionHelper.updateProgressWith(ref, progress)
+
+      if (!committed || !snapshot.exists()) throw new Error('Can\'t update progress - ' +
+        'current task no longer owned by this process, ' +
+        'task no longer in progress, ' +
+        'task has been removed or ' +
+        'network communication failure'
+      )
+    }
   }
 
   /**
@@ -195,7 +127,7 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
       // This catches de-duped events from the server - if the task was removed
       // and added in quick succession, the server may squash them into a
       // single update
-      if (taskUtilities.getOwner(snapshot) !== expiryTimeouts[snapshot.key].owner) {
+      if (getOwner(snapshot) !== expiryTimeouts[snapshot.key].owner) {
         removeTimeoutHandling(snapshot)
         addTimeoutHandling(snapshot)
       }
@@ -211,10 +143,10 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
 
     function addTimeoutHandling(snapshot) {
       expiryTimeouts[snapshot.key] = {
-        owner: taskUtilities.getOwner(snapshot),
+        owner: getOwner(snapshot),
         timeout: setTimeout(
-          () => _resetTaskIfTimedOut(snapshot.ref),
-          taskUtilities.expiresIn(snapshot)
+          () => transactionHelper.resetIfTimedOut(snapshot.ref),
+          expiresIn(snapshot)
         )
       }
     }
@@ -223,28 +155,19 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
       clearTimeout(expiryTimeouts[key].timeout)
       delete expiryTimeouts[key]
     }
-  }
 
-  function start() {
-    newTaskRef.once('child_added', _tryToProcess)
-    const removeTimeouts = hasTimeout && _setUpTimeouts()
-    stop = () => {
-      stop = null
-      newTaskRef.off('child_added', _tryToProcess)
-      if (removeTimeouts) removeTimeouts()
+    function getOwner(snapshot) {
+      return snapshot.child('_owner').val()
+    }
+
+    function expiresIn(snapshot) {
+      const now = Date.now() + serverOffset
+      const startTime = (snapshot.child('_state_changed').val() || now)
+      return Math.max(0, startTime - now + timeout)
     }
   }
 
-  function getSanitizedTaskSpec({
-    startState = null,
-    inProgressState = null,
-    finishedState = null,
-    errorState = DEFAULT_ERROR_STATE,
-    timeout = null,
-    retries = DEFAULT_RETRIES
-  }) { return { startState, inProgressState, finishedState, errorState, timeout, retries } }
-
-  function shutdown() {
+  async function shutdown() {
     if (shutdownStarted) return shutdownStarted.promise
 
     // Set the global shutdown deferred promise, which signals we're shutting down
@@ -257,44 +180,21 @@ function QueueWorker({ tasksRef, processIdBase, sanitize, suppressStack, process
   }
 
   function finishShutdown() {
-    if (stop) stop()
+    stop()
     // finished shutdown
     shutdownStarted.resolve()
   }
 }
 
-function transactionWithRetries({ ref, transaction, deferred = createDeferred(), attempts = 0 }) {
-  ref.transaction(transaction, undefined, false)
-    .then(x => { deferred.resolve(x) })
-    .catch(e => {
-      if (attempts < MAX_TRANSACTION_ATTEMPTS) {
-        setImmediate(() => transactionWithRetries({ ref, transaction, deferred, attempts: attempts + 1 }))
-      } else deferred.reject(new Error('transaction failed too many times, no longer retrying, original error: ' + e.message))
-    })
-
-  return deferred.promise
-}
-
-/**
- * Validates a task spec contains meaningful parameters.
- * @param {Object} taskSpec The specification for the task.
- * @returns {Boolean} Whether the taskSpec is valid.
- */
 function isValidTaskSpec(taskSpec) {
-  if (!_.isPlainObject(taskSpec)) return false
-
-  const {
-    inProgressState, startState, finishedState, errorState,
-    timeout, retries
-  } = taskSpec
+  const { inProgressState, startState, finishedState, errorState, timeout } = taskSpec
 
   return (
     typeof inProgressState === 'string' &&
     check(startState   , undefinedOrNull, stringAndNot(inProgressState)) &&
     check(finishedState, undefinedOrNull, stringAndNot(inProgressState, startState)) &&
     check(errorState   , undefinedOrNull, stringAndNot(inProgressState)) &&
-    check(timeout, undefinedOrNull, positiveInteger({ min: 1 })) &&
-    check(retries, undefinedOrNull, positiveInteger({ min: 0 }))
+    check(timeout, undefinedOrNull, positiveInteger({ min: 1 }))
   )
 
   function check(val, ...checks) {
@@ -305,7 +205,7 @@ function isValidTaskSpec(taskSpec) {
     return val => typeof val === 'number' && val >= min && val % 1 === 0
   }
   function stringAndNot(...vals) {
-    return val => typeof val === 'string' && 
+    return val => typeof val === 'string' &&
       vals.reduce((result, other) => result && val !== other, true)
   }
 }
