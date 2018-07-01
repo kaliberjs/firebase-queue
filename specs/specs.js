@@ -9,22 +9,20 @@ const app = firebase.initializeApp({
 const db = app.database()
 
 const specs = [
-  [`default settings - process a task and remove it from the queue`, () => ({
+  [`default options - process a task and remove it from the queue`, () => ({
     numTasks: 1,
     test: (data, processed, remaining) => [
       [processed, `equal`, data], `and`, [remaining, `equal`, []]
     ]
   })],
 
-  [`multiple queues with multiple workers - processing the same set of tasks`, () => {
-    return {
-      numTasks: 4,
-      queue: { count: 2, options: { numWorkers: 2 } },
-      test: async (data, processed, remaining) => [
-        [processed, `equal`, data], `and`, [remaining, `equal`, []]
-      ]
-    }
-  }],
+  [`multiple queues with multiple workers - processing the same set of tasks`, () => ({
+    numTasks: 8,
+    queue: { count: 2, options: { numWorkers: 2 } },
+    test: async (data, processed, remaining) => [
+      [processed, `equal`, data], `and`, [remaining, `equal`, []]
+    ]
+  })],
 
   [`multiple queues with multiple workers - distribute the work`, () => {
     const owners = []
@@ -34,18 +32,67 @@ const specs = [
       queue: { count: 2, options: { numWorkers: 2, sanitize: false } },
       process: async ({ index, _owner }) => {
         await wait(20) // simulate long running processes to give other workers a chance
-        owners.push(_owner.slice(0, _owner.length - 2))
-        return { index }
+        const [queueId, workerIndex] = _owner.split(':')
+        owners.push(queueId + workerIndex)
+        return { processed: { index } }
       },
       test: (data, processed, remaining) => [
-        [processed, `equal`, data],
-        `and`,
-        [remaining, `equal`, []],
-        `and`,
-        [owners, `noDuplicates`],
+        [processed, `equal`, data], `and`, [remaining, `equal`, []], `and`, [owners, `noDuplicates`]
       ]
     }
-  }]
+  }],
+
+  [`spec with finished state - leave tasks in queue with correct state`, () => ({
+    numTasks: 1,
+    queue: { options: { spec: { finishedState: 'finished' } } },
+    test: (data, processed, remaining) => {
+      const remainingWithoutStateChanged = remaining.map(({ _state_changed, ...x }) => x)
+      const dataWithFinishedState = data.map(x => ({ _progress: 100, _state: 'finished', ...x }))
+      return [
+        [processed, `equal`, data],
+        `and`,
+        [remainingWithoutStateChanged, `equal`, dataWithFinishedState]
+      ]
+    }
+  })],
+
+  ['unsanitized tasks - allow process function to access queue properties', () => ({
+    numTasks: 1,
+    queue: { options: { sanitize: false } },
+    test: (data, processed, remaining) => {
+      const normalizedProcessed = processed.map(x => ({
+        ...x,
+        _state: notUndefined(x._state),
+        _state_changed: notUndefined(x._state_changed),
+        _progress: notUndefined(x._progress),
+        _owner: notUndefined(x._owner),
+      }))
+      const normalizedData = data.map(x => ({
+        _owner: true, _progress: true, _state: true, _state_changed: true, ...x
+      }))
+      return [
+        [normalizedProcessed, `equal`, normalizedData], `and`, [remaining, `equal`, []]
+      ]
+    }
+  })],
+
+  ['complex processing - setProgress, access reference and replace task', () => ({
+    numTasks: 1,
+    process: async (x, { ref, setProgress }) => {
+      await setProgress(88)
+      const { _progress } = (await ref.once('value')).val()
+      const result = { ...x, progress: _progress, _state: 'do not process again' }
+      return { processed: x, result }
+    },
+    test: (data, processed, remaining) => {
+      const dataWithProgressAndState = data.map(x => ({ _state: 'do not process again', ...x, progress: 88 }))
+      return [
+        [processed, `equal`, data],
+        `and`,
+        [remaining, `equal`, dataWithProgressAndState]
+      ]
+    }
+  })]
 ]
 
 const ops = {
@@ -81,6 +128,8 @@ async function execute(specs) {
   db.goOnline()
   const root = db.ref()
 
+  let processedSynchronously = false
+
   const result = await sequence(specs,
     async ([title, f]) => {
       const { numTasks, queue: { count = 1, options = undefined } = {}, process, test } = f()
@@ -91,10 +140,15 @@ async function execute(specs) {
       }
       const data = [...Array(numTasks).keys()].map(index => ({ index }))
       const processed = []
-      const processTask = async x => {
-        const y = process ? await process(x) : x
-        processed[y.index] = y
-      }
+      function addProcessed(x) { processed[x.index] = x } // this one should not be async
+      processedSynchronously = processedSynchronously || !process
+      const processTask = process
+        ? async (x, ...args) => {
+            const { processed, result } = process ? await process(x, ...args) : x
+            addProcessed(processed)
+            return result
+          }
+        : addProcessed
       const queues = [...Array(count)].map(_ => new Queue({ tasksRef, processTask, reportError, options }))
       const shutdown = async () => Promise.all(queues.map(x => x.shutdown()))
       try {
@@ -121,8 +175,15 @@ async function execute(specs) {
 
   db.goOffline()
 
+  if (!processedSynchronously) {
+    console.error('Did not test synchronous `processTask` functions')
+    return false
+  }
+
   return result.every(x => x)
 }
+
+function notUndefined(x) { return x !== undefined }
 
 async function sequence(a, f) {
   return a.reduce(

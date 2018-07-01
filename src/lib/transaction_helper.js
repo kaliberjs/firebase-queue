@@ -46,6 +46,7 @@ function TransactionHelper({ processId, spec, taskNumber = 0 }) {
           task._owner = null
           task._progress = 100
           task._error_details = null
+          return task
         }
         else return null // remove
       }
