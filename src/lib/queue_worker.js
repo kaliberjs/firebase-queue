@@ -31,17 +31,18 @@ function QueueWorker({ processId, tasksRef, sanitize, spec, processTask, reportE
     if (shutdownStarted) return finishShutdown()
     busy = true
 
-    await claimAndProcess(ref).catch(_ => { /* report error */})
+    await claimAndProcess(ref).catch(reportError)
 
     busy = false
     if (shutdownStarted) return finishShutdown()
 
-    waitForNextTask()
+    setImmediate(waitForNextTask) // let node.js breathe
   }
 
   async function claimAndProcess(ref) {
     const nextTransactionHelper = transactionHelper.cloneForNextTask()
     const { committed, snapshot } = await nextTransactionHelper.claim(ref)
+
     if (committed && snapshot.exists()) {
       transactionHelper = nextTransactionHelper
       await process(snapshot)
