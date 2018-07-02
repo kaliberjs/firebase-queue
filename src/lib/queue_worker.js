@@ -4,9 +4,8 @@ const TransactionHelper = require('./transaction_helper')
 
 module.exports = QueueWorker
 
-function QueueWorker({ processId, tasksRef, sanitize, spec, processTask, reportError /*: r*/ }) {
+function QueueWorker({ processId, tasksRef, sanitize, spec, processTask, reportError }) {
 
-  //const reportError = e => r(e)
   const { startState } = spec
   const newTaskRef = tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
 

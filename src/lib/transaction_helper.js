@@ -61,7 +61,6 @@ function TransactionHelper({ processId, spec, taskNumber = 0 }) {
       null
 
     const errorStack = (error && error.stack) || null
-
     return task => {
       if (task === null) return null
 
