@@ -4,7 +4,7 @@ const TransactionHelper = require('./transaction_helper')
 
 module.exports = QueueWorker
 
-function QueueWorker({ processId, tasksRef, sanitize, spec, processTask, reportError }) {
+function QueueWorker({ processId, tasksRef, spec, processTask, reportError }) {
 
   const { startState } = spec
   const newTaskRef = tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
@@ -53,9 +53,9 @@ function QueueWorker({ processId, tasksRef, sanitize, spec, processTask, reportE
     const { ref } = snapshot
 
     const data = snapshot.val()
-    if (sanitize) removeQueueProperties(data)
+    removeQueueProperties(data)
 
-    await new Promise(resolve => resolve(processTask(data, { ref, setProgress })))
+    await new Promise(resolve => resolve(processTask(data, { snapshot, setProgress })))
       .then(
         newTask => transactionHelper.resolveWith(ref, newTask),
         error   => transactionHelper.rejectWith (ref, error)

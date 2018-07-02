@@ -51,12 +51,12 @@ const specs = [
 
     return {
       numTasks: 4,
-      queue: { count: 2, options: { numWorkers: 2, sanitize: false } },
-      process: async ({ index, _owner }) => {
+      queue: { count: 2, options: { numWorkers: 2 } },
+      process: async (x, { snapshot }) => {
         await wait(20) // simulate long running processes to give other workers a chance
-        const [queueId, workerIndex] = _owner.split(`:`)
+        const [queueId, workerIndex] = snapshot.child(`_owner`).val().split(`:`)
         owners.push(queueId + workerIndex)
-        return { processed: { index } }
+        return { processed: x }
       },
       test: (data, processed, remaining) => [
         [processed, `equal`, data], `and`, [remaining, `equal`, []], `and`, [owners, `noDuplicates`]
@@ -80,7 +80,9 @@ const specs = [
 
   [`unsanitized tasks - allow process function to access queue properties`, () => ({
     numTasks: 1,
-    queue: { options: { sanitize: false } },
+    process: (_, { snapshot }) => {
+      return { processed: snapshot.val() }
+    },
     test: (data, processed, remaining) => {
       const normalizedProcessed = processed.map(
         setFieldPresence(`_state`, `_state_changed`, `_progress`, `_owner`)
@@ -96,9 +98,9 @@ const specs = [
 
   [`complex processing - setProgress, access reference and replace task`, () => ({
     numTasks: 1,
-    process: async (x, { ref, setProgress }) => {
+    process: async (x, { snapshot, setProgress }) => {
       await setProgress(88)
-      const { _progress } = (await ref.once(`value`)).val()
+      const { _progress } = (await snapshot.ref.once(`value`)).val()
       const result = { progress: _progress, _state: `do not process again` }
       return { processed: x, result }
     },
@@ -114,14 +116,13 @@ const specs = [
 
   [`complex processing - setProgress after task was removed`, () => ({
     numTasks: 1,
-    process: async (x, { ref, setProgress }) => {
-      const ownerRef = ref.child('_owner')
-      const owner = (await ownerRef.once('value')).val()
-      await ownerRef.set(null)
+    process: async (x, { snapshot, setProgress }) => {
+      const owner = snapshot.child('_owner')
+      await owner.ref.set(null)
       try {
         await setProgress(88)
       } finally {
-        await ownerRef.set(owner)
+        await owner.ref.set(owner.val())
       }
       /* istanbul ignore next */
       return { processed: x, result: { _error_details: { failure: 'expected setProgress to throw an error' } } }

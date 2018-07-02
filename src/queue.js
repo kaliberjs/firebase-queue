@@ -16,7 +16,6 @@ function Queue({
       finishedState = null,
       errorState = 'error'
     } = {},
-    sanitize = true,
     numWorkers = 1
   } = {}
 }) {
@@ -46,9 +45,6 @@ function Queue({
   check(errorState, [isString, not(inProgressState), not(startState), not(finishedState)],
     'options.spec.errorState must be a string that !== inProgressState and !== startState and !== finishedState')
 
-  check(sanitize, isBoolean,
-    'options.sanitize must be a boolean')
-
   check(numWorkers, isPositiveInteger,
     'options.numWorkers must be a positive integer')
 
@@ -77,14 +73,12 @@ function Queue({
         processId: `${queueId}:${index}`,
         tasksRef,
         spec,
-        sanitize,
         processTask,
         reportError
       })
     }
   }
 
-  function isBoolean(x) { return Boolean(x) === x }
   function isFunction(x) { return typeof x === 'function' }
   function isFirebaseRef(x) { return [x.on, x.off, x.transaction, x.orderByChild].every(isFunction) }
   function isString(x) { return typeof x === 'string' }
