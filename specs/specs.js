@@ -16,6 +16,31 @@ const specs = [
     ]
   })],
 
+  [`default options - failed to process a task`, () => ({
+    numTasks: 1,
+    process: _ => { throw new Error('custom error') },
+    test: (data, processed, remaining) => {
+      const normalizedRemaining = remaining.map(({ _error_details: { error_stack, ...y}, ...x }) =>
+        ({
+          ...x,
+          _error_details: { ...y, error_stack: notUndefined(error_stack) },
+          _state_changed: notUndefined(x._state_changed)
+        })
+      )
+      const normalizedData = data.map(x =>
+        ({
+          _progress: 0,
+          _state: 'error',
+          _state_changed: true,
+          ...x,
+          _error_details: { error: 'custom error', error_stack: true },
+        }))
+      return [
+       [processed, `equal`, data], `and`, [normalizedRemaining, `equal`, normalizedData]
+      ]
+    }
+  })],
+
   [`multiple queues with multiple workers - processing the same set of tasks`, () => ({
     numTasks: 8,
     queue: { count: 2, options: { numWorkers: 2 } },
@@ -46,12 +71,12 @@ const specs = [
     numTasks: 1,
     queue: { options: { spec: { finishedState: 'finished' } } },
     test: (data, processed, remaining) => {
-      const remainingWithoutStateChanged = remaining.map(({ _state_changed, ...x }) => x)
-      const dataWithFinishedState = data.map(x => ({ _progress: 100, _state: 'finished', ...x }))
+      const normalizedRemaining = remaining.map(({ _state_changed, ...x }) => x)
+      const normalizedData = data.map(x => ({ _progress: 100, _state: 'finished', ...x }))
       return [
         [processed, `equal`, data],
         `and`,
-        [remainingWithoutStateChanged, `equal`, dataWithFinishedState]
+        [normalizedRemaining, `equal`, normalizedData]
       ]
     }
   })],
@@ -92,13 +117,31 @@ const specs = [
         [remaining, `equal`, dataWithProgressAndState]
       ]
     }
+  })],
+
+  ['specs - report failure for x', () => ({
+    numTasks: 1,
+    test: _ => [[0, 'equal', 1], `and`, []]
+  })],
+  ['specs - report failure for x', () => ({
+    numTasks: 1,
+    test: _ => [0, 'non existing op']
+  })],
+  ['specs - report failure for x', () => ({
+    numTasks: 1,
+    test: _ => [[0, 0], 'noDuplicates']
+  })],
+  ['specs - report timeout for x', () => ({
+    numTasks: 1,
+    process: async _ => { await wait(550) },
+    test: _ => [0, `equal`, 0]
   })]
 ]
 
 const ops = {
   execute: ([a, op, ...b]) => {
     const f = ops[op]
-    if (!f) console.error(`Could not find operation with name ${op}`)
+    if (!f) console.error(`Could not find operation with name '${op}'`)
     return f(a, ...b)
   },
   equal: (a, b) => [
@@ -116,10 +159,10 @@ const ops = {
 }
 
 execute(specs)
-  .then(x => {
-    if (!x) process.exitCode = 1
+  .then(success => {
+    if (!success) process.exitCode = 1
   })
-  .catch(e => {
+  .catch(/* istanbul ignore next */ e => {
     console.error(e)
     process.exitCode = 1
   })
@@ -141,14 +184,30 @@ async function execute(specs) {
       const data = [...Array(numTasks).keys()].map(index => ({ index }))
       const processed = []
       function addProcessed(x) { processed[x.index] = x } // this one should not be async
-      processedSynchronously = processedSynchronously || !process
-      const processTask = process
-        ? async (x, ...args) => {
-            const { processed, result } = process ? await process(x, ...args) : x
+      const processTask = (x, ...args) => {
+        try {
+          const y = (process && process(x, ...args)) || {}
+          if (y.then && y.catch) {
+            return y
+            .then(({ processed, result }) => {
+              addProcessed(processed)
+              return result
+            })
+            .catch(e => {
+              addProcessed(x)
+              throw e
+            })
+          } else {
+            processedSynchronously = true
+            const { processed = x, result } = y
             addProcessed(processed)
             return result
           }
-        : addProcessed
+        } catch (e) {
+          addProcessed(x)
+          throw e
+        }
+      }
       const queues = [...Array(count)].map(_ => new Queue({ tasksRef, processTask, reportError, options }))
       const shutdown = async () => Promise.all(queues.map(x => x.shutdown()))
       try {

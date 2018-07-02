@@ -52,12 +52,15 @@ function Queue({
   check(numWorkers, isPositiveInteger,
     'options.numWorkers must be a positive integer')
 
+  let shutdownStarted = null
   const removeWorkers  = createWorkers()
 
   this.shutdown = shutdown
 
   async function shutdown() {
-    await removeWorkers()
+    if (shutdownStarted) return shutdownStarted
+    shutdownStarted = removeWorkers()
+    return shutdownStarted
   }
 
   function createWorkers() {

@@ -32,6 +32,7 @@
     "firebase-server": "^0.9.1",
     "lodash": "^4.6.1",
     "mocha": "^3.2.0",
+    "nyc": "^12.0.2",
     "uuid": "^3.0.0"
   },
   "devDependencies": {
@@ -48,6 +49,7 @@
     "sinon-chai": "^2.8.0"
   },
   "scripts": {
+    "specs": "nyc node specs/specs.js",
     "test": "gulp test",
     "test-local": "NODE_ENV=local gulp test",
     "travis": "gulp",

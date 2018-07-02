@@ -4,8 +4,9 @@ const TransactionHelper = require('./transaction_helper')
 
 module.exports = QueueWorker
 
-function QueueWorker({ processId, tasksRef, sanitize, spec, processTask, reportError }) {
+function QueueWorker({ processId, tasksRef, sanitize, spec, processTask, reportError /*: r*/ }) {
 
+  //const reportError = e => r(e)
   const { startState } = spec
   const newTaskRef = tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
 
@@ -55,7 +56,7 @@ function QueueWorker({ processId, tasksRef, sanitize, spec, processTask, reportE
     const data = snapshot.val()
     if (sanitize) removeQueueProperties(data)
 
-    await Promise.resolve(processTask(data, { ref, setProgress }))
+    await new Promise(resolve => resolve(processTask(data, { ref, setProgress })))
       .then(
         newTask => transactionHelper.resolveWith(ref, newTask),
         error   => transactionHelper.rejectWith (ref, error)
@@ -96,13 +97,8 @@ function QueueWorker({ processId, tasksRef, sanitize, spec, processTask, reportE
 
 function createDeferred() {
   let resolve = null
-  let reject = null
   return {
     resolve: (...args) => resolve(...args),
-    reject: (...args) => reject(...args),
-    promise: new Promise((res, rej) => {
-      resolve = res
-      reject = rej
-    })
+    promise: new Promise(res => { resolve = res })
   }
 }
