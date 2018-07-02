@@ -21,21 +21,17 @@ const specs = [
     numTasks: 1,
     process: _ => { throw new Error(`custom error`) },
     test: (data, processed, remaining) => {
-      const normalizedRemaining = remaining.map(({ _error_details: { error_stack, ...y}, ...x }) =>
-        ({
-          ...x,
-          _error_details: { ...y, error_stack: notUndefined(error_stack) },
-          _state_changed: notUndefined(x._state_changed)
-        })
+      const normalizedRemaining = remaining.map(
+        setFieldPresence([`_error_details`, [`error_stack`]], `_state_changed`)
       )
-      const normalizedData = data.map(x =>
-        ({
+      const normalizedData = data.map(
+        addFields({
+          _error_details: { error: `custom error`, error_stack: true },
           _progress: 0,
           _state: `error`,
           _state_changed: true,
-          ...x,
-          _error_details: { error: `custom error`, error_stack: true },
-        }))
+        })
+      )
       return [
        [processed, `equal`, data], `and`, [normalizedRemaining, `equal`, normalizedData]
       ]
@@ -72,7 +68,7 @@ const specs = [
     numTasks: 1,
     queue: { options: { spec: { finishedState: `finished` } } },
     test: (data, processed, remaining) => {
-      const normalizedRemaining = remaining.map(({ _state_changed, ...x }) => x)
+      const normalizedRemaining = remaining.map(removeField(`_state_changed`))
       const normalizedData = data.map(x => ({ _progress: 100, _state: `finished`, ...x }))
       return [
         [processed, `equal`, data],
@@ -86,16 +82,12 @@ const specs = [
     numTasks: 1,
     queue: { options: { sanitize: false } },
     test: (data, processed, remaining) => {
-      const normalizedProcessed = processed.map(x => ({
-        ...x,
-        _state: notUndefined(x._state),
-        _state_changed: notUndefined(x._state_changed),
-        _progress: notUndefined(x._progress),
-        _owner: notUndefined(x._owner),
-      }))
-      const normalizedData = data.map(x => ({
-        _owner: true, _progress: true, _state: true, _state_changed: true, ...x
-      }))
+      const normalizedProcessed = processed.map(
+        setFieldPresence(`_state`, `_state_changed`, `_progress`, `_owner`)
+      )
+      const normalizedData = data.map(
+        setTrue(`_owner`, `_progress`, `_state`, `_state_changed`)
+      )
       return [
         [normalizedProcessed, `equal`, normalizedData], `and`, [remaining, `equal`, []]
       ]
@@ -107,11 +99,11 @@ const specs = [
     process: async (x, { ref, setProgress }) => {
       await setProgress(88)
       const { _progress } = (await ref.once(`value`)).val()
-      const result = { ...x, progress: _progress, _state: `do not process again` }
+      const result = { progress: _progress, _state: `do not process again` }
       return { processed: x, result }
     },
     test: (data, processed, remaining) => {
-      const dataWithProgressAndState = data.map(x => ({ _state: `do not process again`, ...x, progress: 88 }))
+      const dataWithProgressAndState = data.map(x => ({ _state: `do not process again`, progress: 88 }))
       return [
         [processed, `equal`, data],
         `and`,
@@ -135,20 +127,15 @@ const specs = [
       return { processed: x, result: { _error_details: { failure: 'expected setProgress to throw an error' } } }
     },
     test: (data, processed, remaining) => {
-      const normalizedRemaining = remaining.map(({ _error_details: y, ...x }) =>
-        ({
-          ...x,
-          _error_details: { ...y, error: notUndefined(y.error), error_stack: notUndefined(y.error_stack) },
-          _state_changed: notUndefined(x._state_changed)
-        })
+      const normalizedRemaining = remaining.map(
+        setFieldPresence([`_error_details`, [`error`, `error_stack`]], `_state_changed`)
       )
-      const normalizedData = data.map(x =>
-        ({
+      const normalizedData = data.map(
+        addFields({
+          _error_details: { error: true, error_stack: true },
           _progress: 0,
           _state: `error`,
           _state_changed: true,
-          ...x,
-          _error_details: { error: true, error_stack: true },
         })
       )
       return [
@@ -309,6 +296,34 @@ async function executeSpec([title, f, report]) {
   } finally {
     await shutdown()
   }
+}
+
+function addFields(o) {
+  return x => ({ ...o, ...x })
+}
+
+function removeField(field) {
+  return ({ [field]: removed, ...x }) => x
+}
+
+function setFieldPresence(...fields) {
+  return x => {
+    const changes = fields.map(y => {
+      if (Array.isArray(y)) {
+        const [key, rest] = y
+        return { [key]: setFieldPresence(...rest)(x[key]) }
+      } else return { [y]: notUndefined(x[y]) }
+    })
+
+    return Object.assign({}, x, ...changes)
+  }
+}
+
+function setTrue(...fields) {
+  return x => ({
+    ...Object.assign({}, ...fields.map(y => ({ [y]: true }))),
+    ...x,
+  })
 }
 
 function notUndefined(x) { return x !== undefined }
