@@ -24,13 +24,13 @@ function Queue({
   const spec = { startState, inProgressState, finishedState, errorState }
   const queueId = uuid.v4()
 
-  check(tasksRef, isFirebaseRef,
+  check(tasksRef, [isRequired, isFirebaseRef],
     'tasksRef must be a Firebase reference')
 
-  check(processTask, isFunction,
+  check(processTask, [isRequired, isFunction],
     'processTask must be a function')
 
-  check(reportError, isFunction,
+  check(reportError, [isRequired, isFunction],
     'reportError must be a function')
 
   check(inProgressState, isString,
@@ -79,6 +79,7 @@ function Queue({
     }
   }
 
+  function isRequired(x) { return x !== null && x !== undefined }
   function isFunction(x) { return typeof x === 'function' }
   function isFirebaseRef(x) { return [x.on, x.off, x.transaction, x.orderByChild].every(isFunction) }
   function isString(x) { return typeof x === 'string' }

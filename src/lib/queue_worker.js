@@ -28,15 +28,12 @@ function QueueWorker({ processId, tasksRef, spec, processTask, reportError }) {
   async function tryToProcessAndCatchError({ ref }) {
     stopWaitingForNextTask()
 
-    if (shutdownStarted) return finishShutdown()
     busy = true
-
     await claimAndProcess(ref).catch(reportError)
-
     busy = false
-    if (shutdownStarted) return finishShutdown()
 
-    setImmediate(waitForNextTask) // let node.js breathe
+    if (shutdownStarted) finishShutdown()
+    else setImmediate(waitForNextTask) // let node.js breathe
   }
 
   async function claimAndProcess(ref) {
@@ -56,14 +53,21 @@ function QueueWorker({ processId, tasksRef, spec, processTask, reportError }) {
     removeQueueProperties(data)
 
     await new Promise(resolve => resolve(processTask(data, { snapshot, setProgress })))
-      .then(
-        newTask => transactionHelper.resolveWith(ref, newTask),
-        error   => transactionHelper.rejectWith (ref, error)
-      )
+      .then(resolve, reject)
 
     function removeQueueProperties(task) {
       const properties = ['_state', '_state_changed', '_owner', '_progress', '_error_details']
       properties.forEach(properties => { delete task[properties] })
+    }
+
+    async function resolve(newTask) {
+      const { committed } = await transactionHelper.resolveWith(ref, newTask)
+      if (!committed) throw new Error(`Could not resolve task:\n${JSON.stringify(newTask, null, 2)}`)
+    }
+
+    async function reject(error) {
+      const { committed } = await transactionHelper.rejectWith(ref, error)
+      if (!committed) throw new Error(`Could not reject task with error:\n${error}`)
     }
 
     async function setProgress(progress) {
@@ -79,7 +83,8 @@ function QueueWorker({ processId, tasksRef, spec, processTask, reportError }) {
   }
 
   async function shutdown() {
-    if (shutdownStarted) return shutdownStarted.promise
+    /* istanbul ignore if - we could return the promise but rather signal the flaw at the caller */
+    if (shutdownStarted) throw new Error(`Shutdown was already called`)
 
     shutdownStarted = createDeferred()
 
