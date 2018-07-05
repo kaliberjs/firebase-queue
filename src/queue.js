@@ -1,6 +1,5 @@
 'use strict'
 
-const uuid = require('uuid')
 const QueueWorker = require('./lib/queue_worker.js')
 
 module.exports = Queue
@@ -22,15 +21,13 @@ function Queue({
   if (!(this instanceof Queue)) throw new Error('You forgot the `new` keyword: `new Queue(...)`')
 
   const spec = { startState, inProgressState, finishedState, errorState }
-  const queueId = uuid.v4()
-
-  check(tasksRef, [isRequired, isFirebaseRef],
+  check(tasksRef, isFirebaseRef,
     'tasksRef must be a Firebase reference')
 
-  check(processTask, [isRequired, isFunction],
+  check(processTask, isFunction,
     'processTask must be a function')
 
-  check(reportError, [isRequired, isFunction],
+  check(reportError, isFunction,
     'reportError must be a function')
 
   check(inProgressState, isString,
@@ -48,14 +45,16 @@ function Queue({
   check(numWorkers, isPositiveInteger,
     'options.numWorkers must be a positive integer')
 
+  const queueId = tasksRef.push().key
   let shutdownStarted = null
-  const removeWorkers  = createWorkers()
+  let removeWorkers  = createWorkers()
 
   this.shutdown = shutdown
 
   async function shutdown() {
     if (shutdownStarted) return shutdownStarted
     shutdownStarted = removeWorkers()
+    removeWorkers = null // make sure no references to workers are being kept and allow garbage collection
     return shutdownStarted
   }
 
@@ -63,9 +62,7 @@ function Queue({
     const workers = [...Array(numWorkers).keys()].map(createWorker)
 
     return async () => {
-      const workersToRemove = workers.slice()
-      workers.splice(0)
-      await Promise.all(workersToRemove.map(worker => worker.shutdown()))
+      await Promise.all(workers.map(worker => worker.shutdown()))
     }
 
     function createWorker(index) {
@@ -79,9 +76,8 @@ function Queue({
     }
   }
 
-  function isRequired(x) { return x !== null && x !== undefined }
   function isFunction(x) { return typeof x === 'function' }
-  function isFirebaseRef(x) { return [x.on, x.off, x.transaction, x.orderByChild].every(isFunction) }
+  function isFirebaseRef(x) { return x && [x.on, x.off, x.transaction, x.orderByChild, x.push].every(isFunction) }
   function isString(x) { return typeof x === 'string' }
   function isNull(x) { return x === null }
   function not(y) { return x => x !== y }

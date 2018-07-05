@@ -18,6 +18,26 @@ const specs = [
     ]
   })],
 
+  [`default options - processing multiple tasks expecting them to be handled by the same worker`, () => {
+    const owners = []
+
+    return {
+      numTasks: 4,
+      process: async (x, { snapshot }) => {
+        await wait(20) // simulate long running processes to give other workers a chance
+        const [queueId, workerIndex] = snapshot.child(`_owner`).val().split(`:`)
+        owners.push(queueId + workerIndex)
+      },
+      test: (data, processed, remaining) => [
+        [processed, `equal`, data],
+        `and`,
+        [remaining, `equal`, []],
+        `and`,
+        [owners, `equal`, Array(owners.length).fill(owners[0])]
+      ]
+    }
+  }],
+
   [`default options - failed to process a task`, () => ({
     numTasks: 5,
     process: ({ index }) => {
@@ -207,16 +227,73 @@ const specs = [
       /* istanbul ignore next */() => `Expected problems with resolving and rejecting to be reported`
     ],
   })],
+
+  // `Custom states, 'inProgressState', 'startState', 'finishedState' and 'errorState'`
 ]
 
+/* istanbul ignore next */ function dontCallMe() { throw new Error(`please do not call me`) }
+const validConfig = { tasksRef: root, processTask: dontCallMe, reportError: dontCallMe }
+function newQueue(config) { return new Queue({ ...validConfig, ...config }) }
+function newQueueWithSpec(spec) { return newQueue({ options: { spec }}) }
 const unitTests = [
   [`Queue - require the 'new' keyword`, () => expectError({
-    code: () => Queue({}),
+    code: () => Queue(validConfig),
     test: [e => e.message.includes(`new`), `Error did not mention 'new'`],
   })],
   [`Queue - require a valid 'tasksRef'`, () => expectError({
-    code: () => new Queue({ tasksRef: `invalid` }),
+    code: [() => newQueue({ tasksRef: `invalid` }), () => newQueue({ tasksRef: undefined })],
     test: [e => e.message.includes(`tasksRef`), `Error did not mention 'tasksRef'`],
+  })],
+  [`Queue - require a valid 'processTask'`, () => expectError({
+    code: [() => newQueue({ processTask: `invalid` }), () => newQueue({ processTask: undefined })],
+    test: [e => e.message.includes(`processTask`), `Error did not mention 'processTask'`],
+  })],
+  [`Queue - require a valid 'reportError'`, () => expectError({
+    code: [() => newQueue({ reportError: `invalid` }), () => newQueue({ reportError: undefined })],
+    test: [e => e.message.includes(`reportError`), `Error did not mention 'reportError'`],
+  })],
+  [`Queue - require a valid 'spec.inProgressState'`, () => expectError({
+    code: [
+      () => newQueueWithSpec({ inProgressState: { invalid: true } }),
+      () => newQueueWithSpec({ inProgressState: null }),
+    ],
+    test: [e => e.message.includes(`spec.inProgressState`), `Error did not mention 'spec.inProgressState'`],
+  })],
+  [`Queue - require a valid 'spec.startState'`, () => expectError({
+    code: [
+      () => newQueueWithSpec({ startState: { invalid: true } }),
+      () => newQueueWithSpec({ startState: `in_progress` }),
+    ],
+    test: [e => e.message.includes(`spec.startState`), `Error did not mention 'spec.startState'`],
+  })],
+  [`Queue - require a valid 'spec.finishedState'`, () => expectError({
+    code: [
+      () => newQueueWithSpec({ finishedState: { invalid: true } }),
+      () => newQueueWithSpec({ finishedState: `in_progress` }),
+      () => newQueueWithSpec({ startState: 'start', finishedState: `start` }),
+    ],
+    test: [e => e.message.includes(`spec.finishedState`), `Error did not mention 'spec.finishedState'`],
+  })],
+  [`Queue - require a valid 'spec.errorState'`, () => expectError({
+    code: [
+      () => newQueueWithSpec({ errorState: { invalid: true } }),
+      () => newQueueWithSpec({ errorState: `in_progress` }),
+      () => newQueueWithSpec({ startState: 'start', errorState: `start` }),
+      () => newQueueWithSpec({ finishedState: 'finished', errorState: `finished` }),
+      () => newQueueWithSpec({ errorState: null }),
+    ],
+    test: [e => e.message.includes(`spec.errorState`), `Error did not mention 'spec.errorState'`],
+  })],
+  [`Queue - require a valid 'options.numWorkers'`, () => expectError({
+    code: [
+      () => newQueue({ options: { numWorkers: 0 } }),
+      () => newQueue({ options: { numWorkers: -1 } }),
+      () => newQueue({ options: { numWorkers: NaN } }),
+      () => newQueue({ options: { numWorkers: 'nope' } }),
+      () => newQueue({ options: { numWorkers: 1.1 } }),
+      () => newQueue({ options: { numWorkers: "1" } }),
+    ],
+    test: [e => e.message.includes(`numWorkers`), `Error did not mention 'numWorkers'`],
   })],
   [`TransactionHelper - should retry transactions`, async () => {
     const t = new TransactionHelper({ spec: {} })
@@ -241,8 +318,17 @@ const unitTests = [
 ]
 
 function expectError({ code, test: [test, error] }) {
-  try { code(); return `No error thrown` }
-  catch (e) { return !test(e) && `${error}\n${e}` }
+  if (Array.isArray(code)) {
+    return code.map(code => run(code, test, error))
+      .map((result, i) => result && `[${i}] - ${result}`)
+      .filter(Boolean)
+      .join(`\n`)
+  } else return run(code, test, error)
+
+  function run(code, test, error) {
+    try { code(); return `No error thrown` }
+    catch (e) { return !test(e) && `${error}\n${e}` }
+  }
 }
 
 const ops = {
@@ -337,7 +423,7 @@ async function performSelfCheck() {
       test: [undefined, undefined]
     })],
     ['specs expect error - fail the incorrect error is thrown', () => expectError({
-      code: () => { throw null },
+      code: [() => { throw null }],
       test: [e => e !== null, `incorrect error`]
     })],
     ['specs colors - there is a difference between success and failure color', () =>
