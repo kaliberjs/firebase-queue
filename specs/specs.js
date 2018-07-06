@@ -19,21 +19,26 @@ const specs = [
   })],
 
   [`default options - processing multiple tasks expecting them to be handled by the same worker`, () => {
+    const workers = []
     const owners = []
 
     return {
       numTasks: 4,
       process: async (x, { snapshot }) => {
         await wait(20) // simulate long running processes to give other workers a chance
-        const [queueId, workerIndex] = snapshot.child(`_owner`).val().split(`:`)
-        owners.push(queueId + workerIndex)
+        const owner = snapshot.child(`_owner`).val()
+        const [queueId, workerIndex] = owner.split(`:`)
+        workers.push(queueId + workerIndex)
+        owners.push(owner)
       },
       test: (data, processed, remaining) => [
         [processed, `equal`, data],
         `and`,
         [remaining, `equal`, []],
         `and`,
-        [owners, `equal`, Array(owners.length).fill(owners[0])]
+        [workers, `equal`, Array(workers.length).fill(workers[0])],
+        `and`,
+        [owners, `noDuplicates`]
       ]
     }
   }],
@@ -67,13 +72,28 @@ const specs = [
     }
   })],
 
-  [`multiple queues with multiple workers - processing the same set of tasks`, () => ({
-    numTasks: 8,
-    queue: { count: 2, options: { numWorkers: 2 } },
-    test: async (data, processed, remaining) => [
-      [processed, `equal`, data], `and`, [remaining, `equal`, []]
-    ]
-  })],
+  [`multiple queues with multiple workers - processing the same set of tasks`, () => {
+    const changes = [...Array(8).keys()].map(_ => [])
+    const tasksRef = root.push().ref
+    tasksRef.on('child_added', x => { changes[x.val().index].push(`add`) })
+    tasksRef.on('child_changed', x => { changes[x.val().index].push(`change`) })
+    tasksRef.on('child_removed', x => { changes[x.val().index].push(`remove`) })
+    return {
+      numTasks: 8,
+      queue: { tasksRef, count: 2, options: { numWorkers: 2 } },
+      test: async (data, processed, remaining) => {
+        root.off()
+        const expectedChanges = changes.map(_ => [`add`, `change`, `remove`])
+        return [
+          [processed, `equal`, data],
+          `and`,
+          [remaining, `equal`, []],
+          `and`,
+          [changes, `equal`, expectedChanges],
+        ]
+      }
+    }
+  }],
 
   [`multiple queues with multiple workers - distribute the work`, () => {
     const owners = []
@@ -255,18 +275,18 @@ const specs = [
         }))
         const normalizedData = data.map(x => ({
           ...x,
-          _state: (x.index === 0 && `i am finised`) ||
+          _state: (x.index === 0 && `i am finished`) ||
                   (x.index === 1 && `i have failed`) ||
-                  (x.index === 2 && null),
+                  (x.index === 2 && undefined),
           _progress: (x.index === 0 && 100) ||
                      (x.index === 1 && 50) ||
                      (x.index === 2 && undefined),
-          _state_changed: x.index < 2 ? true : undefined,
-          _error_details: x.index === 1 ? true : undefined,
+          _state_changed: x.index < 2,
+          _error_details: x.index === 1,
         }))
 
         return [
-          [processed.filter(Boolean), `equal`, data.slice(0, 2)],
+          [processed.filter(Boolean).map(addFields({ _state: `i should start` })), `equal`, data.slice(0, 2)],
           `and`,
           [normalizedRemaining, `equal`, normalizedData],
           `and`,
@@ -279,6 +299,15 @@ const specs = [
 
 /* istanbul ignore next */ function dontCallMe() { throw new Error(`please do not call me`) }
 const validConfig = { tasksRef: root, processTask: dontCallMe, reportError: dontCallMe }
+const validTaskRef = {
+  on: dontCallMe,
+  off: dontCallMe,
+  push: () => root.push(),
+  transaction: dontCallMe,
+  orderByChild: function () { return this },
+  equalTo: function() { return this },
+  limitToFirst: function() { return this },
+}
 function newQueue(config) { return new Queue({ ...validConfig, ...config }) }
 function newQueueWithSpec(spec) { return newQueue({ options: { spec }}) }
 const unitTests = [
@@ -358,6 +387,18 @@ const unitTests = [
     /* istanbul ignore next */ function processTask(x) { processed.push(x) }
     /* istanbul ignore next */ function reportError(e) { console.error(e) }
   }],
+  [`Queue - should correctly report errors`, async () => {
+    let reported = null
+    const tasksRef = { ...validTaskRef, on: (x_, y, onError) => onError(new Error('custom error')), off: () => {} }
+    const queue = new Queue({ tasksRef, processTask: dontCallMe, reportError })
+    await queue.shutdown()
+
+    return reported
+      ? reported.message !== `custom error` && /* istanbul ignore next */ `The wrong error was reported`
+      : /* istanbul ignore next */ `Expected an error to be reported`
+
+    function reportError(e) { reported = e }
+  }],
   [`TransactionHelper - should retry transactions`, async () => {
     const t = new TransactionHelper({ spec: {} })
     let tried = 0
@@ -412,7 +453,7 @@ const ops = {
     function prepare(x) {
       if (!x) return x
       if (Array.isArray(x)) return x.map(prepare)
-      if (typeof x === 'object') return new Map(Object.entries(x).map(([k, v]) => [k, prepare(v)]).sort())
+      if (typeof x === 'object') return Object.entries(x).map(([k, v]) => [k, prepare(v)]).sort().reduce((o, [k, v]) => ({ ...o, [k]: v }), {})
       return x
     }
   },
@@ -445,6 +486,10 @@ async function performSelfCheck() {
     [`specs ops 'equal' - report failure when not equal`, () => ({
       numTasks: 1,
       test: _ => [0, `equal`, 1]
+    })],
+    [`specs ops 'equal' - report failure when not equal`, () => ({
+      numTasks: 1,
+      test: _ => [{ index: 1 }, `equal`, { index: 2 }]
     })],
     [`specs ops 'and' - report failure when first fails`, () => ({
       numTasks: 1,
@@ -553,14 +598,13 @@ async function executeSpec([title, f]) {
   const {
     numTasks,
     createTask = index => ({ index }),
-    queue: { count = 1, options = undefined } = {},
+    queue: { tasksRef = root.push().ref, count = 1, options = undefined } = {},
     expectedNumProcessed = numTasks,
     process,
     test,
     expectReportedErrors
   } = f()
 
-  const tasksRef = root.push().ref
   const reportedErrors = []
   const reportError = e => { reportedErrors.push(e) }
   const data = [...Array(numTasks).keys()].map(createTask)
