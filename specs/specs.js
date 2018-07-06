@@ -341,6 +341,23 @@ const unitTests = [
     ],
     test: [e => e.message.includes(`numWorkers`), `Error did not mention 'numWorkers'`],
   })],
+  [`Queue - should not continue processing after shutdown`, async () => {
+    const tasksRef = root.push().ref
+    const processed = []
+    const queue = new Queue({ tasksRef, processTask, reportError })
+    await queue.shutdown()
+    await tasksRef.push({ index: 0 })
+    try {
+      await waitFor(() => processed.length === 1, { timeout: 500 })
+      /* istanbul ignore next */ return `Expected timeout because no tasks should be processed`
+    } catch (e) {
+      /* istanbul ignore if */
+      if (e !== TIMEOUT) throw e
+    }
+
+    /* istanbul ignore next */ function processTask(x) { processed.push(x) }
+    /* istanbul ignore next */ function reportError(e) { console.error(e) }
+  }],
   [`TransactionHelper - should retry transactions`, async () => {
     const t = new TransactionHelper({ spec: {} })
     let tried = 0
