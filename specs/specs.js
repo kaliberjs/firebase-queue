@@ -228,7 +228,53 @@ const specs = [
     ],
   })],
 
-  // `Custom states, 'inProgressState', 'startState', 'finishedState' and 'errorState'`
+  [`custom spec - custom 'inProgressState', 'startState', 'finishedState' and 'errorState'`, () => {
+    const inProgressStates = []
+
+    return {
+      numTasks: 3,
+      createTask: index => ({ index, _state: index < 2 ? `i should start` : null }),
+      queue: { options: {
+        spec: {
+          startState: `i should start`,
+          inProgressState: `i am in progress`,
+          finishedState: `i am finished`,
+          errorState: `i have failed`,
+        }
+      }},
+      expectedNumProcessed: 2,
+      process: async ({ index }, { snapshot, setProgress }) => {
+        inProgressStates.push(snapshot.child(`_state`).val())
+        await setProgress(50)
+        if (index === 1) throw new Error(`custom error`)
+      },
+      test: (data, processed, remaining) => {
+        const normalizedRemaining = remaining.map(x => ({
+          ...x,
+          ...setFieldPresence(`_error_details`, `_state_changed`)(x),
+        }))
+        const normalizedData = data.map(x => ({
+          ...x,
+          _state: (x.index === 0 && `i am finised`) ||
+                  (x.index === 1 && `i have failed`) ||
+                  (x.index === 2 && null),
+          _progress: (x.index === 0 && 100) ||
+                     (x.index === 1 && 50) ||
+                     (x.index === 2 && undefined),
+          _state_changed: x.index < 2 ? true : undefined,
+          _error_details: x.index === 1 ? true : undefined,
+        }))
+
+        return [
+          [processed.filter(Boolean), `equal`, data.slice(0, 2)],
+          `and`,
+          [normalizedRemaining, `equal`, normalizedData],
+          `and`,
+          [[...new Set(inProgressStates)], `equal`, [`i am in progress`]]
+        ]
+      }
+    }
+  }],
 ]
 
 /* istanbul ignore next */ function dontCallMe() { throw new Error(`please do not call me`) }
@@ -489,7 +535,9 @@ function reportWith(report, f) {
 async function executeSpec([title, f]) {
   const {
     numTasks,
+    createTask = index => ({ index }),
     queue: { count = 1, options = undefined } = {},
+    expectedNumProcessed = numTasks,
     process,
     test,
     expectReportedErrors
@@ -498,7 +546,7 @@ async function executeSpec([title, f]) {
   const tasksRef = root.push().ref
   const reportedErrors = []
   const reportError = e => { reportedErrors.push(e) }
-  const data = [...Array(numTasks).keys()].map(index => ({ index }))
+  const data = [...Array(numTasks).keys()].map(createTask)
   const processed = []
   function addProcessed(x) { processed[x.index] = x } // this one should not be async
   let processedSynchronously = false
@@ -520,7 +568,7 @@ async function executeSpec([title, f]) {
   const shutdown = async () => Promise.all(queues.map(x => x.shutdown()))
   try {
     await Promise.all(data.map(x => tasksRef.push(x)))
-    await waitFor(() => processed.filter(Boolean).length === data.length, { timeout: 500 })
+    await waitFor(() => processed.filter(Boolean).length === expectedNumProcessed, { timeout: 500 })
     await shutdown()
     const remaining = Object.values((await tasksRef.once(`value`)).val() || {})
     const [testSuccess, testFailureMessage] = ops.execute(await test(data, processed, remaining))
