@@ -49,7 +49,7 @@
     "sinon-chai": "^2.8.0"
   },
   "scripts": {
-    "specs": "nyc node specs/specs.js",
+    "specs": "nyc node specs/",
     "test": "gulp test",
     "test-local": "NODE_ENV=local gulp test",
     "travis": "gulp",

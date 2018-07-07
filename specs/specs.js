@@ -1,22 +1,12 @@
-const firebase = require(`firebase`)
-const TIMEOUT = Symbol(`timeout`)
-const Queue = require(`../src/queue`)
-const TransactionHelper = require(`../src/lib/transaction_helper`)
+const { wait } = require('./machinery/promise_utils')
 
-const app = firebase.initializeApp({
-  // apiKey: `api key not needed`,
-  databaseURL: `ws://localhost:5000`,
-})
-const db = app.database()
-const root = db.ref()
-
-const specs = [
-  [`default options - process a task and remove it from the queue`, () => ({
+module.exports = rootRef => [
+  [`default options - process a task and remove it from the queue`, {
     numTasks: 1,
     test: (data, processed, remaining) => [
       [processed, `equal`, data], `and`, [remaining, `equal`, []]
     ]
-  })],
+  }],
 
   [`default options - processing multiple tasks expecting them to be handled by the same worker`, () => {
     const workers = []
@@ -43,7 +33,7 @@ const specs = [
     }
   }],
 
-  [`default options - failed to process a task`, () => ({
+  [`default options - failed to process a task`, {
     numTasks: 5,
     process: ({ index }) => {
       switch (index) {
@@ -70,11 +60,11 @@ const specs = [
        [processed, `equal`, data], `and`, [normalizedRemaining, `equal`, normalizedData]
       ]
     }
-  })],
+  }],
 
   [`multiple queues with multiple workers - processing the same set of tasks`, () => {
     const changes = [...Array(8).keys()].map(_ => [])
-    const tasksRef = root.push().ref
+    const tasksRef = rootRef.push().ref
     tasksRef.on('child_added', x => { changes[x.val().index].push(`add`) })
     tasksRef.on('child_changed', x => { changes[x.val().index].push(`change`) })
     tasksRef.on('child_removed', x => { changes[x.val().index].push(`remove`) })
@@ -82,7 +72,7 @@ const specs = [
       numTasks: 8,
       queue: { tasksRef, count: 2, options: { numWorkers: 2 } },
       test: async (data, processed, remaining) => {
-        root.off()
+        tasksRef.off()
         const expectedChanges = changes.map(_ => [`add`, `change`, `remove`])
         return [
           [processed, `equal`, data],
@@ -112,7 +102,7 @@ const specs = [
     }
   }],
 
-  [`spec with finished state - leave tasks in queue with correct state`, () => ({
+  [`spec with finished state - leave tasks in queue with correct state`, {
     numTasks: 1,
     queue: { options: { spec: { finishedState: `finished` } } },
     test: (data, processed, remaining) => {
@@ -124,7 +114,7 @@ const specs = [
         [normalizedRemaining, `equal`, normalizedData]
       ]
     }
-  })],
+  }],
 
   [`processing - allow process function to access queue properties`, () => {
     const tasks = []
@@ -146,7 +136,7 @@ const specs = [
     }
   }],
 
-  [`complex processing - setProgress, access reference and replace task`, () => ({
+  [`complex processing - setProgress, access reference and replace task`, {
     numTasks: 1,
     process: async (x, { snapshot, setProgress }) => {
       await setProgress(88)
@@ -161,9 +151,9 @@ const specs = [
         [remaining, `equal`, dataWithProgressAndState]
       ]
     }
-  })],
+  }],
 
-  [`complex processing - setProgress after task was removed`, () => ({
+  [`complex processing - setProgress after task was removed`, {
     numTasks: 1,
     process: async (x, { snapshot, setProgress }) => {
       const owner = snapshot.child('_owner')
@@ -194,9 +184,9 @@ const specs = [
         [normalizedRemaining, `equal`, normalizedData]
       ]
     }
-  })],
+  }],
 
-  [`weird stuff - changes in the matrix #1 (changing the owner)`, () => ({
+  [`weird stuff - changes in the matrix #1 (changing the owner)`, {
     numTasks: 2,
     process: async ({ index }, { snapshot }) => {
       await snapshot.ref.child(`_owner`).set('the owner got changed')
@@ -216,13 +206,12 @@ const specs = [
         [normalizedRemaining, `equal`, normalizedData]
       ]
     },
-    expectReportedErrors: ([e1, e2]) => [
-      e1 && e1.message.includes(`resolve`) && e2 && e2.message.includes(`reject`),
-      /* istanbul ignore next */() => `Expected problems with resolving and rejecting to be reported`
-    ],
-  })],
+    expectReportedErrors: ([e1, e2]) =>
+      !(e1 && e1.message.includes(`resolve`) && e2 && e2.message.includes(`reject`)) &&
+      /* istanbul ignore next */`Expected problems with resolving and rejecting to be reported`,
+  }],
 
-  [`weird stuff - changes in the matrix #2 (changing the state)`, () => ({
+  [`weird stuff - changes in the matrix #2 (changing the state)`, {
     numTasks: 2,
     process: async ({ index }, { snapshot }) => {
       await snapshot.ref.child(`_state`).set('the state got changed')
@@ -242,11 +231,10 @@ const specs = [
         [normalizedRemaining, `equal`, normalizedData]
       ]
     },
-    expectReportedErrors: ([e1, e2]) => [
-      e1 && e1.message.includes(`resolve`) && e2 && e2.message.includes(`reject`),
-      /* istanbul ignore next */() => `Expected problems with resolving and rejecting to be reported`
-    ],
-  })],
+    expectReportedErrors: ([e1, e2]) =>
+      !(e1 && e1.message.includes(`resolve`) && e2 && e2.message.includes(`reject`)) &&
+      /* istanbul ignore next */`Expected problems with resolving and rejecting to be reported`,
+  }],
 
   [`custom spec - custom 'inProgressState', 'startState', 'finishedState' and 'errorState'`, () => {
     const inProgressStates = []
@@ -269,10 +257,7 @@ const specs = [
         if (index === 1) throw new Error(`custom error`)
       },
       test: (data, processed, remaining) => {
-        const normalizedRemaining = remaining.map(x => ({
-          ...x,
-          ...setFieldPresence(`_error_details`, `_state_changed`)(x),
-        }))
+        const normalizedRemaining = remaining.map(setFieldPresence(`_error_details`, `_state_changed`))
         const normalizedData = data.map(x => ({
           ...x,
           _state: (x.index === 0 && `i am finished`) ||
@@ -297,367 +282,6 @@ const specs = [
   }],
 ]
 
-/* istanbul ignore next */ function dontCallMe() { throw new Error(`please do not call me`) }
-const validConfig = { tasksRef: root, processTask: dontCallMe, reportError: dontCallMe }
-const validTaskRef = {
-  on: dontCallMe,
-  off: dontCallMe,
-  push: () => root.push(),
-  transaction: dontCallMe,
-  orderByChild: function () { return this },
-  equalTo: function() { return this },
-  limitToFirst: function() { return this },
-}
-function newQueue(config) { return new Queue({ ...validConfig, ...config }) }
-function newQueueWithSpec(spec) { return newQueue({ options: { spec }}) }
-const unitTests = [
-  [`Queue - require the 'new' keyword`, () => expectError({
-    code: () => Queue(validConfig),
-    test: [e => e.message.includes(`new`), `Error did not mention 'new'`],
-  })],
-  [`Queue - require a valid 'tasksRef'`, () => expectError({
-    code: [() => newQueue({ tasksRef: `invalid` }), () => newQueue({ tasksRef: undefined })],
-    test: [e => e.message.includes(`tasksRef`), `Error did not mention 'tasksRef'`],
-  })],
-  [`Queue - require a valid 'processTask'`, () => expectError({
-    code: [() => newQueue({ processTask: `invalid` }), () => newQueue({ processTask: undefined })],
-    test: [e => e.message.includes(`processTask`), `Error did not mention 'processTask'`],
-  })],
-  [`Queue - require a valid 'reportError'`, () => expectError({
-    code: [() => newQueue({ reportError: `invalid` }), () => newQueue({ reportError: undefined })],
-    test: [e => e.message.includes(`reportError`), `Error did not mention 'reportError'`],
-  })],
-  [`Queue - require a valid 'spec.inProgressState'`, () => expectError({
-    code: [
-      () => newQueueWithSpec({ inProgressState: { invalid: true } }),
-      () => newQueueWithSpec({ inProgressState: null }),
-    ],
-    test: [e => e.message.includes(`spec.inProgressState`), `Error did not mention 'spec.inProgressState'`],
-  })],
-  [`Queue - require a valid 'spec.startState'`, () => expectError({
-    code: [
-      () => newQueueWithSpec({ startState: { invalid: true } }),
-      () => newQueueWithSpec({ startState: `in_progress` }),
-    ],
-    test: [e => e.message.includes(`spec.startState`), `Error did not mention 'spec.startState'`],
-  })],
-  [`Queue - require a valid 'spec.finishedState'`, () => expectError({
-    code: [
-      () => newQueueWithSpec({ finishedState: { invalid: true } }),
-      () => newQueueWithSpec({ finishedState: `in_progress` }),
-      () => newQueueWithSpec({ startState: 'start', finishedState: `start` }),
-    ],
-    test: [e => e.message.includes(`spec.finishedState`), `Error did not mention 'spec.finishedState'`],
-  })],
-  [`Queue - require a valid 'spec.errorState'`, () => expectError({
-    code: [
-      () => newQueueWithSpec({ errorState: { invalid: true } }),
-      () => newQueueWithSpec({ errorState: `in_progress` }),
-      () => newQueueWithSpec({ startState: 'start', errorState: `start` }),
-      () => newQueueWithSpec({ finishedState: 'finished', errorState: `finished` }),
-      () => newQueueWithSpec({ errorState: null }),
-    ],
-    test: [e => e.message.includes(`spec.errorState`), `Error did not mention 'spec.errorState'`],
-  })],
-  [`Queue - require a valid 'options.numWorkers'`, () => expectError({
-    code: [
-      () => newQueue({ options: { numWorkers: 0 } }),
-      () => newQueue({ options: { numWorkers: -1 } }),
-      () => newQueue({ options: { numWorkers: NaN } }),
-      () => newQueue({ options: { numWorkers: 'nope' } }),
-      () => newQueue({ options: { numWorkers: 1.1 } }),
-      () => newQueue({ options: { numWorkers: "1" } }),
-    ],
-    test: [e => e.message.includes(`numWorkers`), `Error did not mention 'numWorkers'`],
-  })],
-  [`Queue - should not continue processing after shutdown`, async () => {
-    const tasksRef = root.push().ref
-    const processed = []
-    const queue = new Queue({ tasksRef, processTask, reportError })
-    await queue.shutdown()
-    await tasksRef.push({ index: 0 })
-    try {
-      await waitFor(() => processed.length === 1, { timeout: 500 })
-      /* istanbul ignore next */ return `Expected timeout because no tasks should be processed`
-    } catch (e) {
-      /* istanbul ignore if */
-      if (e !== TIMEOUT) throw e
-    }
-
-    /* istanbul ignore next */ function processTask(x) { processed.push(x) }
-    /* istanbul ignore next */ function reportError(e) { console.error(e) }
-  }],
-  [`Queue - should correctly report errors`, async () => {
-    let reported = null
-    const tasksRef = { ...validTaskRef, on: (x_, y, onError) => onError(new Error('custom error')), off: () => {} }
-    const queue = new Queue({ tasksRef, processTask: dontCallMe, reportError })
-    await queue.shutdown()
-
-    return reported
-      ? reported.message !== `custom error` && /* istanbul ignore next */ `The wrong error was reported`
-      : /* istanbul ignore next */ `Expected an error to be reported`
-
-    function reportError(e) { reported = e }
-  }],
-  [`TransactionHelper - should retry transactions`, async () => {
-    const t = new TransactionHelper({ spec: {} })
-    let tried = 0
-    await t.claim({ transaction })
-
-    async function transaction() {
-      if (!tried) {
-        tried += 1
-        throw new Error('try again')
-      }
-    }
-  }],
-  [`TransactionHelper - should give up after a certain amount of transactions`, async () => {
-    const t = new TransactionHelper({ spec: {} })
-    try {
-      await t.claim({ transaction: async () => { throw new Error(`try again`) } })
-      /* istanbul ignore next */
-      return `Expected transaction to give up after a certain amount of retries`
-    } catch (e) {}
-  }],
-]
-
-function expectError({ code, test: [test, error] }) {
-  if (Array.isArray(code)) {
-    return code.map(code => run(code, test, error))
-      .map((result, i) => result && `[${i}] - ${result}`)
-      .filter(Boolean)
-      .join(`\n`)
-  } else return run(code, test, error)
-
-  function run(code, test, error) {
-    try { code(); return `No error thrown` }
-    catch (e) { return !test(e) && `${error}\n${e}` }
-  }
-}
-
-const ops = {
-  execute: ([a, op, ...b]) => {
-    const f = ops[op]
-    return f ? f(a, ...b) : [false, () => `Could not find operation with name '${op}'`]
-  },
-  equal: (a, b) => {
-    const preparedA = prepare(a)
-    const preparedB = prepare(b)
-    return [
-      JSON.stringify(preparedA) === JSON.stringify(preparedB),
-      () => `Expected 'a' to equal 'b'\n` +
-            `'a': ${JSON.stringify(preparedA, null, 2)}\n` +
-            `'b': ${JSON.stringify(preparedB, null, 2)}`,
-    ]
-
-    function prepare(x) {
-      if (!x) return x
-      if (Array.isArray(x)) return x.map(prepare)
-      if (typeof x === 'object') return Object.entries(x).map(([k, v]) => [k, prepare(v)]).sort().reduce((o, [k, v]) => ({ ...o, [k]: v }), {})
-      return x
-    }
-  },
-  and: (aa, ...bb) => bb.filter(x => x !== `and`).reduce(
-    ([success, error], bb) => success ? ops.execute(bb) : [success, error],
-    ops.execute(aa)
-  ),
-  noDuplicates: a => [
-    new Set(a).size === a.length,
-    () => `Expected no duplicates in ${JSON.stringify(a, null, 2)}`,
-  ],
-}
-
-db.goOnline()
-performSelfCheck()
-  .then(success => success && executeUnitTests(unitTests))
-  .then(success => success && executeSpecs(specs))
-  .then(success => {
-    /* istanbul ignore if */
-    if (!success) process.exitCode = 1
-  })
-  .catch(/* istanbul ignore next */ e => {
-    console.error(e)
-    process.exitCode = 1
-  })
-  .then(_ => { db.goOffline() })
-
-async function performSelfCheck() {
-  const selfCheckSpecs = [
-    [`specs ops 'equal' - report failure when not equal`, () => ({
-      numTasks: 1,
-      test: _ => [0, `equal`, 1]
-    })],
-    [`specs ops 'equal' - report failure when not equal`, () => ({
-      numTasks: 1,
-      test: _ => [{ index: 1 }, `equal`, { index: 2 }]
-    })],
-    [`specs ops 'and' - report failure when first fails`, () => ({
-      numTasks: 1,
-      test: _ => [[0, `equal`, 1], `and`, []]
-    })],
-    [`specs ops 'non existing op' - report failure when an op does not exist`, () => ({
-      numTasks: 1,
-      test: _ => [0, `non existing op`]
-    })],
-    [`specs ops 'noDuplicates' - report failure when there are duplicates`, () => ({
-      numTasks: 1,
-      test: _ => [[0, 0], `noDuplicates`]
-    })],
-    [`specs - report timeout for long processes`, () => ({
-      numTasks: 1,
-      process: async _ => { await wait(550) },
-    })],
-    [`specs - report errors if they occur in test`, () => ({
-      numTasks: 1,
-      test: _ => { throw new Error(`custom error`) }
-    })],
-    [`specs - report errors if they are reported`, () => ({
-      numTasks: 1,
-      process: async (_, { snapshot }) => {
-        await snapshot.ref.child(`_state`).set('the state got changed')
-      },
-      test: () => [0, `equal`, 0],
-    })],
-    [`specs - report errors if they were expected`, () => ({
-      numTasks: 1,
-      test: () => [0, `equal`, 0],
-      expectReportedErrors: true,
-    })],
-  ]
-
-  const selfCheckUnitTests = [
-    ['specs expect error - fail when no error is thrown', () => expectError({
-      code: () => {},
-      test: [undefined, undefined]
-    })],
-    ['specs expect error - fail the incorrect error is thrown', () => expectError({
-      code: [() => { throw null }],
-      test: [e => e !== null, `incorrect error`]
-    })],
-    ['specs colors - there is a difference between success and failure color', () =>
-      (failureColor(``) !== successColor(``)) && `Colors were the same`
-    ],
-  ]
-
-  const specResults = await sequence(selfCheckSpecs, reportWith(report, executeSpec))
-  const unitTestResults = await sequence(selfCheckUnitTests, reportWith(report, executeUnitTest))
-
-  const success = await executeSpecs([], report)
-  report({ success, title: `specs - report if there are no specs that execute synchronously` })
-
-  return !success && specResults.every(x => !x.success) && unitTestResults.every(x => !x.success)
-
-  function report({ title, success }) {
-    /* istanbul ignore if */
-    if (success) console.error(`${failureColor(`x`)} ${title}\nExpected failure, but got success`)
-  }
-}
-
-async function executeUnitTests(unitTests) {
-  const result = await sequence(unitTests, reportWith(defaultReport, executeUnitTest))
-  return result.every(x => x.success)
-}
-
-async function executeUnitTest([title, test]) {
-  const error = await test()
-  return { title, success: !error, error }
-}
-
-async function executeSpecs(specs, report = defaultReport) {
-  const result = await sequence(specs, reportWith(report, executeSpec))
-
-  if (!result.some(x => x.processedSynchronously)) {
-    report({ title: `executed a synchonous test`, success: false, error: 'failed' })
-    return false
-  }
-
-  return result.every(x => x.success)
-}
-
-function defaultReport({ title, success, error }) {
-  /* istanbul ignore else */
-  if (success) console.log(`${successColor(`✓`)} ${title}`)
-  else console.error(`${failureColor(`x`)} ${title}\n\n    ${error.replace(/\n/g, `\n    `)}\n`)
-}
-
-function successColor(s) { return color(s, 10) }
-function failureColor(s) { return color(s, 9) }
-function color(s, color) {
-  return `\x1B[38;5;${color}m${s}\x1B[0m`
-}
-
-function reportWith(report, f) {
-  return async (...args) => {
-    const result = await f(...args)
-    report(result)
-    return result
-  }
-}
-
-async function executeSpec([title, f]) {
-  const {
-    numTasks,
-    createTask = index => ({ index }),
-    queue: { tasksRef = root.push().ref, count = 1, options = undefined } = {},
-    expectedNumProcessed = numTasks,
-    process,
-    test,
-    expectReportedErrors
-  } = f()
-
-  const reportedErrors = []
-  const reportError = e => { reportedErrors.push(e) }
-  const data = [...Array(numTasks).keys()].map(createTask)
-  const processed = []
-  function addProcessed(x) { processed[x.index] = x } // this one should not be async
-  let processedSynchronously = false
-  const processTask = (task, meta) => {
-    try {
-      const result = process && process(task, meta)
-      if (result && result.then) result.then(_ => addProcessed(task), _ => addProcessed(task))
-      else {
-        processedSynchronously = true
-        addProcessed(task)
-      }
-      return result
-    } catch(e) {
-      addProcessed(task)
-      throw e
-    }
-  }
-  const queues = [...Array(count)].map(_ => new Queue({ tasksRef, processTask, reportError, options }))
-  const shutdown = async () => Promise.all(queues.map(x => x.shutdown()))
-  try {
-    await Promise.all(data.map(x => tasksRef.push(x)))
-    await waitFor(() => processed.filter(Boolean).length === expectedNumProcessed, { timeout: 500 })
-    await shutdown()
-    const remaining = Object.values((await tasksRef.once(`value`)).val() || {})
-    const [testSuccess, testFailureMessage] = ops.execute(await test(data, processed, remaining))
-    const [reportedErrorSuccess, reportedErrorFailureMessage = ''] =
-      reportedErrors.length
-      ? (
-        expectReportedErrors
-          ? expectReportedErrors(reportedErrors)
-          : [false, () => reportedErrors.join(`\n\n`)]
-      )
-      : (
-        expectReportedErrors
-          ? [false, () => 'Expected an error to be reported']
-          : [true]
-      )
-
-    const success = testSuccess && reportedErrorSuccess
-    const error = (!reportedErrorSuccess && reportedErrorFailureMessage()) ||
-                  (!testSuccess && testFailureMessage())
-    return { title, success, processedSynchronously, error }
-  } catch (e) {
-    const error = reportedErrors.join(`\n\n`) + (e === TIMEOUT ? `timed out` : e)
-    return { title, success: false, processedSynchronously, error }
-  } finally {
-    await shutdown()
-  }
-}
-
 function addFields(o) {
   return x => ({ ...o, ...x })
 }
@@ -672,7 +296,7 @@ function setFieldPresence(...fields) {
       if (Array.isArray(y)) {
         const [key, rest] = y
         return { [key]: setFieldPresence(...rest)(x[key]) }
-      } else return { [y]: notUndefined(x[y]) }
+      } else return { [y]: x[y] !== undefined }
     })
 
     return Object.assign({}, x, ...changes)
@@ -683,42 +307,5 @@ function setTrue(...fields) {
   return x => ({
     ...Object.assign({}, ...fields.map(y => ({ [y]: true }))),
     ...x,
-  })
-}
-
-function notUndefined(x) { return x !== undefined }
-
-async function sequence(a, f) {
-  return a.reduce(
-    async (result, x) => {
-      const a = await result
-      a.push(await f(x))
-      return a
-    },
-    []
-  )
-}
-
-function wait(x) {
-  return new Promise(resolve => { setTimeout(resolve, x) })
-}
-
-function waitFor(f, { timeout }) {
-  return new Promise((resolve, reject) => {
-    const start = Date.now()
-    check()
-
-    function check() {
-      setTimeout(
-        async () => {
-          const result = await Promise.race([f(), wait(timeout)])
-          if (result) resolve()
-          else if (Date.now() - start > timeout) reject(TIMEOUT)
-          else check()
-        },
-        10
-      )
-    }
-
   })
 }
