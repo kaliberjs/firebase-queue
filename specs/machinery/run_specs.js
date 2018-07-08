@@ -30,7 +30,7 @@ async function runSpecs({ rootRef, report, specs }) {
 
 async function runSpec(rootRef, title, spec) {
   const {
-    numTasks,
+    numTasks = 1,
     createTask = index => ({ index }),
     queue: { tasksRef = rootRef.push().ref, count = 1, options = undefined } = {},
     expectedNumProcessed = numTasks,
@@ -41,18 +41,18 @@ async function runSpec(rootRef, title, spec) {
 
   const reportError = createReportError()
   const processTask = createProcessTask(process)
-  const data = createData(numTasks, createTask)
+  const tasks = createTasks(numTasks, createTask)
   const queues = createQueues(count, { tasksRef, processTask, reportError, options })
   try {
-    await createTasks(data, tasksRef)
+    await storeTasks(tasks, tasksRef)
     await processTask.waitFor(expectedNumProcessed)
     await queues.shutdown()
     const remaining = await fetchRemaining(tasksRef)
     const reportedErrorFailure = executeReportedErrorTests(reportError.reported, expectReportedErrors)
-    const testFailure = await executeTests(test, data, processTask.processed, remaining)
+    const testFailure = await executeTests(test, { tasks, processed: processTask.processed, remaining })
 
     const success = !reportedErrorFailure && !testFailure
-    const error = `${reportedErrorFailure}\n\n${testFailure}`
+    const error = [reportedErrorFailure, testFailure].filter(Boolean).join(`\n\n`)
     return { title, success, info: processTask.info, error }
   } catch (e) {
     const error = reportError.reported.join(`\n\n`) + (e === TIMEOUT ? `timed out` : `${e}\n${e.stack}`)
@@ -104,7 +104,7 @@ function createProcessTask(process) {
   return processTask
 }
 
-function createData(numTasks, createTask) {
+function createTasks(numTasks, createTask) {
   return [...Array(numTasks).keys()].map(createTask)
 }
 
@@ -113,16 +113,16 @@ function createQueues(count, config) {
   return { shutdown: async () => Promise.all(queues.map(x => x.shutdown())) }
 }
 
-async function createTasks(data, tasksRef) {
-  return Promise.all(data.map(x => tasksRef.push(x)))
+async function storeTasks(tasks, tasksRef) {
+  return Promise.all(tasks.map(x => tasksRef.push(x)))
 }
 
 async function fetchRemaining(tasksRef) {
   return Object.values((await tasksRef.once(`value`)).val() || {})
 }
 
-async function executeTests(test, data, processed, remaining) {
-  return ops.execute(await test(data, processed, remaining))
+async function executeTests(test, data) {
+  return ops.execute(await test(data))
 }
 
 function executeReportedErrorTests(reported, expectReportedErrors) {

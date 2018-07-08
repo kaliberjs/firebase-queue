@@ -1,301 +1,243 @@
-const { wait } = require('./machinery/promise_utils')
+const { wait, waitFor } = require('./machinery/promise_utils')
 
 module.exports = rootRef => [
   [`default options - process a task and remove it from the queue`, {
-    numTasks: 1,
-    test: (data, processed, remaining) => [
-      [processed, `equal`, data], `and`, [remaining, `equal`, []]
-    ]
+    test: test(processedAll, noRemaining)
   }],
 
   [`default options - processing multiple tasks expecting them to be handled by the same worker`, () => {
     const workers = []
-    const owners = []
-
     return {
       numTasks: 4,
-      process: async (x, { snapshot }) => {
+      process: async (_, { snapshot }) => {
         await wait(20) // simulate long running processes to give other workers a chance
-        const owner = snapshot.child(`_owner`).val()
-        const [queueId, workerIndex] = owner.split(`:`)
+        const [queueId, workerIndex] = snapshot.child(`_owner`).val().split(`:`)
         workers.push(queueId + workerIndex)
-        owners.push(owner)
       },
-      test: (data, processed, remaining) => [
-        [processed, `equal`, data],
-        `and`,
-        [remaining, `equal`, []],
-        `and`,
-        [workers, `equal`, Array(workers.length).fill(workers[0])],
-        `and`,
-        [owners, `noDuplicates`]
-      ]
+      test: test(processedAll, noRemaining, [workers, `sameValues`])
     }
   }],
 
-  [`default options - failed to process a task`, {
-    numTasks: 5,
-    process: ({ index }) => {
-      switch (index) {
-        case 0: throw new Error(`custom error`)
-        case 1: throw `custom error`
-        case 2: throw { toString: () => `custom error` }
-        case 3: throw null
-        case 4: throw undefined
-      }
-    },
-    test: (data, processed, remaining) => {
-      const normalizedRemaining = remaining.map((x, i) =>
-        setFieldPresence(i > 2 ? `_error_details` : [`_error_details`, [`error_stack`]], `_state_changed`)(x)
-      )
-      const normalizedData = data.map((x, i) =>
-        addFields({
-          _error_details: i > 2 ? false : { error: `custom error`, error_stack: i === 0 },
-          _progress: 0,
-          _state: `error`,
-          _state_changed: true,
-        })(x)
-      )
-      return [
-       [processed, `equal`, data], `and`, [normalizedRemaining, `equal`, normalizedData]
-      ]
+  [`default options - processing multiple tasks expecting them to have a different owner`, () => {
+    const owners = []
+    return {
+      numTasks: 4,
+      process: (_, { snapshot }) => { owners.push(snapshot.child(`_owner`).val()) },
+      test: test(processedAll, noRemaining, [owners, `noDuplicates`])
     }
   }],
 
-  [`multiple queues with multiple workers - processing the same set of tasks`, () => {
+  [`default options - failed to process a task - custom error`, {
+    process: _ => { throw new Error(`custom error`) },
+    test: test(processedAll, remainingErrors({
+      _error_details: { error: `custom error`, error_stack: true } }
+    ))
+  }],
+
+  [`default options - failed to process a task - string error`, {
+    process: _ => { throw `custom error` },
+    test: test(processedAll, remainingErrors({
+      _error_details: { error: `custom error`, error_stack: false }
+    }))
+  }],
+
+  [`default options - failed to process a task - object error`, {
+    process: _ => { throw { toString: () => `custom error` } },
+    test: test(processedAll, remainingErrors({
+      _error_details: { error: `custom error`, error_stack: false }
+    }))
+  }],
+
+  [`default options - failed to process a task - null error`, {
+    process: _ => { throw null },
+    test: test(processedAll, remainingErrors({ _error_details: false }))
+  }],
+
+  [`default options - failed to process a task - undefined error`, {
+    process: _ => { throw undefined },
+    test: test(processedAll, remainingErrors({ _error_details: false }))
+  }],
+
+  [`multiple queues with multiple workers - processing the same set of tasks, no intermediate states`, () => {
     const changes = [...Array(8).keys()].map(_ => [])
     const tasksRef = rootRef.push().ref
-    tasksRef.on('child_added', x => { changes[x.val().index].push(`add`) })
+    tasksRef.on('child_added',   x => { changes[x.val().index].push(`add`) })
     tasksRef.on('child_changed', x => { changes[x.val().index].push(`change`) })
     tasksRef.on('child_removed', x => { changes[x.val().index].push(`remove`) })
     return {
       numTasks: 8,
       queue: { tasksRef, count: 2, options: { numWorkers: 2 } },
-      test: async (data, processed, remaining) => {
+      test: test(processedAll, noRemaining, () => {
         tasksRef.off()
-        const expectedChanges = changes.map(_ => [`add`, `change`, `remove`])
-        return [
-          [processed, `equal`, data],
-          `and`,
-          [remaining, `equal`, []],
-          `and`,
-          [changes, `equal`, expectedChanges],
-        ]
-      }
+        return [changes, `equal`, Array(8).fill([`add`, `change`, `remove`])]
+      })
     }
   }],
 
   [`multiple queues with multiple workers - distribute the work`, () => {
-    const owners = []
-
+    const workers = []
     return {
       numTasks: 4,
       queue: { count: 2, options: { numWorkers: 2 } },
-      process: async (x, { snapshot }) => {
+      process: async (_, { snapshot }) => {
         await wait(20) // simulate long running processes to give other workers a chance
         const [queueId, workerIndex] = snapshot.child(`_owner`).val().split(`:`)
-        owners.push(queueId + workerIndex)
+        workers.push(queueId + workerIndex)
       },
-      test: (data, processed, remaining) => [
-        [processed, `equal`, data], `and`, [remaining, `equal`, []], `and`, [owners, `noDuplicates`]
-      ]
+      test: test(processedAll, noRemaining, [workers, `noDuplicates`])
     }
   }],
 
   [`spec with finished state - leave tasks in queue with correct state`, {
-    numTasks: 1,
     queue: { options: { spec: { finishedState: `finished` } } },
-    test: (data, processed, remaining) => {
-      const normalizedRemaining = remaining.map(removeField(`_state_changed`))
-      const normalizedData = data.map(x => ({ _progress: 100, _state: `finished`, ...x }))
-      return [
-        [processed, `equal`, data],
-        `and`,
-        [normalizedRemaining, `equal`, normalizedData]
-      ]
-    }
+    test: test(processedAll, ({ tasks, remaining }) => {
+      const normalizedRemaining = remaining.map(setFieldPresence(`_state_changed`))
+      const normalizedData = tasks.map(addFields({ _progress: 100, _state: `finished`, _state_changed: true }))
+      return [normalizedRemaining, `equal`, normalizedData]
+    })
   }],
 
-  [`processing - allow process function to access queue properties`, () => {
-    const tasks = []
-
+  [`complex processing - allow process function to access queue properties`, () => {
+    const snapshots = []
     return {
-      numTasks: 1,
-      process: (_, { snapshot }) => { tasks.push(snapshot.val()) },
-      test: (data, processed, remaining) => {
-        const normalizedTasks = tasks.map(
-          setFieldPresence(`_state`, `_state_changed`, `_progress`, `_owner`)
-        )
-        const normalizedData = data.map(
-          setTrue(`_owner`, `_progress`, `_state`, `_state_changed`)
-        )
-        return [
-          [normalizedTasks, `equal`, normalizedData], `and`, [remaining, `equal`, []]
-        ]
-      }
+      process: (_, { snapshot }) => { snapshots.push(snapshot.val()) },
+      test: test(processedAll, noRemaining,
+        [snapshots, `haveFields`, [`index`, `_state`, `_state_changed`, `_progress`, `_owner`]]
+      )
     }
   }],
 
-  [`complex processing - setProgress, access reference and replace task`, {
-    numTasks: 1,
-    process: async (x, { snapshot, setProgress }) => {
-      await setProgress(88)
-      const { _progress } = (await snapshot.ref.once(`value`)).val()
-      return { progress: _progress, _state: `do not process again` }
-    },
-    test: (data, processed, remaining) => {
-      const dataWithProgressAndState = data.map(x => ({ _state: `do not process again`, progress: 88 }))
-      return [
-        [processed, `equal`, data],
-        `and`,
-        [remaining, `equal`, dataWithProgressAndState]
-      ]
-    }
-  }],
-
-  [`complex processing - setProgress after task was removed`, {
-    numTasks: 1,
-    process: async (x, { snapshot, setProgress }) => {
-      const owner = snapshot.child('_owner')
-      await owner.ref.set(null)
-      try {
+  [`complex processing - setProgress`, () => {
+    const progresses = []
+    return {
+      process: async (_, { snapshot, setProgress }) => {
         await setProgress(88)
-      } finally {
-        await owner.ref.set(owner.val())
-      }
-      /* istanbul ignore next */
-      return { _error_details: { failure: 'expected setProgress to throw an error' } }
-    },
-    test: (data, processed, remaining) => {
-      const normalizedRemaining = remaining.map(
-        setFieldPresence([`_error_details`, [`error`, `error_stack`]], `_state_changed`)
-      )
-      const normalizedData = data.map(
-        addFields({
-          _error_details: { error: true, error_stack: true },
-          _progress: 0,
-          _state: `error`,
-          _state_changed: true,
-        })
-      )
-      return [
-        [processed, `equal`, data],
-        `and`,
-        [normalizedRemaining, `equal`, normalizedData]
-      ]
+        progresses.push((await snapshot.ref.child(`_progress`).once(`value`)).val())
+      },
+      test: test(processedAll, noRemaining, [progresses, `equal`, [88]])
     }
   }],
 
-  [`weird stuff - changes in the matrix #1 (changing the owner)`, {
+  [`complex processing - replace task`, {
+    process: _ => ({ _state: `do not process again` }),
+    test: test(processedAll, ({ remaining }) =>
+      [remaining, `equal`, [{ _state: `do not process again` }]]
+    )
+  }],
+
+  [`weird stuff - setProgress when the state or owner is changed`, () => {
+    const errors = []
+    const targetProps = [`_state`, `_owner`]
+    return {
+      numTasks: 2,
+      process: async ({ index }, { snapshot, setProgress }) => {
+        const target = snapshot.child(targetProps[index])
+        await target.ref.set(`this got changed`)
+        try { await setProgress(88) }
+        catch (e) { errors.push(e) }
+        await target.ref.set(target.val())
+      },
+      test: test(processedAll, noRemaining, () => [errors.length, `equal`, 2])
+    }
+  }],
+
+  [`weird stuff - resolving and rejecting when owner is changed`, {
     numTasks: 2,
     process: async ({ index }, { snapshot }) => {
-      await snapshot.ref.child(`_owner`).set('the owner got changed')
+      await snapshot.ref.child(`_owner`).set(`this got changed`)
       if (index) throw new Error('oops')
     },
-    test: (data, processed, remaining) => {
+    test: test(processedAll, ({ tasks, remaining }) => {
       const normalizedRemaining = remaining.map(setFieldPresence(`_state_changed`))
-      const normalizedData = data.map(addFields({
-        _owner: `the owner got changed`,
+      const normalizedData = tasks.map(addFields({
+        _owner: `this got changed`,
         _progress: 0,
         _state: `in_progress`,
         _state_changed: true,
       }))
-      return [
-        [processed, `equal`, data],
-        `and`,
-        [normalizedRemaining, `equal`, normalizedData]
-      ]
-    },
-    expectReportedErrors: ([e1, e2]) =>
-      !(e1 && e1.message.includes(`resolve`) && e2 && e2.message.includes(`reject`)) &&
-      /* istanbul ignore next */`Expected problems with resolving and rejecting to be reported`,
+      return [normalizedRemaining, `equal`, normalizedData]
+    }),
+    expectReportedErrors: expectResolveAndRejectErrors,
   }],
 
-  [`weird stuff - changes in the matrix #2 (changing the state)`, {
+  [`weird stuff - resolving and rejecting when state is changed`, {
     numTasks: 2,
     process: async ({ index }, { snapshot }) => {
-      await snapshot.ref.child(`_state`).set('the state got changed')
+      await snapshot.ref.child(`_state`).set(`this got changed`)
       if (index) throw new Error('oops')
     },
-    test: (data, processed, remaining) => {
+    test: test(processedAll, ({ tasks, remaining }) => {
       const normalizedRemaining = remaining.map(setFieldPresence(`_owner`, `_state_changed`))
-      const normalizedData = data.map(addFields({
+      const normalizedData = tasks.map(addFields({
         _owner: true,
         _progress: 0,
-        _state: `the state got changed`,
+        _state: `this got changed`,
         _state_changed: true,
       }))
-      return [
-        [processed, `equal`, data],
-        `and`,
-        [normalizedRemaining, `equal`, normalizedData]
-      ]
-    },
-    expectReportedErrors: ([e1, e2]) =>
-      !(e1 && e1.message.includes(`resolve`) && e2 && e2.message.includes(`reject`)) &&
-      /* istanbul ignore next */`Expected problems with resolving and rejecting to be reported`,
+      return [normalizedRemaining, `equal`, normalizedData]
+    }),
+    expectReportedErrors: expectResolveAndRejectErrors,
   }],
 
-  [`custom spec - custom 'inProgressState', 'startState', 'finishedState' and 'errorState'`, () => {
+  [`custom spec - custom 'errorState'`, {
+    queue: { options: { spec: { errorState: `i have failed` } } },
+    process: async _ => { throw new Error(`custom error`) },
+    test: test(processedAll, ({ tasks, remaining }) => {
+      const normalizedRemaining = remaining.map(setFieldPresence(`_error_details`, `_state_changed`))
+      const normalizedData = tasks.map(addFields({
+        _state: `i have failed`,
+        _progress: 0,
+        _state_changed: true,
+        _error_details: true,
+      }))
+
+      return [normalizedRemaining, `equal`, normalizedData]
+    })
+  }],
+
+  [`custom spec - custom 'finishedState'`, {
+    queue: { options: { spec: { finishedState: `i am finished` } } },
+    test: test(processedAll, ({ tasks, processed, remaining }) => {
+      const normalizedRemaining = remaining.map(setFieldPresence(`_state_changed`))
+      const normalizedData = tasks.map(addFields({
+        _state: `i am finished`,
+        _progress: 100,
+        _state_changed: true,
+      }))
+      return [normalizedRemaining, `equal`, normalizedData]
+    })
+  }],
+
+  [`custom spec - custom 'startState'`, {
+    numTasks: 2,
+    createTask: index => index ? { index } : { index, _state: `i should start` },
+    queue: { options: { spec: { startState: `i should start` } } },
+    expectedNumProcessed: 1,
+    test: ({ tasks, processed, remaining }) => [
+      [processed.slice(1), `equal`, []], `and`, [remaining, `equal`, tasks.slice(1)],
+      `and`,
+      [processed.slice(0, 1).map(addFields({ _state: `i should start` })), `equal`, tasks.slice(0, 1)]
+    ]
+  }],
+
+  [`custom spec - custom 'inProgressState'`, () => {
     const inProgressStates = []
-
     return {
-      numTasks: 3,
-      createTask: index => ({ index, _state: index < 2 ? `i should start` : null }),
-      queue: { options: {
-        spec: {
-          startState: `i should start`,
-          inProgressState: `i am in progress`,
-          finishedState: `i am finished`,
-          errorState: `i have failed`,
-        }
-      }},
-      expectedNumProcessed: 2,
-      process: async ({ index }, { snapshot, setProgress }) => {
-        inProgressStates.push(snapshot.child(`_state`).val())
-        await setProgress(50)
-        if (index === 1) throw new Error(`custom error`)
-      },
-      test: (data, processed, remaining) => {
-        const normalizedRemaining = remaining.map(setFieldPresence(`_error_details`, `_state_changed`))
-        const normalizedData = data.map(x => ({
-          ...x,
-          _state: (x.index === 0 && `i am finished`) ||
-                  (x.index === 1 && `i have failed`) ||
-                  (x.index === 2 && undefined),
-          _progress: (x.index === 0 && 100) ||
-                     (x.index === 1 && 50) ||
-                     (x.index === 2 && undefined),
-          _state_changed: x.index < 2,
-          _error_details: x.index === 1,
-        }))
-
-        return [
-          [processed.filter(Boolean).map(addFields({ _state: `i should start` })), `equal`, data.slice(0, 2)],
-          `and`,
-          [normalizedRemaining, `equal`, normalizedData],
-          `and`,
-          [[...new Set(inProgressStates)], `equal`, [`i am in progress`]]
-        ]
-      }
+      queue: { options: { spec: { inProgressState: `i am in progress` } } },
+      process: async (_, { snapshot }) => { inProgressStates.push(snapshot.child(`_state`).val()) },
+      test: test(processedAll, noRemaining, [inProgressStates, `equal`, [`i am in progress`]])
     }
   }],
 ]
 
-function addFields(o) {
-  return x => ({ ...o, ...x })
-}
-
-function removeField(field) {
-  return ({ [field]: removed, ...x }) => x
-}
-
+function addFields(o) { return x => ({ ...o, ...x }) }
 function setFieldPresence(...fields) {
   return x => {
     const changes = fields.map(y => {
       if (Array.isArray(y)) {
         const [key, rest] = y
-        return { [key]: setFieldPresence(...rest)(x[key]) }
+        const value = x[key]
+        return { [key]: value !== undefined && setFieldPresence(...rest)(value) }
       } else return { [y]: x[y] !== undefined }
     })
 
@@ -303,9 +245,36 @@ function setFieldPresence(...fields) {
   }
 }
 
-function setTrue(...fields) {
-  return x => ({
-    ...Object.assign({}, ...fields.map(y => ({ [y]: true }))),
-    ...x,
-  })
+function test(check, ...checks) {
+  return data => {
+    const result = checks.reduce(
+      (result, check) => [...result, `and`, asTest(check)],
+      [asTest(check)]
+    )
+    return result
+
+    function asTest(x) { return typeof x === 'function' ? x(data) : x }
+  }
+}
+function processedAll({ tasks, processed }) { return [processed, `equal`, tasks] }
+function noRemaining({ remaining }) { return [remaining, `equal`, []] }
+function remainingErrors({ _error_details }) {
+  const fieldPresence = setFieldPresence([`_error_details`, [`error_stack`]], `_state_changed`)
+
+  return ({ tasks, remaining }) => {
+    const normalizedRemaining = remaining.map(fieldPresence)
+    const normalizedData = tasks.map(addFields({
+      _error_details,
+      _progress: 0,
+      _state: `error`,
+      _state_changed: true,
+    }))
+    return [normalizedRemaining, `equal`, normalizedData]
+  }
+}
+
+function expectResolveAndRejectErrors([e1, e2]) {
+  const expectedErrors = e1 && e1.message.includes(`resolve`) && e2 && e2.message.includes(`reject`)
+  return !expectedErrors &&
+    /* istanbul ignore next */`Expected problems with resolving and rejecting to be reported`
 }

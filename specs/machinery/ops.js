@@ -24,6 +24,17 @@ const ops = {
   ),
   noDuplicates: a => new Set(a).size !== a.length &&
     `Expected no duplicates in ${JSON.stringify(a, null, 2)}`,
+  sameValues: a => new Set(a).size !== 1 &&
+    `Expected all values to be the same ${JSON.stringify(a, null, 2)}`,
+  haveFields: (a, fields) =>
+    a.reduce(
+      (result, x) => {
+        const error = execute([Object.keys(x).sort(), `equal`, fields.sort()]) &&
+          `Expected (only) the fields ${fields.join(`, `)} to be present in\n${JSON.stringify(x, null, 2)}`
+        return [...result, error]
+      },
+      []
+    ).filter(Boolean).join(`\n\n`)
 }
 
 function execute([a, op, ...b]) {

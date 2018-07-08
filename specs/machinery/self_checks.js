@@ -6,49 +6,66 @@ const runUnitTests = require('./run_unit_tests')
 
 module.exports = async function performSelfCheck({ rootRef }) {
   const selfCheckSpecs = [
-    [`specs ops 'equal' - report failure when not equal`, () => ({
-      numTasks: 1,
+    [`specs ops 'equal' - report failure when not equal`, {
       test: _ => [0, `equal`, 1]
-    })],
-    [`specs ops 'equal' - report failure when not equal`, () => ({
-      numTasks: 1,
+    }],
+    [`specs ops 'equal' - report failure when not equal`, {
       test: _ => [{ index: 1 }, `equal`, { index: 2 }]
-    })],
-    [`specs ops 'and' - report failure when first fails`, () => ({
-      numTasks: 1,
+    }],
+    [`specs ops 'and' - report failure when first fails`, {
       test: _ => [[0, `equal`, 1], `and`, []]
-    })],
-    [`specs ops 'non existing op' - report failure when an op does not exist`, () => ({
-      numTasks: 1,
+    }],
+    [`specs ops 'and' - report failure when second fails`, {
+      test: _ => [[0, `equal`, 0], `and`, [0, `equal`, 1]]
+    }],
+    [`specs ops 'non existing op' - report failure when an op does not exist`, {
       test: _ => [0, `non existing op`]
-    })],
-    [`specs ops 'noDuplicates' - report failure when there are duplicates`, () => ({
-      numTasks: 1,
+    }],
+    [`specs ops 'noDuplicates' - report failure when there are duplicates`, {
       test: _ => [[0, 0], `noDuplicates`]
-    })],
-    [`specs - report timeout for long processes`, () => ({
-      numTasks: 1,
+    }],
+    [`specs ops 'sameValue' - report failure when not all given values are the same`, {
+      test: _ => [[0, 1], `sameValues`]
+    }],
+    [`specs ops 'haveFields' - report failure when not all fields are present`, {
+      test: _ => [[{ a: 0 }, { b: 0 }], `haveFields`, [`a`, `b`]]
+    }],
+    [`specs - report timeout for long processes`, {
       process: async _ => { await wait(550) },
-    })],
-    [`specs - report errors if they occur in test`, () => ({
-      numTasks: 1,
+    }],
+    [`specs - report errors if they occur in test`, {
       test: _ => { throw new Error(`custom error`) }
-    })],
-    [`specs - report errors if they are reported`, () => ({
-      numTasks: 1,
+    }],
+    [`specs - report errors if they are reported`, {
       process: async (_, { snapshot }) => {
         await snapshot.ref.child(`_state`).set('the state got changed')
       },
       test: () => [0, `equal`, 0],
-    })],
-    [`specs - report errors if they were expected`, () => ({
-      numTasks: 1,
+    }],
+    [`specs - report errors if they are reported and caught`, {
+      process: async (_, { snapshot }) => {
+        await snapshot.ref.child(`_state`).set('the state got changed')
+      },
+      test: () => [0, `equal`, 0],
+      expectReportedErrors: x => x.length === 1,
+    }],
+    [`specs - report errors if they were expected`, {
       test: () => [0, `equal`, 0],
       expectReportedErrors: true,
-    })],
-    [`specs - report errors if timed out`, () => ({
-      numTasks: 1,
+    }],
+    [`specs - report errors if timed out`, {
       test: async () => { await wait(1050) }
+    }],
+    [`specs - report processed if errors in sync process method`, {
+      process: _ => { throw new Error(`custom error`) },
+      test: async ({ processed }) => processed.length === 1
+    }],
+    [`specs - report processed if errors in async process method`, {
+      process: async _ => { throw new Error(`custom error`) },
+      test: async ({ processed }) => processed.length === 1
+    }],
+    [`specs - report errors if spec is defined as function`, () => ({
+      test: () => true
     })],
   ]
 

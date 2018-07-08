@@ -6,7 +6,7 @@ const { expectError } = require('./machinery/test_utils')
 
 module.exports = rootRef => {
   const tasksRef = rootRef.push().ref
-  /* istanbul ignore next */ function dontCallMe(...args) {
+  /* istanbul ignore next */function dontCallMe(...args) {
     throw new Error(`unexpected call of function with arguments:\b${JSON.stringify(args, null, 2)}`)
   }
   const validConfig = { tasksRef, processTask: dontCallMe, reportError: dontCallMe }
