@@ -1,5 +1,5 @@
 const Queue = require(`../src/queue`)
-const TransactionHelper = require(`../src/lib/transaction_helper`)
+const TransactionHelper = require(`../src/transaction_helper`)
 
 const { waitFor, TIMEOUT } = require('./machinery/promise_utils')
 const { expectError } = require('./machinery/test_utils')

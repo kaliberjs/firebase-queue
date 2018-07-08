@@ -1,6 +1,6 @@
 {
   "name": "firebase-queue",
-  "version": "1.6.1",
+  "version": "2.0.0-rc.1",
   "description": "A fault-tolerant, multi-worker, multi-stage job pipeline built on Firebase",
   "keywords": [
     "job",
@@ -13,46 +13,26 @@
   ],
   "license": "MIT",
   "author": {
-    "name": "Firebase",
-    "email": "firebase-support@google.com",
-    "url": "https://firebase.google.com/"
+    "name": "EECOLOR",
+    "email": "eecolor@gmail.com"
   },
-  "homepage": "https://github.com/firebase/firebase-queue",
-  "repository": "https://github.com/firebase/firebase-queue.git",
-  "main": "dist/queue.js",
+  "homepage": "https://github.com/eecolor/firebase-queue",
+  "repository": "https://github.com/eecolor/firebase-queue.git",
+  "main": "src/queue.js",
   "files": [
-    "dist/lib/**",
-    "dist/queue.js",
+    "src/**",
     "LICENSE",
     "README.md",
     "package.json"
   ],
-  "dependencies": {
-    "firebase": "^5.1.0",
-    "firebase-server": "^0.9.1",
-    "lodash": "^4.6.1",
-    "mocha": "^3.2.0",
-    "nyc": "^12.0.2",
-    "uuid": "^3.0.0"
-  },
   "devDependencies": {
-    "chai": "^3.5.0",
-    "chai-as-promised": "^6.0.0",
     "coveralls": "^2.11.8",
-    "firebase-admin": "^4.1.0",
-    "gulp": "^3.9.1",
-    "gulp-eslint": "^3.0.1",
-    "gulp-exit": "^0.0.2",
-    "gulp-istanbul": "^1.1.1",
-    "gulp-mocha": "^3.0.1",
-    "sinon": "^1.17.7",
-    "sinon-chai": "^2.8.0"
+    "firebase": "^5.2.0",
+    "firebase-server": "^0.9.1",
+    "nyc": "^12.0.2"
   },
   "scripts": {
-    "specs": "nyc node specs/",
-    "test": "gulp test",
-    "test-local": "NODE_ENV=local gulp test",
-    "travis": "gulp",
+    "test": "nyc node tests/",
     "start": "firebase-server"
   }
 }

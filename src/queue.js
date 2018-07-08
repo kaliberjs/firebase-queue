@@ -1,6 +1,6 @@
 'use strict'
 
-const QueueWorker = require('./lib/queue_worker.js')
+const QueueWorker = require('./queue_worker.js')
 
 module.exports = Queue
 
