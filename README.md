@@ -190,6 +190,60 @@ As for testing, I replaced `istanbul` with `nyc` because it is so much easier to
 testing frameworks because they only added unneeded complexity. I also threw out Gulp, I don't see
 any reason to use it.
 
+## No more dynamic worker count
+
+The original library had functions that allowed users of the queue to change the amount of workers
+at runtime. In practice we never needed to do that. Providing a similar behavior is quite easy to
+achieve by either creating extra queue instances or recreating the queue with `numWorkers` set to
+another value.
+
+It really depends on your use case which is most appropriate in your situation.
+
+In the situation that you need to continue processing at all costs, just add / remove queues to
+change the amount of active workers. Note that a queue is a very lightweight object, so creating
+more than one is no problem.
+
+```js
+const queues = [createQueue()]
+
+function createQueue() {
+  return new Queue({ ... })
+}
+
+function scaleUp() {
+  queues.push(createQueue())
+}
+async function scaleDown() {
+  if (queues.length > 1) {
+    const queue = queues.pop()
+    await queue.shutdown()
+  }
+}
+```
+
+Another solution is to just shutdown the current queue and restart it with a different amount of
+workers.
+
+```js
+let numWorkers = 1
+let queue = createQueue(numWorkers)
+
+function createQueue(numWorkers) {
+  return new Queue({ ..., options: { numWorkers } })
+}
+
+async function scaleUp() {
+  await queue.shutdown()
+  numWorkers += 1
+  queue = createQueue(numWorkers)
+}
+async function scaleDown() {
+  await queue.shutdown()
+  numWorkers = Math.max(1, numWorkers - 1)
+  queue = createQueue(numWorkers)
+}
+```
+
 ## Motivation
 
 ### Future
