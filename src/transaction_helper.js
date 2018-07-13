@@ -39,15 +39,17 @@ function TransactionHelper({ processId, spec, taskNumber = 0 }) {
       if (task === null) return null
 
       if (isProcessing(task)) {
-        if (newTask) return newTask
-        else if (finishedState) {
-          task._state = finishedState
-          task._state_changed = SERVER_TIMESTAMP
-          task._owner = null
-          task._progress = 100
-          task._error_details = null
-          return task
+        if (finishedState) {
+          return {
+            ...(newTask || task),
+            _state: finishedState,
+            _state_changed: SERVER_TIMESTAMP,
+            _owner: null,
+            _progress: 100,
+            _error_details: null,
+          }
         }
+        else if (newTask) return newTask
         else return null // remove
       }
     }

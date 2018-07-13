@@ -197,7 +197,7 @@ module.exports = rootRef => [
 
   [`custom spec - custom 'finishedState'`, {
     queue: { options: { spec: { finishedState: `i am finished` } } },
-    test: test(processedAll, ({ tasks, processed, remaining }) => {
+    test: test(processedAll, ({ tasks, remaining }) => {
       const normalizedRemaining = remaining.map(setFieldPresence(`_state_changed`))
       const normalizedData = tasks.map(addFields({
         _state: `i am finished`,
@@ -205,6 +205,21 @@ module.exports = rootRef => [
         _state_changed: true,
       }))
       return [normalizedRemaining, `equal`, normalizedData]
+    })
+  }],
+
+  [`custom spec - custom 'finishedState' set when returning data without a '_state'`, {
+    queue: { options: { spec: { finishedState: `i am finished` } } },
+    process: x => ({ key: 'value' }),
+    test: test(processedAll, ({ remaining }) => {
+      const normalizedRemaining = remaining.map(setFieldPresence(`_state_changed`))
+      const expectedRemaining = [{
+         key: 'value',
+        _state: `i am finished`,
+        _progress: 100,
+        _state_changed: true,
+      }]
+      return [normalizedRemaining, `equal`, expectedRemaining]
     })
   }],
 
@@ -217,6 +232,18 @@ module.exports = rootRef => [
       [processed.slice(1), `equal`, []], `and`, [remaining, `equal`, tasks.slice(1)],
       `and`,
       [processed.slice(0, 1).map(addFields({ _state: `i should start` })), `equal`, tasks.slice(0, 1)]
+    ]
+  }],
+
+  [`custom spec - custom 'startState' and replacing the task`, {
+    numTasks: 1,
+    createTask: index => ({ index, _state: `i should start` }),
+    queue: { options: { spec: { startState: `i should start` } } },
+    process: x => x,
+    test: ({ tasks, processed, remaining }) => [
+      [remaining, `equal`, tasks.map(({ _state, ...x }) => x)],
+      `and`,
+      [processed, `equal`, remaining]
     ]
   }],
 
