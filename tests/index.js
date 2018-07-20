@@ -1,28 +1,37 @@
 const firebase = require(`firebase`)
 const selfChecks = require('./machinery/self_checks')
 const runUnitTests = require('./machinery/run_unit_tests')
-const runSpecs = require('./machinery/run_specs')
-const unitTests = require('./unit_tests')
-const specs = require('./specs')
-const { report, logSuccess, logFailure } = require('./machinery/report_utils')
+const { runSpecs, checkExecutionResults } = require('./machinery/run_specs')
+const createUnitTests = require('./unit_tests')
+const createSpecs = require('./specs')
+const { report } = require('./machinery/report_utils')
+
+const timeout = 500
 
 const app = firebase.initializeApp({
   // apiKey: `api key not needed`,
   databaseURL: `ws://localhost:5000`,
 })
+
 const db = app.database()
 const rootRef = db.ref()
 
 db.goOnline()
-selfChecks({ rootRef })
-  .then(success => {
-    /* istanbul ignore else */
-    if (success) logSuccess(console, 'Self checks')
-    else logFailure(console, 'Self checks', 'failed')
+selfChecks({ rootRef, timeout })
+  .then(async selfCheckSuccess => {
+    const tests = createUnitTests({ rootRef, timeout })
+    const { success } = await runUnitTests({ report: report(console), tests, timeout })
 
-    return success && runUnitTests({ report: report(console), tests: unitTests(rootRef) })
+    return selfCheckSuccess && success
   })
-  .then(success => success && runSpecs({ rootRef, report: report(console), specs: specs(rootRef) }))
+  .then(async unitSuccess => {
+
+    const specs = createSpecs({ rootRef, timeout })
+    const { success: specSuccess, results } = await runSpecs({ rootRef, report: report(console), specs, timeout })
+    const { success: executionSuccess } = checkExecutionResults({ results, report: report(console) })
+
+    return unitSuccess && specSuccess && executionSuccess
+  })
   .then(success => {
     /* istanbul ignore if */
     if (!success) process.exitCode = 1

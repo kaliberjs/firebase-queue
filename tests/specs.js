@@ -1,6 +1,6 @@
 const { wait, waitFor } = require('./machinery/promise_utils')
 
-module.exports = rootRef => [
+module.exports = ({ rootRef, timeout }) => [
   [`default options - process a task and remove it from the queue`, {
     test: test(processedAll, noRemaining)
   }],
@@ -10,7 +10,7 @@ module.exports = rootRef => [
     return {
       numTasks: 4,
       process: async (_, { snapshot }) => {
-        await wait(20) // simulate long running processes to give other workers a chance
+        await wait(timeout * 0.1) // simulate long running processes to give other workers a chance
         const [queueId, workerIndex] = snapshot.child(`_owner`).val().split(`:`)
         workers.push(queueId + workerIndex)
       },
@@ -80,7 +80,7 @@ module.exports = rootRef => [
       numTasks: 4,
       queue: { count: 2, options: { numWorkers: 2 } },
       process: async (_, { snapshot }) => {
-        await wait(20) // simulate long running processes to give other workers a chance
+        await wait(timeout * 0.1) // simulate long running processes to give other workers a chance
         const [queueId, workerIndex] = snapshot.child(`_owner`).val().split(`:`)
         workers.push(queueId + workerIndex)
       },

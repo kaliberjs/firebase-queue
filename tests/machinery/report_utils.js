@@ -5,7 +5,7 @@ module.exports = {
 }
 
 function report(console){
-  return ({ title, success, error }) => {
+  return ({ title, result: { success, error } }) => {
     if (success) logSuccess(console, title)
     else logFailure(console, title, error)
   }

@@ -4,7 +4,7 @@ const TransactionHelper = require(`../src/transaction_helper`)
 const { waitFor, TIMEOUT } = require('./machinery/promise_utils')
 const { expectError } = require('./machinery/test_utils')
 
-module.exports = rootRef => {
+module.exports = ({ rootRef, timeout }) => {
   const tasksRef = rootRef.push().ref
   /* istanbul ignore next */function dontCallMe(...args) {
     throw new Error(`unexpected call of function with arguments:\b${JSON.stringify(args, null, 2)}`)
@@ -88,11 +88,13 @@ module.exports = rootRef => {
       await queue.shutdown()
       await tasksRef.push({ index: 0 })
       try {
-        await waitFor(() => processed.length === 1, { timeout: 500 })
+        await waitFor(() => processed.length === 1, { timeout })
         /* istanbul ignore next */ return `Expected timeout because no tasks should be processed`
       } catch (e) {
         /* istanbul ignore if */
         if (e !== TIMEOUT) throw e
+      } finally {
+        await tasksRef.remove()
       }
 
       /* istanbul ignore next */ function processTask(x) { processed.push(x) }
