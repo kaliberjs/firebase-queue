@@ -18,19 +18,19 @@ const rootRef = db.ref()
 
 db.goOnline()
 selfChecks({ rootRef, timeout })
-  .then(async selfCheckSuccess => {
+  .then(async previousSuccess => {
     const tests = createUnitTests({ rootRef, timeout })
     const { success } = await runUnitTests({ report: report(console), tests, timeout })
 
-    return selfCheckSuccess && success
+    return previousSuccess && success
   })
-  .then(async unitSuccess => {
+  .then(async previousSuccess => {
 
     const specs = createSpecs({ rootRef, timeout })
     const { success: specSuccess, results } = await runSpecs({ rootRef, report: report(console), specs, timeout })
     const { success: executionSuccess } = checkExecutionResults({ results, report: report(console) })
 
-    return unitSuccess && specSuccess && executionSuccess
+    return previousSuccess && specSuccess && executionSuccess
   })
   .then(success => {
     /* istanbul ignore if */
