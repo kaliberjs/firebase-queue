@@ -1,0 +1,15 @@
+{
+  "check-coverage": true,
+  "lines": 100,
+  "per-file": false,
+  "statements": 100,
+  "functions": 100,
+  "branches": 100,
+  "reporter": ["html", "text", "lcov"],
+  "watermarks": {
+    "lines": [90, 100],
+    "functions": [90, 100],
+    "branches": [90, 100],
+    "statements": [90, 100]
+  }
+}

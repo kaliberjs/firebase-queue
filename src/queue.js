@@ -1,61 +1,98 @@
 'use strict'
 
-const DefaultQueueWorker = require('./lib/queue_worker.js')
+const QueueWorker = require('./queue_worker.js')
 
-module.exports = function Queue({
+module.exports = Queue
+
+function Queue({
   tasksRef,
-  processingFunction,
+  processTask,
+  reportError,
   options: {
-    spec = {
-      inProgressState: 'in_progress',
-      timeout: 300000 // 5 minutes
-    },
-    numWorkers = 1,
-    sanitize = true,
-    suppressStack = false,
-    QueueWorker = DefaultQueueWorker
+    spec: {
+      startState = null,
+      inProgressState = 'in_progress',
+      finishedState = null,
+      errorState = 'error'
+    } = {},
+    numWorkers = 1
   } = {}
 }) {
+  if (!(this instanceof Queue)) throw new Error('You forgot the `new` keyword: `new Queue(...)`')
 
-  if (typeof processingFunction !== 'function')
-    throwError('No processing function provided.')
+  const spec = { startState, inProgressState, finishedState, errorState }
+  check(tasksRef, isFirebaseRef,
+    'tasksRef must be a Firebase reference')
 
-  if (typeof numWorkers !== 'number' || numWorkers <= 0 || numWorkers % 1 !== 0)
-    throwError('options.numWorkers must be a positive integer.')
+  check(processTask, isFunction,
+    'processTask must be a function')
 
-  if (Boolean(sanitize) !== sanitize)
-    throwError('options.sanitize must be a boolean.')
-      
-  if (Boolean(suppressStack) !== suppressStack)
-    throwError('options.suppressStack must be a boolean.')
+  check(reportError, isFunction,
+    'reportError must be a function')
 
-  const workers = createWorkers()
-  
+  check(inProgressState, isString,
+    'options.spec.inProgressState must be a string')
+
+  check(startState, isNull, [isString, not(inProgressState)],
+    'options.spec.startState must be null or a string that !== inProgressState')
+
+  check(finishedState, isNull, [isString, not(inProgressState), not(startState)],
+    'options.spec.finishedState must be null or a string that !== inProgressState and !== startState')
+
+  check(errorState, [isString, not(inProgressState), not(startState), not(finishedState)],
+    'options.spec.errorState must be a string that !== inProgressState and !== startState and !== finishedState')
+
+  check(numWorkers, isPositiveInteger,
+    'options.numWorkers must be a positive integer')
+
+  const queueId = tasksRef.push().key
+  let shutdownStarted = null
+  let removeWorkers  = createWorkers()
+
   this.shutdown = shutdown
 
+  async function shutdown() {
+    if (shutdownStarted) return shutdownStarted
+    shutdownStarted = removeWorkers()
+    removeWorkers = null // make sure no references to workers are being kept and allow garbage collection
+    return shutdownStarted
+  }
+
   function createWorkers() {
-    return Array(numWorkers).fill().map((_, i) => createWorker(spec, i))
+    const workers = [...Array(numWorkers).keys()].map(createWorker)
+
+    return async () => {
+      await Promise.all(workers.map(worker => worker.shutdown()))
+    }
+
+    function createWorker(index) {
+      return new QueueWorker({
+        processId: `${queueId}:${index}`,
+        tasksRef,
+        spec,
+        processTask,
+        reportError
+      })
+    }
   }
 
-  function createWorker(spec, id) {
-    const processIdBase = '' + id
-    const worker = new QueueWorker({
-      tasksRef,
-      processIdBase,
-      spec,
-      sanitize,
-      suppressStack,
-      processingFunction
-    })
-    return worker
-  }
+  function isFunction(x) { return typeof x === 'function' }
+  function isFirebaseRef(x) { return x && [x.on, x.off, x.transaction, x.orderByChild, x.push].every(isFunction) }
+  function isString(x) { return typeof x === 'string' }
+  function isNull(x) { return x === null }
+  function not(y) { return x => x !== y }
+  function isPositiveInteger(x) { return typeof x === 'number' && x >= 1 && x % 1 === 0 }
 
-  function shutdown() {
-    const removedWorkers = workers.slice()
-    workers.splice(0)
-    return Promise.all(removedWorkers.map(worker => worker.shutdown()))
+  function check(val, ...rest) {
+    const message = rest[rest.length - 1]
+    const or = rest.slice(0, rest.length -1)
+    const valid = or.reduce(
+      (result, and) => result || [].concat(and).reduce(
+        (result, isValid) => result && isValid(val),
+        true
+      ),
+      false
+    )
+    if (!valid) throw new Error(message)
   }
-
-  // allows us to use throw both as statement and expression
-  function throwError(message) { throw new Error(message) }
 }

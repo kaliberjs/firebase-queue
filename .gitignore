@@ -10,3 +10,5 @@ test/key.json
 test/url.js
 
 npm-debug.log
+
+.nyc_output/

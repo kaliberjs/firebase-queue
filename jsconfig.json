@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "target": "es2018",
+    "moduleResolution": "node",
+    "lib": [
+      "es2018"
+    ]
+  },
+  "include": [
+    "*"
+  ]
+}
