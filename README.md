@@ -13,12 +13,47 @@ yarn add @kaliber/firebase-queue
 
 ## Table of Contents
 
+ * [Usage](#usage)
  * [Documentation](#documentation)
  * [Contributing](#contributing)
  * [Thanks](#thanks)
  * [Differences](#differences)
  * [Motivation](#motivation)
 
+## Usage
+
+Basic usage example
+
+```js
+const firebase = require('firebase-admin')
+const Queue = require('@kaliber/firebase-queue')
+
+const app = firebase.initializeApp(..., 'my-queue')
+const tasksRef = app.database().ref('tasks')
+
+// the queue starts processing as soon as you create an instance
+const queue = new Queue({ tasksRef, processTask, reportError })
+
+// capture shutdown signal to perform a gracefull shutdown
+process.on('SIGINT', async () => {
+  await queue.shutdown()
+  process.exit(0)
+})
+
+async function processTask(task) {
+  try {
+    // do the work and optionally return a new task
+  } catch (e) {
+    reportError(e)
+    throw e // this marks the task as failed
+  }
+}
+
+function reportError(e) {
+  console.error(e)
+  // also report the error to your error tracker (Rollbar, Sentry, RayGun, ...)
+}
+```
 
 ## Documentation
 
