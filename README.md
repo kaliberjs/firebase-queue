@@ -1,4 +1,5 @@
-[![Coverage Status](https://coveralls.io/repos/github/kaliberjs/firebase-queue/badge.svg)](https://coveralls.io/github/kaliberjs/firebase-queue)
+[![Coverage Status](https://coveralls.io/repos/github/kaliberjs/firebase-queue/badge.svg)](https://coveralls.io/github/kaliberjs/firebase-queue)[![Build Status](https://travis-ci.org/kaliberjs/firebase-queue.svg?branch=master)](https://travis-ci.org/kaliberjs/firebase-queue)
+
 (not yet published)
 
 # Firebase Queue
