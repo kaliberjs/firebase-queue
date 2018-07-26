@@ -1,3 +1,4 @@
+[![Coverage Status](https://coveralls.io/repos/github/kaliberjs/firebase-queue/badge.svg)](https://coveralls.io/github/kaliberjs/firebase-queue)
 (not yet published)
 
 # Firebase Queue
