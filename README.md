@@ -1,11 +1,13 @@
-(not yet published)
+_This is a heavily modified fork from the original [Firebase Queue library](https://github.com/firebase/firebase-queue). Everything, including the documentation, has been given a complete overhaul._
+
+----
+
+[![Coverage Status](https://coveralls.io/repos/github/kaliberjs/firebase-queue/badge.svg)](https://coveralls.io/github/kaliberjs/firebase-queue) [![Build Status](https://travis-ci.org/kaliberjs/firebase-queue.svg?branch=master)](https://travis-ci.org/kaliberjs/firebase-queue) [![npm version](https://badge.fury.io/js/%40kaliber%2Ffirebase-queue.svg)](https://badge.fury.io/js/%40kaliber%2Ffirebase-queue)
 
 # Firebase Queue
 
 A fault-tolerant, multi-worker, multi-stage job pipeline built on the [Firebase Realtime
 Database](https://firebase.google.com/docs/database/).
-
-This is a heavily modified fork from the original [Firebase Queue library](https://github.com/firebase/firebase-queue).
 
 ```bash
 yarn add @kaliber/firebase-queue
