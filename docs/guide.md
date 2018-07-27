@@ -7,12 +7,11 @@
  * [The Queue in Your Firebase Database](#the-queue-in-your-firebase-database)
  * [Queue Workers](#queue-workers)
  * [Pushing Tasks Onto the Queue](#pushing-tasks-onto-the-queue)
+ * [The `processTask` function](#the-processTask-function)
  * [Queue Security](#queue-security)
  * [Defining Specs (Optional)](#defining-specs-optional)
  * [Graceful Shutdown](#graceful-shutdown)
- * [Dynamic Worker Count](#dynamic-worker-count)
  * [Message Sanitization, Revisited](#message-sanitization-revisited)
- * [Custom references to tasks and specs](#custom-references-to-tasks-and-specs)
  * [Wrap Up](#wrap-up)
 
 
@@ -109,9 +108,9 @@ Queue workers can take an optional options object to specify:
   - `numWorkers` - specifies the number of workers to run simultaneously on a single node.js thread.
     Defaults to 1 worker.
 
-```js
-...
+Example:
 
+```js
 var options = {
   spec: {
     startState = 'run',
@@ -138,7 +137,7 @@ or
 ```js
 // Using the web JavaScript client
 var ref = firebase.database().ref('tasks');
-ref.push({'foo': 'bar'});
+ref.push({ foo: 'bar' });
 ```
 
 ### Starting Tasks in Specific States (Optional)
@@ -159,9 +158,16 @@ start state (`null`).
 ## The `processTask` function
 
 The processing function provides the body of the data transformation, and allows for completing
-tasks successfully or with error conditions, as well as reporting the progress of a task. As this
-function defines the work that the worker must do, this callback function is required. It can take
-one or two parameters:
+tasks successfully or with error conditions, as well as reporting the progress of a task. Because
+this function is an essential part of the queue (it defines the work that the worker must perform)
+it is required. It can take two parameters (`data` and `meta`) and can be `async`.
+
+```js
+async function processTask(data, meta) {
+  ...
+}
+```
+
 
 #### `data`
 
@@ -183,7 +189,7 @@ The reserved keys are:
    contained a `stack` field.
 
  By default the data is sanitized of these keys, but you can still access these keys through the
- snapshot supplied as with the second argument.
+ snapshot supplied with the second argument (`meta`).
 
 #### `meta`
 
@@ -198,8 +204,6 @@ By catching when this call fails and canceling the current task early, the worke
 extra work it does and return to processing new queue tasks sooner:
 
 ```js
-...
-
 async function processTask(data, { setProgress }) {
   ...
   await setProgress(currentProgress)
@@ -209,17 +213,17 @@ async function processTask(data, { setProgress }) {
 
 #### Return value
 
-Returning a result or nothing (`undefined`) resolves the task; reporting that the current task has
-been completed and the worker is ready to process another task. Any plain JavaScript object returned
-from the `processTasks` function will be written to the `tasks` location and will be available to
-the next worker if the tasks are chained (using custom specs). When a task is resolved, the
-`_progress` field is updated to 100 and the `_state` is replaced with either the `_state` key of the
-object returned, or the `finishedState` of the task spec. If the task does not have a `finishedState`
-or a 'falsy' value us returned, the task will be removed from the queue.
+Returning a result or 'falsy' value resolves the task; reporting that the current task has been
+completed and the worker is ready to process another task. Any plain JavaScript object returned from
+the `processTasks` function will be written to the `tasks` location and will be available to the
+next worker if the tasks are chained (using custom specs). When a task is resolved, the `_progress`
+field is updated to 100 and the `_state` is replaced with either the `_state` key of the object
+returned, or the `finishedState` of the task spec. If the task does not have a `finishedState` or
+a 'falsy' value is returned, the task will be removed from the queue.
 
 Throwing an error or returning a 'failed' promise rejects the task; reporting that the current task
-failed and the worker is ready to process another task. Once this is called, the task will go into
-the `error_state` for the job with an additional `_error_details` object. If a string is thrown, the
+failed and the worker is ready to process another task. When this happens, the task will go into the
+`errorState` for the job with an additional `_error_details` object. If a string is thrown, the
 `_error_details` will also contain an `error` key containing that string. If an Error is thrown, the
 `error` key will contain the `error.message`, and the `error_stack` key will contain the
 `error.stack`.
@@ -240,6 +244,10 @@ These don't have to use a custom token, for instance you could use `auth != null
 `auth.canAddTasks` if application's users can write directly to the queue. Similarly,
 `auth.canProcessTasks` could be `auth.admin === true` if a single trusted server process was used to
 perform all queue functions.
+
+Please note that this is an elaborate set of rules. You can simplify it to your needs, the one thing
+that is very important is the `".indexOn": "_state"` part. But even if you forget that one, Firebase
+will likely warn you about it.
 
 ```json
 {
@@ -308,9 +316,13 @@ default spec has the following characteristics:
 }
 ```
 
+This essentially states that any object will be processed and when processing is complete the task
+will be removed.
+
 - `startState` - The default spec has no `startState`, which means any task pushed into the queue
   without a `_state` key will be picked up by default spec workers. If `startState` is specified,
-  only tasks with that `_state` may be claimed by the worker.
+  only tasks with that `_state` may be claimed by the worker. This is most often used for multi spec
+  jobs.
 - `inProgressState` - When a worker picks up a task and begins processing it, it will change the
   tasks `_state` to the value of `inProgressState`. This is a required spec property, and it cannot
   equal any other state.
@@ -404,7 +416,7 @@ const sanitizeMessageSpec = {
 const fanoutMessageSpec = {
   startState: 'sanitize_message_finished'
   inProgressState: 'fanout_message_in_progress'
-  error_state: 'fanout_message_failed'
+  errorState: 'fanout_message_failed'
 }
 ```
 

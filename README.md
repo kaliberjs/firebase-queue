@@ -1,13 +1,11 @@
-_This is a heavily modified fork from the original [Firebase Queue library](https://github.com/firebase/firebase-queue). Everything, including the documentation, has been given a complete overhaul._
-
----
-
-[![Coverage Status](https://coveralls.io/repos/github/kaliberjs/firebase-queue/badge.svg)](https://coveralls.io/github/kaliberjs/firebase-queue) [![Build Status](https://travis-ci.org/kaliberjs/firebase-queue.svg?branch=master)](https://travis-ci.org/kaliberjs/firebase-queue) [![npm version](https://badge.fury.io/js/%40kaliber%2Ffirebase-queue.svg)](https://badge.fury.io/js/%40kaliber%2Ffirebase-queue)
+(not yet published)
 
 # Firebase Queue
 
 A fault-tolerant, multi-worker, multi-stage job pipeline built on the [Firebase Realtime
 Database](https://firebase.google.com/docs/database/).
+
+This is a heavily modified fork from the original [Firebase Queue library](https://github.com/firebase/firebase-queue).
 
 ```bash
 yarn add @kaliber/firebase-queue
@@ -65,7 +63,7 @@ function reportError(e) {
 ## Contributing
 
 If you'd like to contribute to Firebase Queue, please first read through our [contribution
-guidelines](.github/CONTRIBUTING.md). Local setup instructions are available [here](.github/CONTRIBUTING.md#local-setup).
+guidelines](.github/CONTRIBUTING.md).
 
 
 ## Thanks
@@ -227,7 +225,7 @@ As for testing, I replaced `istanbul` with `nyc` because it is so much easier to
 testing frameworks because they only added unneeded complexity. I also threw out Gulp, I don't see
 any reason to use it.
 
-## No more dynamic worker count
+### No more dynamic worker count
 
 The original library had functions that allowed users of the queue to change the amount of workers
 at runtime. In practice we never needed to do that. Providing a similar behavior is quite easy to
@@ -308,9 +306,9 @@ During this extensive period of refactoring I encountered several bugs for speci
 also a few places where errors would vanish without a trace.
 
 While slowly moving towards a better design and better and more complete set of tests I realized
-that I should start from scratch with testing. Before I could do that however I needed to remove the
+that I should start from scratch with testing. Before I could do that however I needed to reduce the
 amount of moving parts and only keep the essentials. I have now added (I think) 100% coverage of all
-functionality in files that are a lot smaller than the original 2000+ lines.
+functionality in files which are now a lot smaller than the original 2000+ lines.
 
 The production code itself should now be very readable and more easily understood. The line count
 has dropped dramatically and this is not only caused by removing functionality, but also by slowly
