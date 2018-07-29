@@ -1,8 +1,9 @@
 _This is a heavily modified fork from the original [Firebase Queue library](https://github.com/firebase/firebase-queue). Everything, including the documentation, has been given a complete overhaul._
 
 ----
+[![npm version](https://img.shields.io/npm/v/@kaliber/firebase-queue.svg)](https://www.npmjs.com/package/@kaliber/firebase-queue)
 
-[![Coverage Status](https://coveralls.io/repos/github/kaliberjs/firebase-queue/badge.svg)](https://coveralls.io/github/kaliberjs/firebase-queue) [![Build Status](https://travis-ci.org/kaliberjs/firebase-queue.svg?branch=master)](https://travis-ci.org/kaliberjs/firebase-queue) [![npm version](https://badge.fury.io/js/%40kaliber%2Ffirebase-queue.svg)](https://badge.fury.io/js/%40kaliber%2Ffirebase-queue) [![Greenkeeper badge](https://badges.greenkeeper.io/kaliberjs/firebase-queue.svg)](https://greenkeeper.io/)
+[![Coverage Status](https://coveralls.io/repos/github/kaliberjs/firebase-queue/badge.svg)](https://coveralls.io/github/kaliberjs/firebase-queue) [![Build Status](https://travis-ci.org/kaliberjs/firebase-queue.svg?branch=master)](https://travis-ci.org/kaliberjs/firebase-queue) [![Greenkeeper badge](https://badges.greenkeeper.io/kaliberjs/firebase-queue.svg)](https://greenkeeper.io/)
 
 # Firebase Queue
 
