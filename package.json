@@ -26,7 +26,11 @@
     "package.json"
   ],
   "devDependencies": {
+    "@commitlint/cli": "^7.0.0",
+    "@commitlint/config-conventional": "^7.0.1",
+    "commitizen": "^2.10.1",
     "coveralls": "^3.0.2",
+    "cz-conventional-changelog": "^2.1.0",
     "firebase": "^5.2.0",
     "firebase-server": "^0.12.0",
     "husky": "^1.0.0-rc.13",
@@ -34,6 +38,7 @@
     "nyc": "^12.0.2"
   },
   "scripts": {
+    "commit": "git-cz",
     "test": "npm-run-all --race --silent --parallel server tests",
     "server": "firebase-server",
     "tests": "nyc node tests/"
