@@ -11,6 +11,9 @@
     "realtime",
     "pipeline"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
   "author": {
     "name": "EECOLOR",
