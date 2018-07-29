@@ -1,16 +1,33 @@
 language: node_js
 node_js:
-- '8'
-- stable
+  - lts/*
+  - node
+
 sudo: false
-before_install:
-- yarn global add greenkeeper-lockfile@1
-install:
-- yarn install
-before_script:
-- greenkeeper-lockfile-update
+
 script:
-- npm run test --silent
+  - npm test --silent
 after_script:
-- greenkeeper-lockfile-upload
-- cat ./coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js
+  - cat ./coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js
+
+jobs:
+  include:
+    - stage: release
+
+      node_js: lts/*
+      if: branch = master AND type != pull_request
+
+      before_install:
+        - yarn global add greenkeeper-lockfile@1
+
+      before_script:
+        - greenkeeper-lockfile-update
+      script:
+        - npx semantic-release
+      after_script:
+        - greenkeeper-lockfile-upload
+
+cache:
+  yarn: true
+  directories:
+    - node_modules

@@ -17,15 +17,17 @@ const db = app.database()
 const rootRef = db.ref()
 
 db.goOnline()
+console.log('Running self checks...')
 selfChecks({ rootRef, timeout })
   .then(async previousSuccess => {
+    console.log('Running unit tests...')
     const tests = createUnitTests({ rootRef, timeout })
     const { success } = await runUnitTests({ report: report(console), tests, timeout })
 
     return previousSuccess && success
   })
   .then(async previousSuccess => {
-
+    console.log('Running specs...')
     const specs = createSpecs({ rootRef, timeout })
     const { success: specSuccess, results } = await runSpecs({ rootRef, report: report(console), specs, timeout })
     const { success: executionSuccess } = checkExecutionResults({ results, report: report(console) })
