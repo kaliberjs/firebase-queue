@@ -3,7 +3,8 @@ _This is a heavily modified fork from the original [Firebase Queue library](http
 ----
 [![npm version](https://img.shields.io/npm/v/@kaliber/firebase-queue.svg)](https://www.npmjs.com/package/@kaliber/firebase-queue)
 
-[![Coverage Status](https://coveralls.io/repos/github/kaliberjs/firebase-queue/badge.svg)](https://coveralls.io/github/kaliberjs/firebase-queue) [![Build Status](https://travis-ci.org/kaliberjs/firebase-queue.svg?branch=master)](https://travis-ci.org/kaliberjs/firebase-queue) [![Greenkeeper badge](https://badges.greenkeeper.io/kaliberjs/firebase-queue.svg)](https://greenkeeper.io/)
+[![Build Status](https://travis-ci.org/kaliberjs/firebase-queue.svg?branch=master)](https://travis-ci.org/kaliberjs/firebase-queue) [![Coverage Status](https://coveralls.io/repos/github/kaliberjs/firebase-queue/badge.svg)](https://coveralls.io/github/kaliberjs/firebase-queue) [![Greenkeeper badge](https://badges.greenkeeper.io/kaliberjs/firebase-queue.svg)](https://greenkeeper.io/) [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
+
 
 # Firebase Queue
 
