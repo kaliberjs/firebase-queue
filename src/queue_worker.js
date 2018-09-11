@@ -6,7 +6,7 @@ module.exports = QueueWorker
 
 function QueueWorker({ processId, tasksRef, spec, processTask, reportError }) {
 
-  const { startState } = spec
+  const { startState, errorState } = spec
   const newTaskRef = tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
 
   let transactionHelper = new TransactionHelper({ processId, spec })
@@ -41,8 +41,12 @@ function QueueWorker({ processId, tasksRef, spec, processTask, reportError }) {
     const { committed, snapshot } = await nextTransactionHelper.claim(ref)
 
     if (committed && snapshot.exists()) {
-      transactionHelper = nextTransactionHelper
-      await process(snapshot)
+      if (snapshot.child(`_state`).val() !== errorState) {
+        transactionHelper = nextTransactionHelper
+        await process(snapshot)
+      } else {
+        reportError(new Error(snapshot.child('_error_details/error').val()))
+      }
     }
   }
 

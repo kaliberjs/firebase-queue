@@ -255,6 +255,23 @@ module.exports = ({ rootRef, timeout }) => [
       test: test(processedAll, noRemaining, [inProgressStates, `equal`, [`i am in progress`]])
     }
   }],
+
+  [`bug - exit on wrong task type instead of going into an infinit loop`, () => {
+    return {
+      numTasks: 2,
+      expectedNumProcessed: 1,
+      createTask: index => index ? { index } : `task`,
+      process: (x) => {},
+      test: ({ remaining: [first, ...rest]}) => [
+        [first._error_details, `equal`, { error: `invalid task`, value: 'task' }],
+        `and`,
+        [rest, `equal`, []]
+      ],
+      expectReportedErrors: ([e]) =>
+        !e.message.includes(`invalid task`) &&
+        /* istanbul ignore next */ `Expected 'invalid task' error to be reported`,
+    }
+  }],
 ]
 
 function addFields(o) { return x => ({ ...o, ...x }) }

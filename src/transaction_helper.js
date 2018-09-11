@@ -25,6 +25,14 @@ function TransactionHelper({ processId, spec, taskNumber = 0 }) {
 
   function claim(task) {
     if (task === null) return null
+    if (!(typeof task === 'object')) return {
+      _state: errorState,
+      _state_changed: SERVER_TIMESTAMP,
+      _error_details: {
+        error: `invalid task`,
+        value: task,
+      },
+    }
     if ((task._state || null) === startState) {
       task._state = inProgressState
       task._state_changed = SERVER_TIMESTAMP
