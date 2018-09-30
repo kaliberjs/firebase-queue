@@ -7,7 +7,7 @@
  * [The Queue in Your Firebase Database](#the-queue-in-your-firebase-database)
  * [Queue Workers](#queue-workers)
  * [Pushing Tasks Onto the Queue](#pushing-tasks-onto-the-queue)
- * [The `processTask` function](#the-processTask-function)
+ * [The `processTask` function](#the-processtask-function)
  * [Queue Security](#queue-security)
  * [Defining Specs (Optional)](#defining-specs-optional)
  * [Graceful Shutdown](#graceful-shutdown)
