@@ -6,6 +6,9 @@ node_js:
 
 sudo: false
 
+install:
+  - travis_retry yarn install --ignore-engines
+
 script:
   - npm test --silent
 after_script:
