@@ -38,7 +38,7 @@
     "firebase-server": "^1.0.2",
     "husky": "^3.0.9",
     "npm-run-all": "^4.1.5",
-    "nyc": "^14.1.1",
+    "nyc": "^15.0.0",
     "semantic-release": "^15.13.30"
   },
   "scripts": {
