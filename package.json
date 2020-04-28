@@ -29,17 +29,17 @@
     "package.json"
   ],
   "devDependencies": {
-    "@commitlint/cli": "^8.2.0",
-    "@commitlint/config-conventional": "^8.2.0",
-    "commitizen": "^4.0.3",
-    "coveralls": "^3.0.7",
-    "cz-conventional-changelog": "^3.0.2",
-    "firebase": "^7.2.3",
-    "firebase-server": "^1.0.2",
-    "husky": "^3.0.9",
+    "@commitlint/cli": "^8.3.5",
+    "@commitlint/config-conventional": "^8.3.4",
+    "commitizen": "^4.0.4",
+    "coveralls": "^3.1.0",
+    "cz-conventional-changelog": "^3.1.0",
+    "firebase": "^7.14.2",
+    "firebase-server": "^1.1.0",
+    "husky": "^4.2.5",
     "npm-run-all": "^4.1.5",
-    "nyc": "^14.1.1",
-    "semantic-release": "^15.13.30"
+    "nyc": "^15.0.1",
+    "semantic-release": "^17.0.7"
   },
   "scripts": {
     "commit": "git-cz",
