@@ -9,10 +9,11 @@ const { report } = require('./machinery/report_utils')
 const timeout = 500
 
 const app = firebase.initializeApp({
-  // apiKey: `api key not needed`,
+  apiKey: `api key not needed`,
+  applicationId: `application id not needed`,
   databaseURL: `ws://localhost:5000`,
+  projectId: `project id not needed`,
 })
-
 const db = app.database()
 const rootRef = db.ref()
 
