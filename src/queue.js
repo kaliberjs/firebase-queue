@@ -4,6 +4,24 @@ const QueueWorker = require('./queue_worker.js')
 
 module.exports = Queue
 
+/**
+ * 
+ * @param {{
+ *   tasksRef: any,
+ *   processTask: any,
+ *   reportError: any,
+ *   options?: {
+ *     spec?: {
+ *       finishedState?: string | null,
+ *       startState?: null,
+ *       inProgressState?: string | undefined,
+ *       errorState?: string | undefined
+ *     }
+ *    numWorkers?: number
+ *   }
+ * }} x
+ */
+
 function Queue({
   tasksRef,
   processTask,
