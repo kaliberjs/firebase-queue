@@ -1,6 +1,6 @@
 {
   "name": "@kaliber/firebase-queue",
-  "version": "0.0.0-semantic-release",
+  "version": "1.2.0",
   "description": "A fault-tolerant, multi-worker, multi-stage job pipeline built on Firebase",
   "keywords": [
     "job",
