@@ -41,6 +41,26 @@ module.exports = ({ rootRef, timeout }) => [
     }))
   }],
 
+  [`custom error options - failed to process a task - custom error`, {
+    queue: { options: { errorToErrorDetails: e => ({ error: `${e} test` }) } },
+    process: _ => { throw `custom error` },
+    test: test(processedAll, remainingErrors({
+      _error_details: { error: 'custom error test', error_stack: false }
+    }))
+  }],
+
+  [`custom error options - failed to process a task - augment original error`, {
+    queue: { options: { errorToErrorDetails: e => ({ error_status: e.status }) } },
+    process: _ => {
+      const error = new Error('custom error')
+      error.status = 999
+      throw error
+    },
+    test: test(processedAll, remainingErrors({
+      _error_details: { error: 'custom error', error_stack: true, error_status: 999 }
+    }))
+  }],
+
   [`default options - failed to process a task - object error`, {
     process: _ => { throw { toString: () => `custom error` } },
     test: test(processedAll, remainingErrors({

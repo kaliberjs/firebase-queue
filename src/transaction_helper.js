@@ -5,8 +5,7 @@ module.exports = TransactionHelper
 const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
 const MAX_TRANSACTION_ATTEMPTS = 10
 
-function TransactionHelper({ processId, spec, taskNumber = 0 }) {
-
+function TransactionHelper({ processId, spec, errorToErrorDetails, taskNumber = 0 }) {
   const { startState, inProgressState, finishedState, errorState } = spec
 
   const owner = processId + ':' + taskNumber
@@ -20,7 +19,7 @@ function TransactionHelper({ processId, spec, taskNumber = 0 }) {
   this.rejectWith         = async (ref, error)    => withRetries(ref, rejectWith(error))
 
   function cloneForNextTask() {
-    return new TransactionHelper({ processId, spec, taskNumber: taskNumber + 1 })
+    return new TransactionHelper({ processId, spec, errorToErrorDetails, taskNumber: taskNumber + 1 })
   }
 
   function claim(task) {
@@ -73,6 +72,7 @@ function TransactionHelper({ processId, spec, taskNumber = 0 }) {
         task._error_details = {
           error: errorString,
           error_stack: errorStack,
+          ...(errorToErrorDetails && errorToErrorDetails(error))
         }
         return task
       }

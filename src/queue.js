@@ -15,6 +15,7 @@ function Queue({
       finishedState = null,
       errorState = 'error'
     } = {},
+    errorToErrorDetails = null,
     numWorkers = 1
   } = {}
 }) {
@@ -70,6 +71,7 @@ function Queue({
         processId: `${queueId}:${index}`,
         tasksRef,
         spec,
+        errorToErrorDetails,
         processTask,
         reportError
       })

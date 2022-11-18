@@ -4,12 +4,11 @@ const TransactionHelper = require('./transaction_helper')
 
 module.exports = QueueWorker
 
-function QueueWorker({ processId, tasksRef, spec, processTask, reportError }) {
-
+function QueueWorker({ processId, tasksRef, spec, errorToErrorDetails, processTask, reportError }) {
   const { startState } = spec
   const newTaskRef = tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
 
-  let transactionHelper = new TransactionHelper({ processId, spec })
+  let transactionHelper = new TransactionHelper({ processId, spec, errorToErrorDetails })
   let shutdownStarted = null
   let busy = false
 
