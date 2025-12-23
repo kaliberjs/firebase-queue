@@ -1,0 +1,5 @@
+ignoredBuiltDependencies:
+  - '@firebase/util'
+
+onlyBuiltDependencies:
+  - re2

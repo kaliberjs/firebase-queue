@@ -1,12 +1,25 @@
 const { wait, waitFor } = require('./machinery/promise_utils')
+/** @import { database } from 'firebase-admin' */
+/** @import { Spec } from './machinery/run_specs' */
+/** @import { Task } from '../src/types.ts' */
+/** @import { PresenceFieldEntry, PresenceObject, PresenceOrValue } from './specs-types.ts' */
+/** @import { Operation } from './machinery/ops' */
 
+/**
+ * @typedef {[title: string, spec: (() => Spec<Record<string, any>>) | Spec<Record<string, any>>]} Test
+ */
+
+/**
+ * @arg {{ rootRef: database.Reference, timeout: number }} props
+ * @returns {Test[]}
+ */
 module.exports = ({ rootRef, timeout }) => [
   [`default options - process a task and remove it from the queue`, {
     test: test(processedAll, noRemaining)
   }],
 
   [`default options - processing multiple tasks expecting them to be handled by the same worker`, () => {
-    const workers = []
+    const workers = /** @type {Array<string>} */ ([])
     return {
       numTasks: 4,
       process: async (_, { snapshot }) => {
@@ -19,7 +32,7 @@ module.exports = ({ rootRef, timeout }) => [
   }],
 
   [`default options - processing multiple tasks expecting them to have a different owner`, () => {
-    const owners = []
+    const owners = /** @type {Array<string>} */ ([])
     return {
       numTasks: 4,
       process: (_, { snapshot }) => { owners.push(snapshot.child(`_owner`).val()) },
@@ -53,6 +66,7 @@ module.exports = ({ rootRef, timeout }) => [
     queue: { options: { errorToErrorDetails: e => ({ error_status: e.status }) } },
     process: _ => {
       const error = new Error('custom error')
+      // @ts-expect-error
       error.status = 999
       throw error
     },
@@ -79,7 +93,7 @@ module.exports = ({ rootRef, timeout }) => [
   }],
 
   [`multiple queues with multiple workers - processing the same set of tasks, no intermediate states`, () => {
-    const changes = [...Array(8).keys()].map(_ => [])
+    const changes = [...Array(8).keys()].map(_ => /** @type {Array<'add' | 'change' | 'remove'>} */ ([]))
     const tasksRef = rootRef.push().ref
     tasksRef.on('child_added',   x => { changes[x.val().index].push(`add`) })
     tasksRef.on('child_changed', x => { changes[x.val().index].push(`change`) })
@@ -95,14 +109,14 @@ module.exports = ({ rootRef, timeout }) => [
   }],
 
   [`multiple queues with multiple workers - distribute the work`, () => {
-    const workers = []
+    const workers = /** @type {Array<string>} */ ([])
     return {
       numTasks: 4,
       queue: { count: 2, options: { numWorkers: 2 } },
       process: async (_, { snapshot }) => {
-        await wait(timeout * 0.1) // simulate long running processes to give other workers a chance
         const [queueId, workerIndex] = snapshot.child(`_owner`).val().split(`:`)
-        workers.push(queueId + workerIndex)
+        await wait(timeout * 0.4) // simulate long running processes to give other workers a chance
+        workers.push(`${queueId} handled by worker ${workerIndex}`)
       },
       test: test(processedAll, noRemaining, [workers, `noDuplicates`])
     }
@@ -118,7 +132,7 @@ module.exports = ({ rootRef, timeout }) => [
   }],
 
   [`complex processing - allow process function to access queue properties`, () => {
-    const snapshots = []
+    const snapshots = /** @type {Task[]} */ ([])
     return {
       process: (_, { snapshot }) => { snapshots.push(snapshot.val()) },
       test: test(processedAll, noRemaining,
@@ -128,7 +142,7 @@ module.exports = ({ rootRef, timeout }) => [
   }],
 
   [`complex processing - setProgress`, () => {
-    const progresses = []
+    const progresses = /** @type {number[]} */ ([])
     return {
       process: async (_, { snapshot, setProgress }) => {
         await setProgress(88)
@@ -248,11 +262,14 @@ module.exports = ({ rootRef, timeout }) => [
     createTask: index => index ? { index } : { index, _state: `i should start` },
     queue: { options: { spec: { startState: `i should start` } } },
     expectedNumProcessed: 1,
-    test: ({ tasks, processed, remaining }) => [
+    test: ({ tasks, processed, remaining }) => ([
+      // @ts-ignore
       [processed.slice(1), `equal`, []], `and`, [remaining, `equal`, tasks.slice(1)],
+      // @ts-ignore
       `and`,
+      // @ts-ignore
       [processed.slice(0, 1).map(addFields({ _state: `i should start` })), `equal`, tasks.slice(0, 1)]
-    ]
+    ])
   }],
 
   [`custom spec - custom 'startState' and replacing the task`, {
@@ -268,7 +285,7 @@ module.exports = ({ rootRef, timeout }) => [
   }],
 
   [`custom spec - custom 'inProgressState'`, () => {
-    const inProgressStates = []
+    const inProgressStates = /** @type {string[]} */ ([])
     return {
       queue: { options: { spec: { inProgressState: `i am in progress` } } },
       process: async (_, { snapshot }) => { inProgressStates.push(snapshot.child(`_state`).val()) },
@@ -277,8 +294,28 @@ module.exports = ({ rootRef, timeout }) => [
   }],
 ]
 
-function addFields(o) { return x => ({ ...o, ...x }) }
+/**
+ * @template {Record<string, any>} T
+ * @arg {T} o
+ */
+function addFields(o) {
+  /**
+   * @template {Record<string, any>} X
+   * @arg {X} x
+   * @returns {Omit<X, keyof T> & T}
+   */
+  return x => ({ ...o, ...x })
+}
+
+/**
+ * @arg {...PresenceFieldEntry} fields
+ */
 function setFieldPresence(...fields) {
+  /**
+   * @template {Record<string, any>} T
+   * @arg {T} x
+   * @returns {T & PresenceObject}
+   */
   return x => {
     const changes = fields.map(y => {
       if (Array.isArray(y)) {
@@ -292,7 +329,18 @@ function setFieldPresence(...fields) {
   }
 }
 
+/**
+ * @template A
+ * @template B
+ * @arg {Operation | ((data: A) => Operation)} check
+ * @arg  {...(Operation | ((data: B) => Operation))} checks
+ * @returns {(data: A & B) => Operation}
+ */
 function test(check, ...checks) {
+  if (!checks.length)
+    throw new Error('Code was not written for a single check')
+
+  // @ts-ignore
   return data => {
     const result = checks.reduce(
       (result, check) => [...result, `and`, asTest(check)],
@@ -300,14 +348,23 @@ function test(check, ...checks) {
     )
     return result
 
+    /** @arg {any | (() => any)} x */
     function asTest(x) { return typeof x === 'function' ? x(data) : x }
   }
 }
-function processedAll({ tasks, processed }) { return [processed, `equal`, tasks] }
-function noRemaining({ remaining }) { return [remaining, `equal`, []] }
+/** @arg {{ tasks: Task[], processed: Task[] }} props */
+function processedAll({ tasks, processed }) {
+  return /** @type const */ ([processed, `equal`, tasks])
+}
+/** @arg {{ remaining: Task[] }} props */
+function noRemaining({ remaining }) {
+  return /** @type const */ ([remaining, `equal`, []])
+}
+/** @arg {PresenceOrValue<Task>} task */
 function remainingErrors({ _error_details }) {
   const fieldPresence = setFieldPresence([`_error_details`, [`error_stack`]], `_state_changed`)
 
+  /** @arg {{ tasks: Task[], remaining: Task[] }} props */
   return ({ tasks, remaining }) => {
     const normalizedRemaining = remaining.map(fieldPresence)
     const normalizedData = tasks.map(addFields({
@@ -316,12 +373,12 @@ function remainingErrors({ _error_details }) {
       _state: `error`,
       _state_changed: true,
     }))
-    return [normalizedRemaining, `equal`, normalizedData]
+    return /** @type const */ ([normalizedRemaining, `equal`, normalizedData])
   }
 }
 
+/** @arg {Error[]} errors */
 function expectResolveAndRejectErrors([e1, e2]) {
   const expectedErrors = e1 && e1.message.includes(`resolve`) && e2 && e2.message.includes(`reject`)
-  return !expectedErrors &&
-    /* istanbul ignore next */`Expected problems with resolving and rejecting to be reported`
+  return !expectedErrors && `Expected problems with resolving and rejecting to be reported`
 }

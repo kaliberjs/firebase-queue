@@ -3,21 +3,43 @@ const { wait, waitFor } = require(`./promise_utils`)
 const { report, logSuccess, logFailure } = require(`./report_utils`)
 const { runSpecs, checkExecutionResults } = require(`./run_specs`)
 const runUnitTests = require(`./run_unit_tests`)
+/** @import { database } from 'firebase-admin' */
+/** @import { Spec, Result } from './run_specs' */
+/** @import { Falsy } from '../../src/types.ts' */
+/** @import { Test } from './run_unit_tests' */
 
-module.exports = async function performSelfCheck({ rootRef, timeout }) {
+/**
+ * @typedef {{ check(result: Result): true | Falsy }} Check
+ * @typedef {Spec & Check} InternalSpec
+ * @typedef {InternalSpec | (() => InternalSpec)} SelfCheckSpec
+ * @typedef {Test & Check} SelfCheckTest
+ */
+
+/**
+ * @arg {{
+ *   rootRef: database.Reference,
+ * }} props
+ */
+module.exports = async function performSelfCheck({ rootRef }) {
+  const timeout = 500
   const specsCheck = await specsSelfCheck({ rootRef, timeout })
   const unitTestCheck = await unitTestSelfCheck({ timeout })
   const success = specsCheck && unitTestCheck
 
-  /* istanbul ignore else */
   if (success) logSuccess(console, 'Self checks')
   else logFailure(console, 'Self checks', 'failed')
 
   return success
 }
 
+/**
+ * @arg {{
+ *   rootRef: database.Reference,
+ *   timeout: number,
+ * }} props
+ */
 async function specsSelfCheck({ timeout, rootRef }) {
-  const selfCheckSpecs = [
+  const selfCheckSpecs = /** @type {[string, SelfCheckSpec][]} */ ([
     [`specs ops 'equal' - report failure when not equal (simple value)`, {
       test: _ => [0, `equal`, 1],
       check: x => !x.success && x.error.includes(`equal`),
@@ -119,75 +141,85 @@ async function specsSelfCheck({ timeout, rootRef }) {
       expectReportedErrors: () => { throw new Error(`custom error`) },
       check: x => !x.success && x.error.includes(`custom error`),
     }],
-  ]
+  ])
 
   const { results: specResults } = await runSpecs({ rootRef, report: () => {}, specs: selfCheckSpecs, timeout })
   const specSuccess = specResults.every(
     ({ title, spec, result }) => {
       const success = spec.check(result)
-      /* istanbul ignore if */
       if (!success) logFailure(console, title, `Self check failed${result.error ? `, original error:\n${result.error}` : ``}`)
       return success
     }
   )
 
   const { success: s1 } = checkExecutionResults({ results: [{ result: { info: { async: false, sync: true }}}], report: () => {} })
-  /* istanbul ignore if */
   if (s1) logFailure(console, `specs - report if there are no specs that execute asynchronously`, `failed`)
   const { success: s2 } = checkExecutionResults({ results: [{ result: { info: { async: true, sync: false }}}], report: () => {} })
-  /* istanbul ignore if */
   if (s2) logFailure(console, `specs - report if there are no specs that execute synchronously`, `failed`)
 
   return !s1 && !s2 && specSuccess
 }
 
+/** @arg {{ timeout: number }} props */
 async function unitTestSelfCheck({ timeout }) {
 
-  const selfCheckUnitTests = [
+  const selfCheckUnitTests = /** @type {[string, SelfCheckTest][]} */ ([
     [`expect error - fail when no error is thrown`, withCheck(
       () => expectError({
         code: () => {},
-        test: [undefined, undefined]
+        test: [() => true, 'not used']
       }),
       x => !x.success && x.error.includes('thrown'),
     )],
     [`expect error - fail the incorrect error is thrown`, withCheck(
       () => expectError({
         code: [() => { throw null }],
-        test: [e => e !== null, `incorrect error`]
+        test: [e => e === null, `incorrect error`]
       }),
-      x => !x.success && x.error.includes('incorrect error'),
+      x => !x.success && x.error.includes('Unknown error type'),
     )],
     [`reports - there is a difference between success and failure`, withCheck(
       () => {
         let log = null
         let error = null
 
-        const c = { log: x => { log = x }, error: x => { error = x } }
+        const c = {
+          /** @arg {string} x */
+          log: x => { log = x },
+          /** @arg {string} x */
+          error: x => { error = x },
+        }
 
         logSuccess(c, ``)
         logFailure(c, ``, ``)
 
-        return log && error && log !== error
+        return Boolean(log && error) && log !== error && 'log and error are different'
       },
-      x => !x.success && x.error === true,
+      x => !x.success && x.error === 'log and error are different',
     )],
     [`reports - success and failure are reported correctly`, withCheck(
       () => {
-        let log = null
-        let error = null
+        let log = ''
+        let error = ''
 
-        const c = { log: x => { log = x }, error: x => { error = x } }
+        const c = {
+          /** @arg {string} x */
+          log: x => { log = x },
+          /** @arg {string} x */
+          error: x => { error = x },
+        }
 
+        // @ts-expect-error
         report(c)({ title: `success`, result: { success: true, error: `none` } })
         report(c)({ title: `failure`, result: { success: false, error: `failed` } })
 
         return (
           log && log.includes(`success`) && !log.includes(`none`) &&
-          error && error.includes(`failure`) && error.includes(`failed`)
+          error && error.includes(`failure`) && error.includes(`failed`) &&
+          'log and error are different'
         )
       },
-      x => !x.success && x.error === true,
+      x => !x.success && x.error === 'log and error are different',
     )],
     [`unit tests - fail on timeout`, withCheck(
       async () => { await wait(1050) },
@@ -201,14 +233,13 @@ async function unitTestSelfCheck({ timeout }) {
       () => { throw new Error(`custom error`) },
       x => !x.success && x.error.includes(`custom error`)
     )],
-  ]
+  ])
 
   const { results: unitTestResults } = await runUnitTests({ report: () => {}, tests: selfCheckUnitTests, timeout })
 
   const unitTestSuccess = unitTestResults.every(
     ({ title, test, result }) => {
       const success = test.check(result)
-      /* istanbul ignore if */
       if (!success) logFailure(console, title, `Self check failed`)
       return success
     }
@@ -216,8 +247,14 @@ async function unitTestSelfCheck({ timeout }) {
 
   return unitTestSuccess
 
+  /**
+   * @template {(() => any) & Partial<Check>} T
+   * @arg {T} test
+   * @arg {Check['check']} check
+   * @returns {T & Check}
+   */
   function withCheck(test, check) {
     test.check = check
-    return test
+    return /** @type {T & Check} */ (test)
   }
 }
