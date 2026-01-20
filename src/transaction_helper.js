@@ -27,6 +27,7 @@ function TransactionHelper({ processId, spec, errorToErrorDetails, taskNumber = 
     if ((task._state || null) === startState) {
       task._state = inProgressState
       task._state_changed = SERVER_TIMESTAMP
+      task._state_changed_readable = new Date().toISOString()
       task._owner = owner
       task._progress = 0
       return task
@@ -43,6 +44,7 @@ function TransactionHelper({ processId, spec, errorToErrorDetails, taskNumber = 
             ...(newTask || task),
             _state: finishedState,
             _state_changed: SERVER_TIMESTAMP,
+            _state_changed_readable: new Date().toISOString(),
             _owner: null,
             _progress: 100,
             _error_details: null,
@@ -68,6 +70,7 @@ function TransactionHelper({ processId, spec, errorToErrorDetails, taskNumber = 
       if (isProcessing(task)) {
         task._state = errorState
         task._state_changed = SERVER_TIMESTAMP
+        task._state_changed_readable = new Date().toISOString()
         task._owner = null
         task._error_details = {
           error: errorString,
