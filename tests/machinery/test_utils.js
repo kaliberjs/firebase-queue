@@ -15,8 +15,9 @@ function expectError({ code, test: [test, error] }) {
    * @arg {string} error
    */
   function run(code, test, error) {
-    try { code(); return `No error thrown` }
-    catch (e) {
+    try {
+      code(); return `No error thrown`
+    } catch (e) {
       const error = e instanceof Error ? e : new Error(`Unknown error type (${typeof e}): ${e}`)
       return !test(error) && `${error}\n${e}`
     }

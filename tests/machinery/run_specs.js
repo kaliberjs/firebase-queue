@@ -1,6 +1,6 @@
 const { sequence, wait, waitFor, TIMEOUT } = require('./promise_utils')
 const ops = require('./ops')
-const Queue = require('../../src/queue')
+const Queue = require('../../')
 /** @import { database } from 'firebase-admin' */
 /** @import { Config, Falsy, Meta, Options, Task } from '../../src/types.ts' */
 
@@ -184,7 +184,7 @@ function createProcessTask(process, timeout) {
         addProcessed(task)
       }
       return result
-    } catch(e) {
+    } catch (e) {
       addProcessed(task)
       throw e
     }
@@ -243,8 +243,7 @@ async function fetchRemaining(tasksRef) {
  * @arg {T} data
  */
 async function executeTests(test, data) {
-  try { return ops.execute(await test(data)) }
-  catch (e) { return `Failed to execute test:\n${e}` }
+  try { return ops.execute(await test(data)) } catch (e) { return `Failed to execute test:\n${e}` }
 }
 
 /**
@@ -255,6 +254,6 @@ function executeReportedErrorTests(reported, expectReportedErrors) {
   return !reported.length
     ? expectReportedErrors && 'Expected an error to be reported'
     : expectReportedErrors
-        ? expectReportedErrors(reported)
-        : reported.join(`\n\n`)
+      ? expectReportedErrors(reported)
+      : reported.join(`\n\n`)
 }

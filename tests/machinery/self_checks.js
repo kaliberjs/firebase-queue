@@ -152,9 +152,9 @@ async function specsSelfCheck({ timeout, rootRef }) {
     }
   )
 
-  const { success: s1 } = checkExecutionResults({ results: [{ result: { info: { async: false, sync: true }}}], report: () => {} })
+  const { success: s1 } = checkExecutionResults({ results: [{ result: { info: { async: false, sync: true } } }], report: () => {} })
   if (s1) logFailure(console, `specs - report if there are no specs that execute asynchronously`, `failed`)
-  const { success: s2 } = checkExecutionResults({ results: [{ result: { info: { async: true, sync: false }}}], report: () => {} })
+  const { success: s2 } = checkExecutionResults({ results: [{ result: { info: { async: true, sync: false } } }], report: () => {} })
   if (s2) logFailure(console, `specs - report if there are no specs that execute synchronously`, `failed`)
 
   return !s1 && !s2 && specSuccess
@@ -173,7 +173,7 @@ async function unitTestSelfCheck({ timeout }) {
     )],
     [`expect error - fail the incorrect error is thrown`, withCheck(
       () => expectError({
-        code: [() => { throw null }],
+        code: [() => { throw null }],  // eslint-disable-line no-throw-literal
         test: [e => e === null, `incorrect error`]
       }),
       x => !x.success && x.error.includes('Unknown error type'),

@@ -1,5 +1,3 @@
-'use strict'
-
 const QueueWorker = require('./queue_worker.js')
 /** @import { Config } from './types.ts' */
 
@@ -105,7 +103,7 @@ function Queue({
    */
   function check(val, ...rest) {
     const message = rest[rest.length - 1]
-    const or = rest.slice(0, rest.length -1)
+    const or = rest.slice(0, rest.length - 1)
     const valid = or.reduce(
       (result, and) => result || /** @type {((x: any) => boolean)[]} */ ([]).concat(and).reduce(
         (result, isValid) => result && isValid(val),

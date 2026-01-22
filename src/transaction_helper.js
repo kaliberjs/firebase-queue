@@ -1,11 +1,9 @@
-'use strict'
-
 /** @import { ErrorToErrorDetails, Spec, Task } from './types.ts' */
 /** @import { database } from 'firebase-admin' */
 
 module.exports = TransactionHelper
 
-const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
+const SERVER_TIMESTAMP = { '.sv': 'timestamp' }
 const MAX_TRANSACTION_ATTEMPTS = 10
 
 /**
@@ -75,8 +73,7 @@ function TransactionHelper({ processId, spec, errorToErrorDetails, taskNumber = 
             _progress: 100,
             _error_details: null,
           }
-        }
-        else if (newTask) return newTask
+        } else if (newTask) return newTask
         else return null // remove
       }
     }

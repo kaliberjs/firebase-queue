@@ -14,7 +14,7 @@ module.exports = {
  */
 
 /** @arg {Console} console */
-function report(console){
+function report(console) {
   /** @arg {{ title: string, result: Result }} props */
   return ({ title, result: { success, error } }) => {
     if (success) logSuccess(console, title)

@@ -1,5 +1,3 @@
-'use strict'
-
 const TransactionHelper = require('./transaction_helper')
 /** @import { ErrorToErrorDetails, ProcessTask, ReportError, SpecWithDefaults, Task } from './types.ts' */
 /** @import { database } from 'firebase-admin' */

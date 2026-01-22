@@ -24,14 +24,14 @@ module.exports = ({ rootRef, timeout }) => {
     off: dontCallMe,
     push: () => tasksRef.push(),
     transaction: dontCallMe,
-    orderByChild: function () { return this },
-    equalTo: function() { return this },
-    limitToFirst: function() { return this },
+    orderByChild() { return this },
+    equalTo() { return this },
+    limitToFirst() { return this },
   })
   /** @arg {Partial<Config>} config */
   function newQueue(config) { return new Queue({ ...validConfig, ...config }) }
   /** @arg {Spec} spec */
-  function newQueueWithSpec(spec) { return newQueue({ options: { spec }}) }
+  function newQueueWithSpec(spec) { return newQueue({ options: { spec } }) }
 
   return /** @type {[String, Test][]} */ ([
     [`Queue - require the 'new' keyword`, () => expectError({
@@ -101,7 +101,7 @@ module.exports = ({ rootRef, timeout }) => {
         () => newQueue({ options: { numWorkers: 'nope' } }),
         () => newQueue({ options: { numWorkers: 1.1 } }),
         // @ts-expect-error
-        () => newQueue({ options: { numWorkers: "1" } }),
+        () => newQueue({ options: { numWorkers: '1' } }),
       ],
       test: [e => e.message.includes(`numWorkers`), `Error did not mention 'numWorkers'`],
     })],

@@ -1,4 +1,4 @@
-const { wait, waitFor } = require('./machinery/promise_utils')
+const { wait } = require('./machinery/promise_utils')
 /** @import { database } from 'firebase-admin' */
 /** @import { Spec } from './machinery/run_specs' */
 /** @import { Task } from '../src/types.ts' */
@@ -48,7 +48,7 @@ module.exports = ({ rootRef, timeout }) => [
   }],
 
   [`default options - failed to process a task - string error`, {
-    process: _ => { throw `custom error` },
+    process: _ => { throw `custom error` }, // eslint-disable-line no-throw-literal
     test: test(processedAll, remainingErrors({
       _error_details: { error: `custom error`, error_stack: false }
     }))
@@ -56,7 +56,7 @@ module.exports = ({ rootRef, timeout }) => [
 
   [`custom error options - failed to process a task - custom error`, {
     queue: { options: { errorToErrorDetails: e => ({ error: `${e} test` }) } },
-    process: _ => { throw `custom error` },
+    process: _ => { throw `custom error` }, // eslint-disable-line no-throw-literal
     test: test(processedAll, remainingErrors({
       _error_details: { error: 'custom error test', error_stack: false }
     }))
@@ -76,19 +76,19 @@ module.exports = ({ rootRef, timeout }) => [
   }],
 
   [`default options - failed to process a task - object error`, {
-    process: _ => { throw { toString: () => `custom error` } },
+    process: _ => { throw { toString: () => `custom error` } }, // eslint-disable-line no-throw-literal
     test: test(processedAll, remainingErrors({
       _error_details: { error: `custom error`, error_stack: false }
     }))
   }],
 
   [`default options - failed to process a task - null error`, {
-    process: _ => { throw null },
+    process: _ => { throw null }, // eslint-disable-line no-throw-literal
     test: test(processedAll, remainingErrors({ _error_details: false }))
   }],
 
   [`default options - failed to process a task - undefined error`, {
-    process: _ => { throw undefined },
+    process: _ => { throw undefined }, // eslint-disable-line no-throw-literal
     test: test(processedAll, remainingErrors({ _error_details: false }))
   }],
 
@@ -167,8 +167,7 @@ module.exports = ({ rootRef, timeout }) => [
       process: async ({ index }, { snapshot, setProgress }) => {
         const target = snapshot.child(targetProps[index])
         await target.ref.set(`this got changed`)
-        try { await setProgress(88) }
-        catch (e) { errors.push(e) }
+        try { await setProgress(88) } catch (e) { errors.push(e) }
         await target.ref.set(target.val())
       },
       test: test(processedAll, noRemaining, () => [errors.length, `equal`, 2])
@@ -248,7 +247,7 @@ module.exports = ({ rootRef, timeout }) => [
     test: test(processedAll, ({ remaining }) => {
       const normalizedRemaining = remaining.map(setFieldPresence(`_state_changed`))
       const expectedRemaining = [{
-         key: 'value',
+        key: 'value',
         _state: `i am finished`,
         _progress: 100,
         _state_changed: true,
