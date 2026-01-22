@@ -1,5 +1,6 @@
 {
   "include": [
+    "index.js",
     "tests/**/*.js",
     "src/**/*.js",
   ],
