@@ -1,5 +1,6 @@
-const Queue = require(`../src/queue`)
-const TransactionHelper = require(`../src/transaction_helper`)
+const Queue = require('../src/queue')
+const TransactionHelper = require('../src/transaction_helper')
+const { createObservability, noopObservability } = require('../src/observability')
 
 const { waitFor, TIMEOUT, wait } = require('./machinery/promise_utils')
 const { expectError } = require('./machinery/test_utils')
@@ -215,6 +216,71 @@ module.exports = ({ rootRef, timeout }) => {
         /* istanbul ignore next */
         return `Expected transaction to give up after a certain amount of retries`
       } catch (e) {}
+    }],
+
+    // Observability tests
+    ['Observability - noopObservability works without errors', () => {
+      // All methods should be callable without throwing
+      noopObservability.log('info', 'test.event', { key: 'value' })
+      noopObservability.increment('test.counter', { label: 'foo' })
+      noopObservability.histogram('test.duration', 123, { status: 'ok' })
+      noopObservability.gauge('test.gauge', 5, { worker: 'a' })
+    }],
+
+    ['Observability - createObservability calls logger methods', () => {
+      const calls = []
+      const logger = {
+        debug: (msg, meta) => calls.push({ level: 'debug', msg, meta }),
+        info: (msg, meta) => calls.push({ level: 'info', msg, meta }),
+        warn: (msg, meta) => calls.push({ level: 'warn', msg, meta }),
+        error: (msg, meta) => calls.push({ level: 'error', msg, meta }),
+      }
+      
+      const obs = createObservability({ logger, queueId: 'test-queue' })
+      
+      obs.log('info', 'task.claimed', { taskId: '123' })
+      obs.log('warn', 'task.failed', { error: 'oops' })
+      
+      if (calls.length !== 2) return `Expected 2 log calls, got ${calls.length}`
+      if (calls[0].level !== 'info') return `Expected info level, got ${calls[0].level}`
+      if (calls[0].meta.queue !== 'test-queue') return `Expected queue label in meta`
+      if (calls[0].meta.taskId !== '123') return `Expected taskId in meta`
+    }],
+
+    ['Observability - createObservability calls metrics methods', () => {
+      const calls = []
+      const metrics = {
+        increment: (name, labels) => calls.push({ type: 'increment', name, labels }),
+        histogram: (name, value, labels) => calls.push({ type: 'histogram', name, value, labels }),
+        gauge: (name, value, labels) => calls.push({ type: 'gauge', name, value, labels }),
+      }
+      
+      const obs = createObservability({ metrics, queueId: 'q1' })
+      
+      obs.increment('queue.tasks.completed', { worker: 'w1' })
+      obs.histogram('queue.task.duration_ms', 500, { status: 'completed' })
+      obs.gauge('queue.workers.busy', 3)
+      
+      if (calls.length !== 3) return `Expected 3 metric calls, got ${calls.length}`
+      if (calls[0].type !== 'increment') return `Expected increment`
+      if (calls[0].labels.queue !== 'q1') return `Expected queue label`
+      if (calls[1].value !== 500) return `Expected histogram value 500`
+      if (calls[2].value !== 3) return `Expected gauge value 3`
+    }],
+
+    ['Observability - handles errors in logger/metrics gracefully', () => {
+      const logger = {
+        info: () => { throw new Error('logger broke') },
+      }
+      const metrics = {
+        increment: () => { throw new Error('metrics broke') },
+      }
+      
+      const obs = createObservability({ logger, metrics })
+      
+      // Should not throw
+      obs.log('info', 'test', {})
+      obs.increment('test', {})
     }],
   ]
 }

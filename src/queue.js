@@ -1,5 +1,6 @@
 
 const QueueWorker = require('./queue_worker.js')
+const { createObservability, noopObservability } = require('./observability.js')
 
 module.exports = Queue
 
@@ -21,7 +22,8 @@ function Queue({
     heartbeatInterval = DEFAULT_HEARTBEAT_INTERVAL,
     lifecycle = null,
     retry = null,
-    maxConcurrent = null
+    maxConcurrent = null,
+    observability: observabilityConfig = null
   } = {}
 }) {
   if (!(this instanceof Queue)) throw new Error('You forgot the `new` keyword: `new Queue(...)`')
@@ -64,7 +66,19 @@ function Queue({
   const stats = { processed: 0, failed: 0, retried: 0 }
   let shutdownStarted = null
   let paused = false
+  
+  // Create observability instance
+  const obs = observabilityConfig 
+    ? createObservability({ ...observabilityConfig, queueId })
+    : noopObservability
+  
   let workers = createWorkers()
+  
+  // Log queue started
+  obs.log('info', 'queue.started', { numWorkers })
+  obs.gauge('queue.workers.total', numWorkers)
+  obs.gauge('queue.workers.busy', 0)
+  obs.gauge('queue.paused', 0)
 
   this.shutdown = shutdown
   this.getStats = getStats
@@ -77,12 +91,17 @@ function Queue({
     shutdownStarted = Promise.all(workers.map(worker => worker.shutdown()))
     const result = await shutdownStarted
     workers = null // allow garbage collection
+    obs.log('info', 'queue.shutdown')
+    obs.gauge('queue.workers.total', 0)
+    obs.gauge('queue.workers.busy', 0)
     return result
   }
 
   function pause() {
     if (paused) return
     paused = true
+    obs.log('info', 'queue.paused')
+    obs.gauge('queue.paused', 1)
     if (lifecycle?.onQueuePaused) {
       try { lifecycle.onQueuePaused() } catch (_) {}
     }
@@ -92,6 +111,8 @@ function Queue({
     if (!paused) return
     paused = false
     for (const w of workers) w.resume()
+    obs.log('info', 'queue.resumed')
+    obs.gauge('queue.paused', 0)
     if (lifecycle?.onQueueResumed) {
       try { lifecycle.onQueueResumed() } catch (_) {}
     }
@@ -125,7 +146,8 @@ function Queue({
         stats,
         retryConfig,
         maxConcurrent,
-        isPaused: () => paused
+        isPaused: () => paused,
+        observability: obs
       })
     }
   }

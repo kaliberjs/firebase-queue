@@ -1,10 +1,9 @@
-'use strict'
 
 const TransactionHelper = require('./transaction_helper')
 
 module.exports = QueueWorker
 
-function QueueWorker({ processId, tasksRef, spec, errorToErrorDetails, processTask, reportError, heartbeatInterval, lifecycle, stats, retryConfig, maxConcurrent, isPaused }) {
+function QueueWorker({ processId, tasksRef, spec, errorToErrorDetails, processTask, reportError, heartbeatInterval, lifecycle, stats, retryConfig, maxConcurrent, isPaused, observability: obs }) {
   const { startState } = spec
   const newTaskRef = tasksRef.orderByChild('_state').equalTo(startState).limitToFirst(1)
 
@@ -69,6 +68,13 @@ function QueueWorker({ processId, tasksRef, spec, errorToErrorDetails, processTa
       transactionHelper = nextTransactionHelper
       
       const taskId = snapshot.key
+      
+      // Observability: log task claimed
+      if (obs) {
+        obs.log('debug', 'task.claimed', { taskId, workerId: processId })
+        obs.increment('queue.tasks.claimed', { worker: processId })
+      }
+      
       if (lifecycle?.onTaskClaimed) {
         try { lifecycle.onTaskClaimed(taskId, processId) } catch (_) {}
       }
@@ -126,6 +132,16 @@ function QueueWorker({ processId, tasksRef, spec, errorToErrorDetails, processTa
       
       const durationMs = claimTime ? Date.now() - claimTime : null
       if (stats) stats.processed++
+      
+      // Observability: log task completed
+      if (obs) {
+        obs.log('info', 'task.completed', { taskId, durationMs })
+        obs.increment('queue.tasks.completed', { worker: processId })
+        if (durationMs !== null) {
+          obs.histogram('queue.task.duration_ms', durationMs, { status: 'completed' })
+        }
+      }
+      
       if (lifecycle?.onTaskCompleted) {
         try { lifecycle.onTaskCompleted(taskId, durationMs, newTask) } catch (_) {}
       }
@@ -141,6 +157,13 @@ function QueueWorker({ processId, tasksRef, spec, errorToErrorDetails, processTa
         const retryResult = await scheduleRetry(ref, error, snapshot)
         if (retryResult.scheduled) {
           if (stats) stats.retried++
+          
+          // Observability: log retry scheduled
+          if (obs) {
+            obs.log('info', 'task.retry_scheduled', { taskId, attempt: retryResult.attempt, delayMs: retryResult.delayMs, error: error?.message })
+            obs.increment('queue.tasks.retried', { worker: processId, attempt: retryResult.attempt })
+          }
+          
           if (lifecycle?.onTaskRetryScheduled) {
             try { lifecycle.onTaskRetryScheduled(taskId, retryResult.attempt, retryResult.delayMs, error) } catch (_) {}
           }
@@ -152,6 +175,16 @@ function QueueWorker({ processId, tasksRef, spec, errorToErrorDetails, processTa
       if (!committed) throw new Error(`Could not reject task with error:\n${error}`)
       
       if (stats) stats.failed++
+      
+      // Observability: log task failed
+      if (obs) {
+        obs.log('warn', 'task.failed', { taskId, durationMs, error: error?.message })
+        obs.increment('queue.tasks.failed', { worker: processId })
+        if (durationMs !== null) {
+          obs.histogram('queue.task.duration_ms', durationMs, { status: 'failed' })
+        }
+      }
+      
       if (lifecycle?.onTaskFailed) {
         try { lifecycle.onTaskFailed(taskId, durationMs, error) } catch (_) {}
       }

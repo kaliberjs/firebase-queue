@@ -248,6 +248,65 @@ Tasks in progress now include additional timing fields:
 | `_started_at` | Timestamp when processing began |
 | `_duration_ms` | Processing duration (set on completion/failure) |
 
+### Custom Observability
+
+For production monitoring, you can provide your own logging, metrics, and tracing implementations:
+
+```js
+const queue = new Queue({
+  tasksRef,
+  processTask,
+  reportError,
+  options: {
+    observability: {
+      // Structured logger interface
+      logger: {
+        debug: (event, meta) => console.log(JSON.stringify({ level: 'debug', event, ...meta })),
+        info: (event, meta) => console.log(JSON.stringify({ level: 'info', event, ...meta })),
+        warn: (event, meta) => console.warn(JSON.stringify({ level: 'warn', event, ...meta })),
+        error: (event, meta) => console.error(JSON.stringify({ level: 'error', event, ...meta })),
+      },
+      
+      // Metrics interface (e.g., Prometheus, Datadog)
+      metrics: {
+        increment: (name, labels) => { /* count: queue.tasks.completed, etc */ },
+        histogram: (name, value, labels) => { /* duration: queue.task.duration_ms */ },
+        gauge: (name, value, labels) => { /* current: queue.workers.busy */ },
+      },
+      
+      // OpenTelemetry tracer (optional)
+      tracer: trace.getTracer('firebase-queue'),
+    }
+  }
+})
+```
+
+#### Metrics Emitted
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `queue.tasks.claimed` | counter | `queue`, `worker` | Tasks claimed |
+| `queue.tasks.completed` | counter | `queue`, `worker` | Tasks completed successfully |
+| `queue.tasks.failed` | counter | `queue`, `worker` | Tasks failed permanently |
+| `queue.tasks.retried` | counter | `queue`, `worker`, `attempt` | Tasks scheduled for retry |
+| `queue.task.duration_ms` | histogram | `queue`, `status` | Processing time |
+| `queue.workers.busy` | gauge | `queue` | Currently processing |
+| `queue.workers.total` | gauge | `queue` | Total workers |
+| `queue.paused` | gauge | `queue` | 1 if paused, 0 otherwise |
+
+#### Log Events
+
+| Event | Level | Description |
+|-------|-------|-------------|
+| `queue.started` | info | Queue initialized |
+| `queue.paused` | info | Queue paused |
+| `queue.resumed` | info | Queue resumed |
+| `queue.shutdown` | info | Queue shut down |
+| `task.claimed` | debug | Task claimed by worker |
+| `task.completed` | info | Task completed successfully |
+| `task.failed` | warn | Task failed permanently |
+| `task.retry_scheduled` | info | Task scheduled for retry |
+
 ## Documentation
 
 * [Guide](docs/guide.md)
