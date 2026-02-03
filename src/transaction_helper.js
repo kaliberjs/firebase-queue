@@ -1,31 +1,26 @@
 
-module.exports = TransactionHelper
+module.exports = { createTransactionHelper }
 
 const SERVER_TIMESTAMP = {'.sv': 'timestamp'}
 const MAX_TRANSACTION_ATTEMPTS = 10
 
-function TransactionHelper({ processId, spec, errorToErrorDetails, onTransactionRetry, taskNumber = 0 }) {
+function createTransactionHelper({ processId, spec, errorToErrorDetails, onTransactionRetry, taskNumber = 0 }) {
   const { startState, inProgressState, finishedState, errorState } = spec
-
   const owner = `${processId}:${taskNumber}`
   let claimTime = null
 
-  this.cloneForNextTask = cloneForNextTask
-  this.getClaimTime = () => claimTime
-
-  this.claim              = async ref => withRetries(ref, claim)
-  this.updateHeartbeat    = async ref => withRetries(ref, updateHeartbeat)
-  this.updateProgressWith = async (ref, progress) => withRetries(ref, updateProgressWith(progress))
-  this.resolveWith        = async (ref, newTask)  => withRetries(ref, resolveWith(newTask))
-  this.rejectWith         = async (ref, error)    => withRetries(ref, rejectWith(error))
-
-  function cloneForNextTask() {
-    return new TransactionHelper({ processId, spec, errorToErrorDetails, onTransactionRetry, taskNumber: taskNumber + 1 })
+  return {
+    cloneForNextTask: () => createTransactionHelper({ processId, spec, errorToErrorDetails, onTransactionRetry, taskNumber: taskNumber + 1 }),
+    getClaimTime: () => claimTime,
+    claim: async ref => withRetries(ref, claim),
+    updateHeartbeat: async ref => withRetries(ref, updateHeartbeat),
+    updateProgressWith: async (ref, progress) => withRetries(ref, updateProgressWith(progress)),
+    resolveWith: async (ref, newTask) => withRetries(ref, resolveWith(newTask)),
+    rejectWith: async (ref, error) => withRetries(ref, rejectWith(error))
   }
 
   function claim(task) {
     if (task === null) return null
-    // Skip tasks that are scheduled for later retry
     if (task._retry_at && task._retry_at > Date.now()) return undefined
     if ((task._state || null) === startState) {
       claimTime = Date.now()
@@ -67,7 +62,7 @@ function TransactionHelper({ processId, spec, errorToErrorDetails, onTransaction
           }
         }
         if (newTask) return newTask
-        return null // remove
+        return null
       }
     }
   }

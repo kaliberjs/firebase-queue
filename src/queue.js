@@ -1,12 +1,12 @@
 
-const QueueWorker = require('./queue_worker.js')
+const { createWorker } = require('./queue_worker.js')
 const { createObservability, noopObservability } = require('./observability.js')
 
-module.exports = Queue
+module.exports = { createQueue }
 
 const DEFAULT_HEARTBEAT_INTERVAL = 30000
 
-function Queue({
+function createQueue({
   tasksRef,
   processTask,
   reportError,
@@ -26,9 +26,8 @@ function Queue({
     observability: observabilityConfig = null
   } = {}
 }) {
-  if (!(this instanceof Queue)) throw new Error('You forgot the `new` keyword: `new Queue(...)`')
-
   const spec = { startState, inProgressState, finishedState, errorState }
+  
   check(tasksRef, isFirebaseRef,
     'tasksRef must be a Firebase reference')
 
@@ -59,38 +58,36 @@ function Queue({
   check(maxConcurrent, isNull, isPositiveInteger,
     'options.maxConcurrent must be null or a positive integer')
 
-  // Normalize retry configuration
   const retryConfig = normalizeRetryConfig(retry)
-
   const queueId = tasksRef.push().key
   const stats = { processed: 0, failed: 0, retried: 0 }
   let shutdownStarted = null
   let paused = false
   
-  // Create observability instance
   const obs = observabilityConfig 
     ? createObservability({ ...observabilityConfig, queueId })
     : noopObservability
   
   let workers = createWorkers()
   
-  // Log queue started
   obs.log('info', 'queue.started', { numWorkers })
   obs.gauge('queue.workers.total', numWorkers)
   obs.gauge('queue.workers.busy', 0)
   obs.gauge('queue.paused', 0)
 
-  this.shutdown = shutdown
-  this.getStats = getStats
-  this.pause = pause
-  this.resume = resume
-  this.isPaused = () => paused
+  return {
+    shutdown,
+    getStats,
+    pause,
+    resume,
+    isPaused: () => paused
+  }
 
   async function shutdown() {
     if (shutdownStarted) return shutdownStarted
     shutdownStarted = Promise.all(workers.map(worker => worker.shutdown()))
     const result = await shutdownStarted
-    workers = null // allow garbage collection
+    workers = null
     obs.log('info', 'queue.shutdown')
     obs.gauge('queue.workers.total', 0)
     obs.gauge('queue.workers.busy', 0)
@@ -131,10 +128,8 @@ function Queue({
   }
 
   function createWorkers() {
-    return [...Array(numWorkers).keys()].map(createWorker)
-
-    function createWorker(index) {
-      return new QueueWorker({
+    return [...Array(numWorkers).keys()].map(index =>
+      createWorker({
         processId: `${queueId}:${index}`,
         tasksRef,
         spec,
@@ -149,30 +144,33 @@ function Queue({
         isPaused: () => paused,
         observability: obs
       })
-    }
-  }
-
-
-  function isFunction(x) { return typeof x === 'function' }
-  function isFirebaseRef(x) { return x && [x.on, x.off, x.transaction, x.orderByChild, x.push].every(isFunction) }
-  function isString(x) { return typeof x === 'string' }
-  function isNull(x) { return x === null }
-  function not(y) { return x => x !== y }
-  function isPositiveInteger(x) { return typeof x === 'number' && x >= 1 && x % 1 === 0 }
-
-  function check(val, ...rest) {
-    const message = rest[rest.length - 1]
-    const or = rest.slice(0, rest.length -1)
-    const valid = or.reduce(
-      (result, and) => result || [].concat(and).reduce(
-        (result, isValid) => result && isValid(val),
-        true
-      ),
-      false
     )
-    if (!valid) throw new Error(message)
   }
 }
+
+// --- Validation helpers ---
+
+function isFunction(x) { return typeof x === 'function' }
+function isFirebaseRef(x) { return x && [x.on, x.off, x.transaction, x.orderByChild, x.push].every(isFunction) }
+function isString(x) { return typeof x === 'string' }
+function isNull(x) { return x === null }
+function not(y) { return x => x !== y }
+function isPositiveInteger(x) { return typeof x === 'number' && x >= 1 && x % 1 === 0 }
+
+function check(val, ...rest) {
+  const message = rest[rest.length - 1]
+  const or = rest.slice(0, rest.length -1)
+  const valid = or.reduce(
+    (result, and) => result || [].concat(and).reduce(
+      (result, isValid) => result && isValid(val),
+      true
+    ),
+    false
+  )
+  if (!valid) throw new Error(message)
+}
+
+// --- Retry config ---
 
 function normalizeRetryConfig(retry) {
   if (!retry) return null

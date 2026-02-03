@@ -1,5 +1,5 @@
-const Queue = require('../src/queue')
-const TransactionHelper = require('../src/transaction_helper')
+const { createQueue } = require('../src/queue')
+const { createTransactionHelper } = require('../src/transaction_helper')
 const { createObservability, noopObservability } = require('../src/observability')
 
 const { waitFor, TIMEOUT, wait } = require('./machinery/promise_utils')
@@ -20,14 +20,10 @@ module.exports = ({ rootRef, timeout }) => {
     equalTo: function() { return this },
     limitToFirst: function() { return this },
   }
-  function newQueue(config) { return new Queue({ ...validConfig, ...config }) }
+  function newQueue(config) { return createQueue({ ...validConfig, ...config }) }
   function newQueueWithSpec(spec) { return newQueue({ options: { spec }}) }
 
   return [
-    [`Queue - require the 'new' keyword`, () => expectError({
-      code: () => Queue(validConfig),
-      test: [e => e.message.includes(`new`), `Error did not mention 'new'`],
-    })],
     [`Queue - require a valid 'tasksRef'`, () => expectError({
       code: [() => newQueue({ tasksRef: `invalid` }), () => newQueue({ tasksRef: undefined })],
       test: [e => e.message.includes(`tasksRef`), `Error did not mention 'tasksRef'`],
@@ -85,7 +81,7 @@ module.exports = ({ rootRef, timeout }) => {
     })],
     [`Queue - should not continue processing after shutdown`, async () => {
       const processed = []
-      const queue = new Queue({ tasksRef, processTask, reportError: dontCallMe })
+      const queue = createQueue({ tasksRef, processTask, reportError: dontCallMe })
       await queue.shutdown()
       await tasksRef.push({ index: 0 })
       try {
@@ -105,7 +101,7 @@ module.exports = ({ rootRef, timeout }) => {
       function reportError(e) { reported = e }
 
       const tasksRef = { ...validTaskRef, on: (x_, y, onError) => onError(new Error('custom error')), off: () => {} }
-      const queue = new Queue({ tasksRef, processTask: dontCallMe, reportError })
+      const queue = createQueue({ tasksRef, processTask: dontCallMe, reportError })
       await queue.shutdown()
 
       return reported
@@ -126,7 +122,7 @@ module.exports = ({ rootRef, timeout }) => {
       }
       function reportError(e) { console.error(e) }
 
-      const queue = new Queue({ tasksRef: testTasksRef, processTask, reportError })
+      const queue = createQueue({ tasksRef: testTasksRef, processTask, reportError })
 
       // Verify initial state
       if (queue.isPaused()) return `Queue should not start paused`
@@ -160,7 +156,7 @@ module.exports = ({ rootRef, timeout }) => {
     }],
     [`Queue - getStats includes pause and retry info`, async () => {
       const testTasksRef = rootRef.push().ref
-      const queue = new Queue({
+      const queue = createQueue({
         tasksRef: testTasksRef,
         processTask: dontCallMe,
         reportError: dontCallMe,
@@ -178,7 +174,7 @@ module.exports = ({ rootRef, timeout }) => {
     [`Queue - lifecycle hooks for pause/resume`, async () => {
       const events = []
       const testTasksRef = rootRef.push().ref
-      const queue = new Queue({
+      const queue = createQueue({
         tasksRef: testTasksRef,
         processTask: dontCallMe,
         reportError: dontCallMe,
@@ -198,7 +194,7 @@ module.exports = ({ rootRef, timeout }) => {
       if (events[1] !== 'resumed') return `Expected onQueueResumed to be called`
     }],
     [`TransactionHelper - should retry transactions`, async () => {
-      const t = new TransactionHelper({ spec: {} })
+      const t = createTransactionHelper({ spec: {} })
       let tried = 0
       await t.claim({ transaction })
 
@@ -210,7 +206,7 @@ module.exports = ({ rootRef, timeout }) => {
       }
     }],
     [`TransactionHelper - should give up after a certain amount of transactions`, async () => {
-      const t = new TransactionHelper({ spec: {} })
+      const t = createTransactionHelper({ spec: {} })
       try {
         await t.claim({ transaction: async () => { throw new Error(`try again`) } })
         /* istanbul ignore next */

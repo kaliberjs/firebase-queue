@@ -1,5 +1,5 @@
 
-module.exports = RetryScheduler
+module.exports = { createRetryScheduler }
 
 /**
  * Polls for tasks that are ready to be retried.
@@ -10,20 +10,23 @@ module.exports = RetryScheduler
  * @param {Object} options.tasksRef - Firebase reference to the tasks
  * @param {string|null} options.startState - The start state for tasks (null or string)
  * @param {number} options.pollIntervalMs - How often to poll for retries (default: 60000)
+ * @param {Function} options.reportError - Optional error handler for polling failures
  */
-function RetryScheduler({ tasksRef, startState, pollIntervalMs = 60000 }) {
+function createRetryScheduler({ tasksRef, startState, pollIntervalMs = 60000, reportError = null }) {
   let intervalId = null
   let stopped = false
 
-  this.start = start
-  this.stop = stop
-  this.isRunning = () => intervalId !== null
+  return {
+    start,
+    stop,
+    isRunning: () => intervalId !== null
+  }
 
   function start() {
     if (intervalId) return
     stopped = false
     intervalId = setInterval(pollForRetries, pollIntervalMs)
-    pollForRetries() // Initial poll
+    pollForRetries()
   }
 
   async function stop() {
@@ -41,7 +44,7 @@ function RetryScheduler({ tasksRef, startState, pollIntervalMs = 60000 }) {
       const now = Date.now()
       const snapshot = await tasksRef
         .orderByChild('_retry_at')
-        .startAt(1) // Exclude null/undefined
+        .startAt(1)
         .endAt(now)
         .once('value')
       
@@ -50,9 +53,7 @@ function RetryScheduler({ tasksRef, startState, pollIntervalMs = 60000 }) {
       const updates = {}
       const tasks = snapshot.val() || {}
       for (const [key, task] of Object.entries(tasks)) {
-        // Only touch tasks in start state with past retry_at
         if ((task._state || null) === startState && task._retry_at && task._retry_at <= now) {
-          // Clear _retry_at to allow claiming
           updates[`${key}/_retry_at`] = null
         }
       }
@@ -60,8 +61,10 @@ function RetryScheduler({ tasksRef, startState, pollIntervalMs = 60000 }) {
       if (Object.keys(updates).length > 0) {
         await tasksRef.update(updates)
       }
-    } catch (e) {
-      // Silently fail - will retry on next poll
+    } catch (error) {
+      if (reportError) {
+        try { reportError(error) } catch (_) {}
+      }
     }
   }
 }

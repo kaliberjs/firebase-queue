@@ -1,6 +1,6 @@
 const { sequence, wait, waitFor, TIMEOUT } = require('./promise_utils')
 const ops = require('./ops')
-const Queue = require('../../src/queue')
+const { createQueue } = require('../../src/queue')
 
 module.exports = {
   runSpecs,
@@ -121,7 +121,7 @@ function createTasks(numTasks, createTask) {
 }
 
 function createQueues(count, config) {
-  const queues = [...Array(count)].map(_ => new Queue(config))
+  const queues = [...Array(count)].map(_ => createQueue(config))
   return { shutdown: async () => Promise.all(queues.map(x => x.shutdown())) }
 }
 

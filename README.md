@@ -31,13 +31,13 @@ Basic usage example
 
 ```js
 const firebase = require('firebase-admin')
-const Queue = require('@kaliber/firebase-queue')
+const { createQueue } = require('@kaliber/firebase-queue')
 
 const app = firebase.initializeApp(..., 'my-queue')
 const tasksRef = app.database().ref('tasks')
 
 // the queue starts processing as soon as you create an instance
-const queue = new Queue({ tasksRef, processTask, reportError })
+const queue = createQueue({ tasksRef, processTask, reportError })
 
 // capture shutdown signal to perform a gracefull shutdown
 process.on('SIGINT', async () => {
@@ -65,7 +65,7 @@ function reportError(e) {
 Failed tasks can automatically retry with configurable backoff strategies:
 
 ```js
-const queue = new Queue({
+const queue = createQueue({
   tasksRef,
   processTask,
   reportError,
@@ -112,12 +112,13 @@ Tasks being retried have additional fields:
 For handling orphaned retries (from crashed workers), use the RetryScheduler:
 
 ```js
-const RetryScheduler = require('@kaliber/firebase-queue/retry-scheduler')
+const { createRetryScheduler } = require('@kaliber/firebase-queue/retry-scheduler')
 
-const scheduler = new RetryScheduler({
+const scheduler = createRetryScheduler({
   tasksRef,
   startState: null,           // Match your queue's startState
-  pollIntervalMs: 60000       // How often to check for ready retries
+  pollIntervalMs: 60000,      // How often to check for ready retries
+  reportError: console.error  // Optional: error handler for polling failures
 })
 
 scheduler.start()
@@ -131,7 +132,7 @@ scheduler.stop()
 Queues can be paused and resumed dynamically:
 
 ```js
-const queue = new Queue({
+const queue = createQueue({
   tasksRef,
   processTask,
   reportError,
@@ -164,7 +165,7 @@ The queue provides built-in observability features for monitoring and debugging 
 Workers automatically update a `_heartbeat` timestamp on tasks while processing. This allows you to detect stuck workers.
 
 ```js
-const queue = new Queue({
+const queue = createQueue({
   tasksRef,
   processTask,
   reportError,
@@ -199,7 +200,7 @@ stuckTasks.forEach(snap => {
 Subscribe to task lifecycle events for logging, metrics, or alerting:
 
 ```js
-const queue = new Queue({
+const queue = createQueue({
   tasksRef,
   processTask,
   reportError,
@@ -253,7 +254,7 @@ Tasks in progress now include additional timing fields:
 For production monitoring, you can provide your own logging, metrics, and tracing implementations:
 
 ```js
-const queue = new Queue({
+const queue = createQueue({
   tasksRef,
   processTask,
   reportError,
@@ -481,14 +482,14 @@ change the amount of active workers. Note that a queue is a very lightweight obj
 more than one is no problem.
 
 ```js
-const queues = [createQueue()]
+const queues = [makeQueue()]
 
-function createQueue() {
-  return new Queue({ ... })
+function makeQueue() {
+  return createQueue({ ... })
 }
 
 function scaleUp() {
-  queues.push(createQueue())
+  queues.push(makeQueue())
 }
 async function scaleDown() {
   if (queues.length > 1) {
@@ -503,21 +504,21 @@ workers.
 
 ```js
 let numWorkers = 1
-let queue = createQueue(numWorkers)
+let queue = makeQueue(numWorkers)
 
-function createQueue(numWorkers) {
-  return new Queue({ ..., options: { numWorkers } })
+function makeQueue(numWorkers) {
+  return createQueue({ ..., options: { numWorkers } })
 }
 
 async function scaleUp() {
   await queue.shutdown()
   numWorkers += 1
-  queue = createQueue(numWorkers)
+  queue = makeQueue(numWorkers)
 }
 async function scaleDown() {
   await queue.shutdown()
   numWorkers = Math.max(1, numWorkers - 1)
-  queue = createQueue(numWorkers)
+  queue = makeQueue(numWorkers)
 }
 ```
 
