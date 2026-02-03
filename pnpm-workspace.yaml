@@ -1,0 +1,21 @@
+autoInstallPeers: false
+
+ignoredBuiltDependencies:
+  - '@firebase/util'
+  - protobufjs
+
+onlyBuiltDependencies:
+  - re2
+
+peerDependencyRules:
+  ignoreMissing:
+    - typescript
+    - hono
+
+publicHoistPattern:
+  - eslint
+  - eslint-plugin-*
+  - '@babel/eslint-parser'
+  - '@babel/preset-react'
+
+strictPeerDependencies: true

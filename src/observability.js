@@ -1,13 +1,21 @@
+/** @import { Logger, Metrics, ObservabilityConfig } from './types.ts' */
+
+/**
+ * @typedef {Object} ObservabilityInstance
+ * @property {(level: 'debug'|'info'|'warn'|'error', event: string, meta?: Record<string, any>) => void} log
+ * @property {(name: string, labels?: Record<string, any>) => void} increment
+ * @property {(name: string, value: number, labels?: Record<string, any>) => void} histogram
+ * @property {(name: string, value: number, labels?: Record<string, any>) => void} gauge
+ * @property {<T>(name: string, fn: () => Promise<T>) => Promise<T>} startSpan
+ * @property {(busy: number, total: number) => void} updateWorkerGauges
+ */
 
 /**
  * Creates an observability instance that wraps logging, metrics, and tracing.
  * All interfaces are optional - if not provided, operations are no-ops.
  * 
- * @param {Object} config
- * @param {Object} config.logger - Logger with debug, info, warn, error methods
- * @param {Object} config.metrics - Metrics with increment, histogram, gauge methods
- * @param {Object} config.tracer - OpenTelemetry Tracer instance
- * @param {string} config.queueId - Queue identifier for labels
+ * @param {ObservabilityConfig & { queueId?: string }} [config]
+ * @returns {ObservabilityInstance}
  */
 function createObservability(config = {}) {
   const logger = config.logger || noopLogger
@@ -20,7 +28,7 @@ function createObservability(config = {}) {
      * Log a structured event
      * @param {'debug'|'info'|'warn'|'error'} level
      * @param {string} event - Event name like 'task.claimed'
-     * @param {Object} meta - Additional metadata
+     * @param {Record<string, any>} [meta] - Additional metadata
      */
     log(level, event, meta = {}) {
       const logFn = logger[level]
@@ -32,7 +40,7 @@ function createObservability(config = {}) {
     /**
      * Emit a counter metric (increment by 1)
      * @param {string} name - Metric name
-     * @param {Object} labels - Additional labels
+     * @param {Record<string, any>} [labels] - Additional labels
      */
     increment(name, labels = {}) {
       if (metrics.increment) {
@@ -44,7 +52,7 @@ function createObservability(config = {}) {
      * Emit a histogram metric (for durations, sizes, etc.)
      * @param {string} name - Metric name
      * @param {number} value - Observed value
-     * @param {Object} labels - Additional labels
+     * @param {Record<string, any>} [labels] - Additional labels
      */
     histogram(name, value, labels = {}) {
       if (metrics.histogram) {
@@ -56,7 +64,7 @@ function createObservability(config = {}) {
      * Emit a gauge metric (for current values)
      * @param {string} name - Metric name
      * @param {number} value - Current value
-     * @param {Object} labels - Additional labels
+     * @param {Record<string, any>} [labels] - Additional labels
      */
     gauge(name, value, labels = {}) {
       if (metrics.gauge) {
@@ -66,9 +74,10 @@ function createObservability(config = {}) {
 
     /**
      * Start a tracing span (no-op if no tracer configured)
+     * @template T
      * @param {string} name - Span name
-     * @param {Function} fn - Async function to wrap
-     * @returns {Promise} Result of fn
+     * @param {() => Promise<T>} fn - Async function to wrap
+     * @returns {Promise<T>} Result of fn
      */
     async startSpan(name, fn) {
       if (!tracer) return fn()
@@ -100,6 +109,7 @@ function createObservability(config = {}) {
   }
 }
 
+/** @type {Required<Logger>} */
 const noopLogger = {
   debug: () => {},
   info: () => {},
@@ -107,6 +117,7 @@ const noopLogger = {
   error: () => {},
 }
 
+/** @type {Required<Metrics>} */
 const noopMetrics = {
   increment: () => {},
   histogram: () => {},
@@ -115,6 +126,7 @@ const noopMetrics = {
 
 /**
  * A no-op observability instance for when no observability is configured
+ * @type {ObservabilityInstance}
  */
 const noopObservability = createObservability()
 

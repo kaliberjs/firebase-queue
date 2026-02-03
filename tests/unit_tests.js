@@ -1,50 +1,67 @@
 const { createQueue } = require('../src/queue')
 const { createTransactionHelper } = require('../src/transaction_helper')
 const { createObservability, noopObservability } = require('../src/observability')
+/** @import { database } from 'firebase-admin' */
+/** @import { Test } from './machinery/run_unit_tests' */
+/** @import { Config, Spec, Task } from '../src/types' */
 
 const { waitFor, TIMEOUT, wait } = require('./machinery/promise_utils')
 const { expectError } = require('./machinery/test_utils')
 
+/**
+ * @arg {{ rootRef: database.Reference, timeout: number }} props
+ * @returns {[string, Test][]}
+ */
 module.exports = ({ rootRef, timeout }) => {
   const tasksRef = rootRef.push().ref
-  /* istanbul ignore next */function dontCallMe(...args) {
+  /** @arg {...any} args @returns {any} */
+  function dontCallMe(...args) {
     throw new Error(`unexpected call of function with arguments:\b${JSON.stringify(args, null, 2)}`)
   }
   const validConfig = { tasksRef, processTask: dontCallMe, reportError: dontCallMe }
-  const validTaskRef = {
+  // @ts-expect-error
+  const validTaskRef = /** @type {database.Reference} */ ({
     on: dontCallMe,
     off: dontCallMe,
     push: () => tasksRef.push(),
     transaction: dontCallMe,
-    orderByChild: function () { return this },
-    equalTo: function() { return this },
-    limitToFirst: function() { return this },
-  }
+    orderByChild() { return this },
+    equalTo() { return this },
+    limitToFirst() { return this },
+  })
+  /** @arg {Partial<Config>} config */
   function newQueue(config) { return createQueue({ ...validConfig, ...config }) }
-  function newQueueWithSpec(spec) { return newQueue({ options: { spec }}) }
+  /** @arg {Spec} spec */
+  function newQueueWithSpec(spec) { return newQueue({ options: { spec } }) }
 
-  return [
+  return /** @type {[String, Test][]} */ ([
     [`Queue - require a valid 'tasksRef'`, () => expectError({
+      // @ts-expect-error
       code: [() => newQueue({ tasksRef: `invalid` }), () => newQueue({ tasksRef: undefined })],
       test: [e => e.message.includes(`tasksRef`), `Error did not mention 'tasksRef'`],
     })],
     [`Queue - require a valid 'processTask'`, () => expectError({
+      // @ts-expect-error
       code: [() => newQueue({ processTask: `invalid` }), () => newQueue({ processTask: undefined })],
       test: [e => e.message.includes(`processTask`), `Error did not mention 'processTask'`],
     })],
     [`Queue - require a valid 'reportError'`, () => expectError({
+      // @ts-expect-error
       code: [() => newQueue({ reportError: `invalid` }), () => newQueue({ reportError: undefined })],
       test: [e => e.message.includes(`reportError`), `Error did not mention 'reportError'`],
     })],
     [`Queue - require a valid 'spec.inProgressState'`, () => expectError({
       code: [
+        // @ts-expect-error
         () => newQueueWithSpec({ inProgressState: { invalid: true } }),
+        // @ts-expect-error
         () => newQueueWithSpec({ inProgressState: null }),
       ],
       test: [e => e.message.includes(`spec.inProgressState`), `Error did not mention 'spec.inProgressState'`],
     })],
     [`Queue - require a valid 'spec.startState'`, () => expectError({
       code: [
+        // @ts-expect-error
         () => newQueueWithSpec({ startState: { invalid: true } }),
         () => newQueueWithSpec({ startState: `in_progress` }),
       ],
@@ -52,6 +69,7 @@ module.exports = ({ rootRef, timeout }) => {
     })],
     [`Queue - require a valid 'spec.finishedState'`, () => expectError({
       code: [
+        // @ts-expect-error
         () => newQueueWithSpec({ finishedState: { invalid: true } }),
         () => newQueueWithSpec({ finishedState: `in_progress` }),
         () => newQueueWithSpec({ startState: 'start', finishedState: `start` }),
@@ -60,10 +78,12 @@ module.exports = ({ rootRef, timeout }) => {
     })],
     [`Queue - require a valid 'spec.errorState'`, () => expectError({
       code: [
+        // @ts-expect-error
         () => newQueueWithSpec({ errorState: { invalid: true } }),
         () => newQueueWithSpec({ errorState: `in_progress` }),
         () => newQueueWithSpec({ startState: 'start', errorState: `start` }),
         () => newQueueWithSpec({ finishedState: 'finished', errorState: `finished` }),
+        // @ts-expect-error
         () => newQueueWithSpec({ errorState: null }),
       ],
       test: [e => e.message.includes(`spec.errorState`), `Error did not mention 'spec.errorState'`],
@@ -73,8 +93,10 @@ module.exports = ({ rootRef, timeout }) => {
         () => newQueue({ options: { numWorkers: 0 } }),
         () => newQueue({ options: { numWorkers: -1 } }),
         () => newQueue({ options: { numWorkers: NaN } }),
+        // @ts-expect-error
         () => newQueue({ options: { numWorkers: 'nope' } }),
         () => newQueue({ options: { numWorkers: 1.1 } }),
+        // @ts-expect-error
         () => newQueue({ options: { numWorkers: "1" } }),
       ],
       test: [e => e.message.includes(`numWorkers`), `Error did not mention 'numWorkers'`],
@@ -86,28 +108,28 @@ module.exports = ({ rootRef, timeout }) => {
       await tasksRef.push({ index: 0 })
       try {
         await waitFor(() => processed.length === 1, { timeout })
-        /* istanbul ignore next */ return `Expected timeout because no tasks should be processed`
+        return `Expected timeout because no tasks should be processed`
       } catch (e) {
-        /* istanbul ignore if */
         if (e !== TIMEOUT) throw e
       } finally {
         await tasksRef.remove()
       }
 
-      /* istanbul ignore next */ function processTask(x) { processed.push(x) }
+      /** @arg {Task} x */
+      function processTask(x) { processed.push(x) }
     }],
     [`Queue - should correctly report errors`, async () => {
       let reported = null
       function reportError(e) { reported = e }
 
       const tasksRef = { ...validTaskRef, on: (x_, y, onError) => onError(new Error('custom error')), off: () => {} }
+      // @ts-expect-error
       const queue = createQueue({ tasksRef, processTask: dontCallMe, reportError })
       await queue.shutdown()
 
       return reported
-        ? reported.message !== `custom error` && /* istanbul ignore next */ `The wrong error was reported`
-        : /* istanbul ignore next */ `Expected an error to be reported`
-
+        ? reported.message !== `custom error` && `The wrong error was reported`
+        : `Expected an error to be reported`
     }],
     [`Queue - pause and resume`, async () => {
       const testTasksRef = rootRef.push().ref
@@ -117,35 +139,27 @@ module.exports = ({ rootRef, timeout }) => {
       
       function processTask(x) { 
         processed.push(x) 
-        // Signal that first task was processed
         if (processed.length === 1) resolveProcessing()
       }
       function reportError(e) { console.error(e) }
 
       const queue = createQueue({ tasksRef: testTasksRef, processTask, reportError })
 
-      // Verify initial state
       if (queue.isPaused()) return `Queue should not start paused`
 
-      // Process one task first
       await testTasksRef.push({ index: 0 })
       await processingPromise
       
-      // Now pause
       queue.pause()
       if (!queue.isPaused()) return `Queue should be paused after pause()`
       
-      // Wait for worker to reach its next waitForNextTask cycle
       await wait(50)
 
-      // Add second task while paused
       await testTasksRef.push({ index: 1 })
       await wait(timeout * 0.3)
 
-      // Only first task should be processed (second task waiting)
       if (processed.length !== 1) return `Only 1 task should be processed while paused, got ${processed.length}`
 
-      // Resume and verify second task is processed
       queue.resume()
       if (queue.isPaused()) return `Queue should not be paused after resume()`
 
@@ -194,11 +208,13 @@ module.exports = ({ rootRef, timeout }) => {
       if (events[1] !== 'resumed') return `Expected onQueueResumed to be called`
     }],
     [`TransactionHelper - should retry transactions`, async () => {
-      const t = createTransactionHelper({ spec: {} })
+      const t = createTransactionHelper({ processId: '', spec: {} })
       let tried = 0
+      // @ts-expect-error
       await t.claim({ transaction })
 
-      async function transaction() {
+      /** @arg {any} x */
+      async function transaction(x) {
         if (!tried) {
           tried += 1
           throw new Error('try again')
@@ -206,17 +222,16 @@ module.exports = ({ rootRef, timeout }) => {
       }
     }],
     [`TransactionHelper - should give up after a certain amount of transactions`, async () => {
-      const t = createTransactionHelper({ spec: {} })
+      const t = createTransactionHelper({ processId: '', spec: {} })
       try {
+        // @ts-expect-error
         await t.claim({ transaction: async () => { throw new Error(`try again`) } })
-        /* istanbul ignore next */
         return `Expected transaction to give up after a certain amount of retries`
       } catch (e) {}
     }],
 
     // Observability tests
     ['Observability - noopObservability works without errors', () => {
-      // All methods should be callable without throwing
       noopObservability.log('info', 'test.event', { key: 'value' })
       noopObservability.increment('test.counter', { label: 'foo' })
       noopObservability.histogram('test.duration', 123, { status: 'ok' })
@@ -274,9 +289,8 @@ module.exports = ({ rootRef, timeout }) => {
       
       const obs = createObservability({ logger, metrics })
       
-      // Should not throw
       obs.log('info', 'test', {})
       obs.increment('test', {})
     }],
-  ]
+  ])
 }

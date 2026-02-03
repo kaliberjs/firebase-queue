@@ -1,18 +1,22 @@
+/** @import { ReportError, RetryScheduler as RetrySchedulerType } from './types.ts' */
+/** @import { database } from 'firebase-admin' */
 
 module.exports = { createRetryScheduler }
 
 /**
- * Polls for tasks that are ready to be retried.
- * This handles the case where a task was scheduled for retry
- * but the original worker died before the retry time.
+ * Creates a retry scheduler that polls for tasks ready to be retried.
+ * This handles the case where a task was scheduled for retry but the
+ * original worker died before the retry time.
  * 
  * @param {Object} options
- * @param {Object} options.tasksRef - Firebase reference to the tasks
- * @param {string|null} options.startState - The start state for tasks (null or string)
- * @param {number} options.pollIntervalMs - How often to poll for retries (default: 60000)
- * @param {Function} options.reportError - Optional error handler for polling failures
+ * @param {database.Reference} options.tasksRef - Firebase reference to the tasks
+ * @param {string | null} options.startState - The start state for tasks
+ * @param {number} [options.pollIntervalMs=60000] - How often to poll for retries (ms)
+ * @param {ReportError | null} [options.reportError] - Optional error handler for polling failures
+ * @returns {RetrySchedulerType}
  */
 function createRetryScheduler({ tasksRef, startState, pollIntervalMs = 60000, reportError = null }) {
+  /** @type {ReturnType<typeof setInterval> | null} */
   let intervalId = null
   let stopped = false
 
@@ -22,6 +26,10 @@ function createRetryScheduler({ tasksRef, startState, pollIntervalMs = 60000, re
     isRunning: () => intervalId !== null
   }
 
+  /**
+   * Starts polling for retryable tasks.
+   * @returns {void}
+   */
   function start() {
     if (intervalId) return
     stopped = false
@@ -29,6 +37,10 @@ function createRetryScheduler({ tasksRef, startState, pollIntervalMs = 60000, re
     pollForRetries()
   }
 
+  /**
+   * Stops polling for retryable tasks.
+   * @returns {Promise<void>}
+   */
   async function stop() {
     stopped = true
     if (intervalId) {
@@ -37,6 +49,10 @@ function createRetryScheduler({ tasksRef, startState, pollIntervalMs = 60000, re
     }
   }
 
+  /**
+   * Polls Firebase for tasks that have passed their retry time.
+   * @returns {Promise<void>}
+   */
   async function pollForRetries() {
     if (stopped) return
     
@@ -50,9 +66,11 @@ function createRetryScheduler({ tasksRef, startState, pollIntervalMs = 60000, re
       
       if (!snapshot.exists()) return
       
+      /** @type {Record<string, null>} */
       const updates = {}
       const tasks = snapshot.val() || {}
       for (const [key, task] of Object.entries(tasks)) {
+        // @ts-ignore - task is any from Firebase
         if ((task._state || null) === startState && task._retry_at && task._retry_at <= now) {
           updates[`${key}/_retry_at`] = null
         }
@@ -63,7 +81,7 @@ function createRetryScheduler({ tasksRef, startState, pollIntervalMs = 60000, re
       }
     } catch (error) {
       if (reportError) {
-        try { reportError(error) } catch (_) {}
+        try { reportError(/** @type {Error} */(error)) } catch (_) {}
       }
     }
   }

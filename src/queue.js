@@ -1,3 +1,5 @@
+/** @import { Config, Options, Spec, SpecWithDefaults, Lifecycle, RetryConfig, BackoffFunction, Queue, QueueStats, ProcessTask, ReportError, ErrorToErrorDetails, ObservabilityConfig } from './types.ts' */
+/** @import { database } from 'firebase-admin' */
 
 const { createWorker } = require('./queue_worker.js')
 const { createObservability, noopObservability } = require('./observability.js')
@@ -6,6 +8,21 @@ module.exports = { createQueue }
 
 const DEFAULT_HEARTBEAT_INTERVAL = 30000
 
+/**
+ * @typedef {Object} NormalizedRetryConfig
+ * @property {number} maxAttempts
+ * @property {BackoffFunction} backoff
+ * @property {number} initialDelayMs
+ * @property {number} maxDelayMs
+ * @property {((error: Error) => boolean) | null} retryableErrors
+ */
+
+/**
+ * Creates a new task queue for processing Firebase tasks.
+ * 
+ * @param {Config} config
+ * @returns {Queue}
+ */
 function createQueue({
   tasksRef,
   processTask,
@@ -26,6 +43,7 @@ function createQueue({
     observability: observabilityConfig = null
   } = {}
 }) {
+  /** @type {SpecWithDefaults} */
   const spec = { startState, inProgressState, finishedState, errorState }
   
   check(tasksRef, isFirebaseRef,
@@ -58,9 +76,11 @@ function createQueue({
   check(maxConcurrent, isNull, isPositiveInteger,
     'options.maxConcurrent must be null or a positive integer')
 
+  /** @type {NormalizedRetryConfig | null} */
   const retryConfig = normalizeRetryConfig(retry)
   const queueId = tasksRef.push().key
   const stats = { processed: 0, failed: 0, retried: 0 }
+  /** @type {Promise<void[]> | null} */
   let shutdownStarted = null
   let paused = false
   
@@ -68,7 +88,8 @@ function createQueue({
     ? createObservability({ ...observabilityConfig, queueId })
     : noopObservability
   
-  let workers = createWorkers()
+  /** @type {ReturnType<typeof createWorker>[] | null} */
+  let workers = initWorkers()
   
   obs.log('info', 'queue.started', { numWorkers })
   obs.gauge('queue.workers.total', numWorkers)
@@ -83,17 +104,25 @@ function createQueue({
     isPaused: () => paused
   }
 
+  /**
+   * Shuts down all workers and the queue.
+   * @returns {Promise<void>}
+   */
   async function shutdown() {
-    if (shutdownStarted) return shutdownStarted
+    if (shutdownStarted) return shutdownStarted.then(() => {})
+    if (!workers) return
     shutdownStarted = Promise.all(workers.map(worker => worker.shutdown()))
-    const result = await shutdownStarted
+    await shutdownStarted
     workers = null
     obs.log('info', 'queue.shutdown')
     obs.gauge('queue.workers.total', 0)
     obs.gauge('queue.workers.busy', 0)
-    return result
   }
 
+  /**
+   * Pauses processing of new tasks.
+   * @returns {void}
+   */
   function pause() {
     if (paused) return
     paused = true
@@ -104,10 +133,16 @@ function createQueue({
     }
   }
 
+  /**
+   * Resumes processing of tasks.
+   * @returns {void}
+   */
   function resume() {
     if (!paused) return
     paused = false
-    for (const w of workers) w.resume()
+    if (workers) {
+      for (const w of workers) w.resume()
+    }
     obs.log('info', 'queue.resumed')
     obs.gauge('queue.paused', 0)
     if (lifecycle?.onQueueResumed) {
@@ -115,6 +150,10 @@ function createQueue({
     }
   }
 
+  /**
+   * Returns queue statistics.
+   * @returns {QueueStats}
+   */
   function getStats() {
     const busyWorkers = workers ? workers.filter(w => w.isBusy()).length : 0
     return {
@@ -127,7 +166,11 @@ function createQueue({
     }
   }
 
-  function createWorkers() {
+  /**
+   * Creates all worker instances.
+   * @returns {ReturnType<typeof createWorker>[]}
+   */
+  function initWorkers() {
     return [...Array(numWorkers).keys()].map(index =>
       createWorker({
         processId: `${queueId}:${index}`,
@@ -150,16 +193,34 @@ function createQueue({
 
 // --- Validation helpers ---
 
+/** @param {any} x @returns {x is Function} */
 function isFunction(x) { return typeof x === 'function' }
+
+/** @param {any} x @returns {x is database.Reference} */
 function isFirebaseRef(x) { return x && [x.on, x.off, x.transaction, x.orderByChild, x.push].every(isFunction) }
+
+/** @param {any} x @returns {x is string} */
 function isString(x) { return typeof x === 'string' }
+
+/** @param {any} x @returns {x is null} */
 function isNull(x) { return x === null }
+
+/** @param {any} y @returns {(x: any) => boolean} */
 function not(y) { return x => x !== y }
+
+/** @param {any} x @returns {boolean} */
 function isPositiveInteger(x) { return typeof x === 'number' && x >= 1 && x % 1 === 0 }
 
+/**
+ * Validates a value against a set of predicates.
+ * @param {any} val
+ * @param {...(((x: any) => boolean) | ((x: any) => boolean)[] | string)} rest
+ * @returns {void}
+ * @throws {Error}
+ */
 function check(val, ...rest) {
-  const message = rest[rest.length - 1]
-  const or = rest.slice(0, rest.length -1)
+  const message = /** @type {string} */(rest[rest.length - 1])
+  const or = rest.slice(0, rest.length - 1)
   const valid = or.reduce(
     (result, and) => result || [].concat(and).reduce(
       (result, isValid) => result && isValid(val),
@@ -172,6 +233,11 @@ function check(val, ...rest) {
 
 // --- Retry config ---
 
+/**
+ * Normalizes retry configuration with defaults.
+ * @param {RetryConfig | null} retry
+ * @returns {NormalizedRetryConfig | null}
+ */
 function normalizeRetryConfig(retry) {
   if (!retry) return null
 
@@ -192,7 +258,13 @@ function normalizeRetryConfig(retry) {
   }
 }
 
+/**
+ * Returns a backoff function by name.
+ * @param {'fixed' | 'linear' | 'exponential'} name
+ * @returns {BackoffFunction}
+ */
 function getBackoffStrategy(name) {
+  /** @type {Record<string, BackoffFunction>} */
   const strategies = {
     fixed: (attempt, initial) => initial,
     linear: (attempt, initial) => initial * attempt,
