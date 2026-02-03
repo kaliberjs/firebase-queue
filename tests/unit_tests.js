@@ -1,7 +1,7 @@
 const Queue = require(`../src/queue`)
 const TransactionHelper = require(`../src/transaction_helper`)
 
-const { waitFor, TIMEOUT } = require('./machinery/promise_utils')
+const { waitFor, TIMEOUT, wait } = require('./machinery/promise_utils')
 const { expectError } = require('./machinery/test_utils')
 
 module.exports = ({ rootRef, timeout }) => {
@@ -111,6 +111,90 @@ module.exports = ({ rootRef, timeout }) => {
         ? reported.message !== `custom error` && /* istanbul ignore next */ `The wrong error was reported`
         : /* istanbul ignore next */ `Expected an error to be reported`
 
+    }],
+    [`Queue - pause and resume`, async () => {
+      const testTasksRef = rootRef.push().ref
+      const processed = []
+      let resolveProcessing
+      const processingPromise = new Promise(r => { resolveProcessing = r })
+      
+      function processTask(x) { 
+        processed.push(x) 
+        // Signal that first task was processed
+        if (processed.length === 1) resolveProcessing()
+      }
+      function reportError(e) { console.error(e) }
+
+      const queue = new Queue({ tasksRef: testTasksRef, processTask, reportError })
+
+      // Verify initial state
+      if (queue.isPaused()) return `Queue should not start paused`
+
+      // Process one task first
+      await testTasksRef.push({ index: 0 })
+      await processingPromise
+      
+      // Now pause
+      queue.pause()
+      if (!queue.isPaused()) return `Queue should be paused after pause()`
+      
+      // Wait for worker to reach its next waitForNextTask cycle
+      await wait(50)
+
+      // Add second task while paused
+      await testTasksRef.push({ index: 1 })
+      await wait(timeout * 0.3)
+
+      // Only first task should be processed (second task waiting)
+      if (processed.length !== 1) return `Only 1 task should be processed while paused, got ${processed.length}`
+
+      // Resume and verify second task is processed
+      queue.resume()
+      if (queue.isPaused()) return `Queue should not be paused after resume()`
+
+      await waitFor(() => processed.length === 2, { timeout })
+
+      await queue.shutdown()
+      await testTasksRef.remove()
+    }],
+    [`Queue - getStats includes pause and retry info`, async () => {
+      const testTasksRef = rootRef.push().ref
+      const queue = new Queue({
+        tasksRef: testTasksRef,
+        processTask: dontCallMe,
+        reportError: dontCallMe,
+        options: { retry: { maxAttempts: 3 } }
+      })
+
+      const stats = queue.getStats()
+      await queue.shutdown()
+
+      if (!('isPaused' in stats)) return `getStats should include isPaused`
+      if (!('totalRetried' in stats)) return `getStats should include totalRetried`
+      if (stats.isPaused !== false) return `isPaused should be false initially`
+      if (stats.totalRetried !== 0) return `totalRetried should be 0 initially`
+    }],
+    [`Queue - lifecycle hooks for pause/resume`, async () => {
+      const events = []
+      const testTasksRef = rootRef.push().ref
+      const queue = new Queue({
+        tasksRef: testTasksRef,
+        processTask: dontCallMe,
+        reportError: dontCallMe,
+        options: {
+          lifecycle: {
+            onQueuePaused: () => events.push('paused'),
+            onQueueResumed: () => events.push('resumed'),
+          }
+        }
+      })
+
+      queue.pause()
+      queue.resume()
+      await queue.shutdown()
+
+      if (events[0] !== 'paused') return `Expected onQueuePaused to be called`
+      if (events[1] !== 'resumed') return `Expected onQueueResumed to be called`
     }],
     [`TransactionHelper - should retry transactions`, async () => {
       const t = new TransactionHelper({ spec: {} })

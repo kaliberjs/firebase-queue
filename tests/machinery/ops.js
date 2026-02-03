@@ -26,6 +26,7 @@ const ops = {
     `Expected no duplicates in ${JSON.stringify(a, null, 2)}`,
   sameValues: a => new Set(a).size !== 1 &&
     `Expected all values to be the same ${JSON.stringify(a, null, 2)}`,
+  gte: (a, b) => a < b && `Expected ${a} to be greater than or equal to ${b}`,
   haveFields: (a, fields) =>
     a.reduce(
       (result, x) => {

@@ -16,6 +16,8 @@ yarn add @kaliber/firebase-queue
 ## Table of Contents
 
  * [Usage](#usage)
+ * [Retry](#retry)
+ * [Pause/Resume](#pauseresume)
  * [Observability](#observability)
  * [Documentation](#documentation)
  * [Contributing](#contributing)
@@ -57,6 +59,101 @@ function reportError(e) {
   // also report the error to your error tracker (Rollbar, Sentry, RayGun, ...)
 }
 ```
+
+## Retry
+
+Failed tasks can automatically retry with configurable backoff strategies:
+
+```js
+const queue = new Queue({
+  tasksRef,
+  processTask,
+  reportError,
+  options: {
+    retry: {
+      maxAttempts: 5,           // Maximum retry attempts (required)
+      backoff: 'exponential',   // 'exponential', 'linear', 'fixed', or custom function
+      initialDelayMs: 1000,     // Initial delay before first retry (default: 1000)
+      maxDelayMs: 3600000,      // Maximum delay cap (default: 1 hour)
+      retryableErrors: (error) => {  // Optional: control which errors retry
+        return error.code !== 'PERMANENT_FAILURE'
+      }
+    },
+    lifecycle: {
+      onTaskRetryScheduled: (taskId, attempt, delayMs, error) => {
+        console.log(`Task ${taskId} scheduled for retry #${attempt} in ${delayMs}ms`)
+      }
+    }
+  }
+})
+```
+
+### Backoff Strategies
+
+| Strategy | Formula | Use Case |
+|----------|---------|----------|
+| `'exponential'` | `initialDelay * 2^(attempt-1)` | Most failures (network, rate limits) |
+| `'linear'` | `initialDelay * attempt` | Predictable delays |
+| `'fixed'` | `initialDelay` | Consistent retry timing |
+| Custom function | `(attempt, initialDelay) => ms` | Custom logic |
+
+### Retry Metadata
+
+Tasks being retried have additional fields:
+
+| Field | Description |
+|-------|-------------|
+| `_retry_attempt` | Current retry attempt number |
+| `_retry_at` | Scheduled retry timestamp |
+| `_last_error` | Error message from last failure |
+
+### RetryScheduler
+
+For handling orphaned retries (from crashed workers), use the RetryScheduler:
+
+```js
+const RetryScheduler = require('@kaliber/firebase-queue/retry-scheduler')
+
+const scheduler = new RetryScheduler({
+  tasksRef,
+  startState: null,           // Match your queue's startState
+  pollIntervalMs: 60000       // How often to check for ready retries
+})
+
+scheduler.start()
+
+// On shutdown
+scheduler.stop()
+```
+
+## Pause/Resume
+
+Queues can be paused and resumed dynamically:
+
+```js
+const queue = new Queue({
+  tasksRef,
+  processTask,
+  reportError,
+  options: {
+    lifecycle: {
+      onQueuePaused: () => console.log('Queue paused'),
+      onQueueResumed: () => console.log('Queue resumed')
+    }
+  }
+})
+
+// Pause processing (current task will complete)
+queue.pause()
+
+// Check if paused
+queue.isPaused() // true
+
+// Resume processing
+queue.resume()
+```
+
+> **Note:** Pause takes effect between tasks. A task that's already being processed will complete before the pause takes effect.
 
 ## Observability
 
@@ -135,7 +232,9 @@ const stats = queue.getStats()
 //   numWorkers: 5,
 //   busyWorkers: 3,
 //   totalProcessed: 142,
-//   totalFailed: 3
+//   totalFailed: 3,
+//   totalRetried: 12,
+//   isPaused: false
 // }
 ```
 
@@ -203,27 +302,17 @@ async function processTask(task) {
 }
 ```
 
-### No more retries
+### Retries are back (v1.4.0+)
 
-The original library allowed you to retry tasks when they failed. Retrying is very much dependent on
-the type of error. If a code / syntax error is happening there is no point in retrying. If it's a
-flaky internet connection there is.
+The original library allowed retries, which were initially removed in this fork. As of v1.4.0, 
+retries are back with a more flexible implementation:
 
-Adding retries to the process function itself is trivial, so I moved the burden to the users of the
-library. To achieve similar behavior you can catch any error in the process function and return a
-new task with an incremented `_numRetries` prop if the existing `_numRetries` prop is still below
-the threshold.
+- **Opt-in**: Retries are disabled by default, preserving backward compatibility
+- **Configurable backoff**: Exponential, linear, fixed, or custom strategies
+- **Error filtering**: Use `retryableErrors` to control which errors should retry
+- **Lifecycle hooks**: Get notified when retries are scheduled
 
-```js
-async function processTask({ _numRetries = 0, ...task }) {
-  try {
-    await doTheWork(task)
-  } catch (e) {
-    if (_numRetries > 2) throw e
-    else return { ...task, _numRetries: _numRetries + 1 }
-  }
-}
-```
+See the [Retry](#retry) section for usage details.
 
 ### No more specs from Firebase
 

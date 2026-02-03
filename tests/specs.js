@@ -285,6 +285,120 @@ module.exports = ({ rootRef, timeout }) => [
       test: test(processedAll, noRemaining, [inProgressStates, `equal`, [`i am in progress`]])
     }
   }],
+
+  [`retry - task is retried after failure`, () => {
+    let attempts = 0
+    return {
+      queue: {
+        options: {
+          retry: { maxAttempts: 3, backoff: 'fixed', initialDelayMs: 0 },
+          spec: { finishedState: 'finished' }
+        }
+      },
+      process: async () => {
+        attempts++
+        if (attempts < 2) throw new Error('retry me')
+      },
+      // Custom expectedNumProcessed to allow time for retry
+      expectedNumProcessed: 1,
+      test: async ({ remaining }) => {
+        // Wait for the retry to complete (polling)
+        const { waitFor } = require('./machinery/promise_utils')
+        await waitFor(() => attempts >= 2, { timeout: 5000 })
+        
+        return [attempts, 'equal', 2]
+      }
+    }
+  }],
+
+  [`retry - task exceeds max attempts and goes to error state`, () => {
+    let attempts = 0
+    return {
+      queue: {
+        options: {
+          retry: { maxAttempts: 2, backoff: 'fixed', initialDelayMs: 0 }
+        }
+      },
+      process: async () => {
+        attempts++
+        throw new Error('always fail')
+      },
+      expectedNumProcessed: 1,
+      test: async ({ remaining, tasks }) => {
+        // Wait for max retries to complete
+        const { waitFor } = require('./machinery/promise_utils')
+        await waitFor(() => attempts >= 3, { timeout: 5000 }) // initial + 2 retries = 3 attempts
+        
+        // Task should be in error state after exhausting retries
+        return [attempts, 'equal', 3]
+      }
+    }
+  }],
+
+  [`retry - retryableErrors callback can prevent retry`, () => {
+    let attempts = 0
+    return {
+      queue: {
+        options: {
+          retry: {
+            maxAttempts: 5,
+            backoff: 'fixed',
+            initialDelayMs: 0,
+            retryableErrors: (e) => !e.message.includes('permanent')
+          }
+        }
+      },
+      process: async () => {
+        attempts++
+        const err = new Error('permanent failure')
+        throw err
+      },
+      expectedNumProcessed: 1,
+      test: async ({ remaining }) => {
+        // Small wait to ensure no retry happens
+        const { wait } = require('./machinery/promise_utils')
+        await wait(100)
+        
+        // Should only attempt once because error is not retryable
+        return [[attempts, 'equal', 1], 'and', [remaining[0]?._state, 'equal', 'error']]
+      }
+    }
+  }],
+
+  [`retry - lifecycle hook onTaskRetryScheduled is called`, () => {
+    const retryEvents = []
+    let attempts = 0
+    return {
+      queue: {
+        options: {
+          retry: { maxAttempts: 3, backoff: 'fixed', initialDelayMs: 0 },
+          spec: { finishedState: 'finished' },
+          lifecycle: {
+            onTaskRetryScheduled: (taskId, attempt, delayMs, error) => {
+              retryEvents.push({ taskId, attempt, delayMs, error: error.message })
+            }
+          }
+        }
+      },
+      process: async () => {
+        attempts++
+        if (attempts < 2) throw new Error('retry me')
+      },
+      expectedNumProcessed: 1,
+      test: async () => {
+        const { waitFor } = require('./machinery/promise_utils')
+        await waitFor(() => attempts >= 2, { timeout: 5000 })
+        
+        return [
+          [retryEvents.length, 'equal', 1],
+          'and',
+          [retryEvents[0]?.attempt, 'equal', 1],
+          'and',
+          [retryEvents[0]?.error, 'equal', 'retry me']
+        ]
+      }
+    }
+  }],
 ]
 
 function addFields(o) { return x => ({ ...o, ...x }) }
