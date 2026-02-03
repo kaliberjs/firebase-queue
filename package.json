@@ -1,6 +1,6 @@
 {
   "name": "@kaliber/firebase-queue",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "A fault-tolerant, multi-worker, multi-stage job pipeline built on Firebase",
   "keywords": [
     "job",
@@ -22,6 +22,10 @@
   "homepage": "https://github.com/kaliberjs/firebase-queue",
   "repository": "https://github.com/kaliberjs/firebase-queue.git",
   "main": "src/queue.js",
+  "exports": {
+    ".": "./src/queue.js",
+    "./retry-scheduler": "./src/retry_scheduler.js"
+  },
   "files": [
     "src/**",
     "LICENSE",
@@ -36,7 +40,7 @@
   },
   "scripts": {
     "test": "npm-run-all --race --silent --parallel server tests",
-    "server": "firebase-server",
+    "server": "firebase-server -p 5050",
     "tests": "nyc node tests/"
   }
 }

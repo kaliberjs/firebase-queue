@@ -111,8 +111,8 @@ module.exports = ({ rootRef, timeout }) => [
   [`spec with finished state - leave tasks in queue with correct state`, {
     queue: { options: { spec: { finishedState: `finished` } } },
     test: test(processedAll, ({ tasks, remaining }) => {
-      const normalizedRemaining = remaining.map(setFieldPresence(`_state_changed`))
-      const normalizedData = tasks.map(addFields({ _progress: 100, _state: `finished`, _state_changed: true }))
+      const normalizedRemaining = remaining.map(setFieldPresence(`_state_changed`, `_duration_ms`, `_started_at`))
+      const normalizedData = tasks.map(addFields({ _progress: 100, _state: `finished`, _state_changed: true, _duration_ms: true, _started_at: true }))
       return [normalizedRemaining, `equal`, normalizedData]
     })
   }],
@@ -122,7 +122,7 @@ module.exports = ({ rootRef, timeout }) => [
     return {
       process: (_, { snapshot }) => { snapshots.push(snapshot.val()) },
       test: test(processedAll, noRemaining,
-        [snapshots, `haveFields`, [`index`, `_state`, `_state_changed`, `_progress`, `_owner`]]
+        [snapshots, `haveFields`, [`index`, `_state`, `_state_changed`, `_progress`, `_owner`, `_heartbeat`, `_started_at`]]
       )
     }
   }],
@@ -168,12 +168,14 @@ module.exports = ({ rootRef, timeout }) => [
       if (index) throw new Error('oops')
     },
     test: test(processedAll, ({ tasks, remaining }) => {
-      const normalizedRemaining = remaining.map(setFieldPresence(`_state_changed`))
+      const normalizedRemaining = remaining.map(setFieldPresence(`_state_changed`, `_heartbeat`, `_started_at`))
       const normalizedData = tasks.map(addFields({
         _owner: `this got changed`,
         _progress: 0,
         _state: `in_progress`,
         _state_changed: true,
+        _heartbeat: true,
+        _started_at: true,
       }))
       return [normalizedRemaining, `equal`, normalizedData]
     }),
@@ -187,12 +189,14 @@ module.exports = ({ rootRef, timeout }) => [
       if (index) throw new Error('oops')
     },
     test: test(processedAll, ({ tasks, remaining }) => {
-      const normalizedRemaining = remaining.map(setFieldPresence(`_owner`, `_state_changed`))
+      const normalizedRemaining = remaining.map(setFieldPresence(`_owner`, `_state_changed`, `_heartbeat`, `_started_at`))
       const normalizedData = tasks.map(addFields({
         _owner: true,
         _progress: 0,
         _state: `this got changed`,
         _state_changed: true,
+        _heartbeat: true,
+        _started_at: true,
       }))
       return [normalizedRemaining, `equal`, normalizedData]
     }),
@@ -203,12 +207,14 @@ module.exports = ({ rootRef, timeout }) => [
     queue: { options: { spec: { errorState: `i have failed` } } },
     process: async _ => { throw new Error(`custom error`) },
     test: test(processedAll, ({ tasks, remaining }) => {
-      const normalizedRemaining = remaining.map(setFieldPresence(`_error_details`, `_state_changed`))
+      const normalizedRemaining = remaining.map(setFieldPresence(`_error_details`, `_state_changed`, `_duration_ms`, `_started_at`))
       const normalizedData = tasks.map(addFields({
         _state: `i have failed`,
         _progress: 0,
         _state_changed: true,
         _error_details: true,
+        _duration_ms: true,
+        _started_at: true,
       }))
 
       return [normalizedRemaining, `equal`, normalizedData]
@@ -218,11 +224,13 @@ module.exports = ({ rootRef, timeout }) => [
   [`custom spec - custom 'finishedState'`, {
     queue: { options: { spec: { finishedState: `i am finished` } } },
     test: test(processedAll, ({ tasks, remaining }) => {
-      const normalizedRemaining = remaining.map(setFieldPresence(`_state_changed`))
+      const normalizedRemaining = remaining.map(setFieldPresence(`_state_changed`, `_duration_ms`, `_started_at`))
       const normalizedData = tasks.map(addFields({
         _state: `i am finished`,
         _progress: 100,
         _state_changed: true,
+        _duration_ms: true,
+        _started_at: true,
       }))
       return [normalizedRemaining, `equal`, normalizedData]
     })
@@ -232,12 +240,14 @@ module.exports = ({ rootRef, timeout }) => [
     queue: { options: { spec: { finishedState: `i am finished` } } },
     process: x => ({ key: 'value' }),
     test: test(processedAll, ({ remaining }) => {
-      const normalizedRemaining = remaining.map(setFieldPresence(`_state_changed`))
+      const normalizedRemaining = remaining.map(setFieldPresence(`_state_changed`, `_duration_ms`, `_started_at`))
       const expectedRemaining = [{
          key: 'value',
         _state: `i am finished`,
         _progress: 100,
         _state_changed: true,
+        _duration_ms: true,
+        _started_at: true,
       }]
       return [normalizedRemaining, `equal`, expectedRemaining]
     })
@@ -309,12 +319,14 @@ function remainingErrors({ _error_details }) {
   const fieldPresence = setFieldPresence([`_error_details`, [`error_stack`]], `_state_changed`)
 
   return ({ tasks, remaining }) => {
-    const normalizedRemaining = remaining.map(fieldPresence)
+    const normalizedRemaining = remaining.map(fieldPresence).map(setFieldPresence(`_duration_ms`, `_started_at`))
     const normalizedData = tasks.map(addFields({
       _error_details,
       _progress: 0,
       _state: `error`,
       _state_changed: true,
+      _duration_ms: true,
+      _started_at: true,
     }))
     return [normalizedRemaining, `equal`, normalizedData]
   }

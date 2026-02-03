@@ -16,6 +16,7 @@ yarn add @kaliber/firebase-queue
 ## Table of Contents
 
  * [Usage](#usage)
+ * [Observability](#observability)
  * [Documentation](#documentation)
  * [Contributing](#contributing)
  * [Thanks](#thanks)
@@ -56,6 +57,97 @@ function reportError(e) {
   // also report the error to your error tracker (Rollbar, Sentry, RayGun, ...)
 }
 ```
+
+## Observability
+
+The queue provides built-in observability features for monitoring and debugging production workloads.
+
+### Heartbeat
+
+Workers automatically update a `_heartbeat` timestamp on tasks while processing. This allows you to detect stuck workers.
+
+```js
+const queue = new Queue({
+  tasksRef,
+  processTask,
+  reportError,
+  options: {
+    heartbeatInterval: 30000, // update every 30s (default)
+    // heartbeatInterval: null, // disable heartbeat
+  }
+})
+```
+
+**Detecting stuck tasks:**
+
+```js
+const staleThreshold = 2 * 60 * 1000 // 2 minutes
+const now = Date.now()
+
+const stuckTasks = await tasksRef
+  .orderByChild('_state')
+  .equalTo('in_progress')
+  .once('value')
+
+stuckTasks.forEach(snap => {
+  const task = snap.val()
+  if (now - task._heartbeat > staleThreshold) {
+    console.log('Stuck task:', snap.key)
+  }
+})
+```
+
+### Lifecycle Hooks
+
+Subscribe to task lifecycle events for logging, metrics, or alerting:
+
+```js
+const queue = new Queue({
+  tasksRef,
+  processTask,
+  reportError,
+  options: {
+    lifecycle: {
+      onTaskClaimed: (taskId, workerId) => {
+        console.log(`Task ${taskId} claimed by ${workerId}`)
+      },
+      onTaskCompleted: (taskId, durationMs, result) => {
+        metrics.histogram('task_duration_ms', durationMs)
+      },
+      onTaskFailed: (taskId, durationMs, error) => {
+        alerting.notify(`Task ${taskId} failed: ${error.message}`)
+      },
+      onTransactionRetry: (taskId, attempt, error) => {
+        console.warn(`Transaction retry ${attempt} for ${taskId}`)
+      }
+    }
+  }
+})
+```
+
+### Queue Stats
+
+Get real-time statistics about the queue:
+
+```js
+const stats = queue.getStats()
+// {
+//   numWorkers: 5,
+//   busyWorkers: 3,
+//   totalProcessed: 142,
+//   totalFailed: 3
+// }
+```
+
+### Task Metadata
+
+Tasks in progress now include additional timing fields:
+
+| Field | Description |
+|-------|-------------|
+| `_heartbeat` | Last heartbeat timestamp (updated every `heartbeatInterval`) |
+| `_started_at` | Timestamp when processing began |
+| `_duration_ms` | Processing duration (set on completion/failure) |
 
 ## Documentation
 

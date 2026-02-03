@@ -11,7 +11,7 @@ const timeout = 500
 const app = firebase.initializeApp({
   apiKey: `api key not needed`,
   applicationId: `application id not needed`,
-  databaseURL: `ws://localhost:5000`,
+  databaseURL: `ws://localhost:5050`,
   projectId: `project id not needed`,
 })
 const db = app.database()
