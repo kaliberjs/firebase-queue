@@ -11,6 +11,7 @@
     "realtime",
     "pipeline"
   ],
+  "type": "commonjs",
   "publishConfig": {
     "access": "public"
   },
@@ -21,22 +22,20 @@
   },
   "homepage": "https://github.com/kaliberjs/firebase-queue",
   "repository": "https://github.com/kaliberjs/firebase-queue.git",
-  "main": "src/queue.js",
+  "main": "index.js",
   "files": [
+    "index.js",
     "src/**",
     "LICENSE",
     "README.md",
     "package.json"
   ],
   "devDependencies": {
-    "firebase": "8.1.1",
-    "firebase-server": "^1.1.0",
-    "npm-run-all": "^4.1.5",
-    "nyc": "^15.1.0"
+    "@kaliber/eslint-plugin": "^1.0.0",
+    "firebase-admin": "^13.0.0",
+    "firebase-tools": "^15.0.0"
   },
   "scripts": {
-    "test": "npm-run-all --race --silent --parallel server tests",
-    "server": "firebase-server",
-    "tests": "nyc node tests/"
+    "test": "firebase emulators:exec \"node ./tests/index.js\" --only database --project demo-kaliber-firebase-queue-tests"
   }
 }

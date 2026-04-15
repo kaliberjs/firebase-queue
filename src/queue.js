@@ -1,9 +1,12 @@
-'use strict'
-
 const QueueWorker = require('./queue_worker.js')
+/** @import { Config } from './types.ts' */
 
 module.exports = Queue
 
+/**
+ * @constructor
+ * @arg {Config} config
+ */
 function Queue({
   tasksRef,
   processTask,
@@ -47,6 +50,7 @@ function Queue({
     'options.numWorkers must be a positive integer')
 
   const queueId = tasksRef.push().key
+  /** @type {null | Promise<void>} */
   let shutdownStarted = null
   let removeWorkers  = createWorkers()
 
@@ -55,6 +59,7 @@ function Queue({
   async function shutdown() {
     if (shutdownStarted) return shutdownStarted
     shutdownStarted = removeWorkers()
+    // @ts-expect-error
     removeWorkers = null // make sure no references to workers are being kept and allow garbage collection
     return shutdownStarted
   }
@@ -66,6 +71,7 @@ function Queue({
       await Promise.all(workers.map(worker => worker.shutdown()))
     }
 
+    /** @arg {number} index */
     function createWorker(index) {
       return new QueueWorker({
         processId: `${queueId}:${index}`,
@@ -78,18 +84,28 @@ function Queue({
     }
   }
 
+  /** @arg {any} x */
   function isFunction(x) { return typeof x === 'function' }
+  /** @arg {any} x */
   function isFirebaseRef(x) { return x && [x.on, x.off, x.transaction, x.orderByChild, x.push].every(isFunction) }
+  /** @arg {any} x */
   function isString(x) { return typeof x === 'string' }
+  /** @arg {any} x */
   function isNull(x) { return x === null }
+  /** @arg {any} y @returns {(x: any) => boolean} */
   function not(y) { return x => x !== y }
+  /** @arg {any} x */
   function isPositiveInteger(x) { return typeof x === 'number' && x >= 1 && x % 1 === 0 }
 
+  /**
+   * @arg {any} val
+   * @arg  {...any} rest
+   */
   function check(val, ...rest) {
     const message = rest[rest.length - 1]
-    const or = rest.slice(0, rest.length -1)
+    const or = rest.slice(0, rest.length - 1)
     const valid = or.reduce(
-      (result, and) => result || [].concat(and).reduce(
+      (result, and) => result || /** @type {((x: any) => boolean)[]} */ ([]).concat(and).reduce(
         (result, isValid) => result && isValid(val),
         true
       ),

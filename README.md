@@ -223,9 +223,8 @@ choices for these libraries. I however tend to want to keep my dependencies to a
 - `lodash`  - While the lodash library is a great one, I found that we do not need it's power
               anymore.
 
-As for testing, I replaced `istanbul` with `nyc` because it is so much easier to use. I removed the
-testing frameworks because they only added unneeded complexity. I also threw out Gulp, I don't see
-any reason to use it.
+As for testing, I replaced `istanbul`. I removed the testing frameworks because they only added
+unneeded complexity. I also threw out Gulp, I don't see any reason to use it.
 
 ### No more dynamic worker count
 

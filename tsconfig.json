@@ -1,0 +1,15 @@
+{
+  "include": [
+    "index.js",
+    "tests/**/*.js",
+    "src/**/*.js",
+  ],
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+    "allowImportingTsExtensions": true,
+    "downlevelIteration": true
+  }
+}

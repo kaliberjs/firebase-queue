@@ -1,25 +1,25 @@
-const firebase = require(`firebase`)
+const firebase = require(`firebase-admin`)
 const selfChecks = require('./machinery/self_checks')
 const runUnitTests = require('./machinery/run_unit_tests')
 const { runSpecs, checkExecutionResults } = require('./machinery/run_specs')
 const createUnitTests = require('./unit_tests')
 const createSpecs = require('./specs')
 const { report } = require('./machinery/report_utils')
+/** @import { Spec } from './machinery/run_specs' */
 
-const timeout = 500
+const timeout = 4000
 
 const app = firebase.initializeApp({
-  apiKey: `api key not needed`,
-  applicationId: `application id not needed`,
-  databaseURL: `ws://localhost:5000`,
-  projectId: `project id not needed`,
+  projectId: 'demo-kaliber-firebase-queue-tests',
+  databaseURL: `http://localhost:5000?ns=demo-kaliber-firebase-queue-tests-default-rtdb`,
 })
 const db = app.database()
 const rootRef = db.ref()
 
 db.goOnline()
 console.log('Running self checks...')
-selfChecks({ rootRef, timeout })
+Promise.resolve(true)
+selfChecks({ rootRef })
   .then(async previousSuccess => {
     console.log('Running unit tests...')
     const tests = createUnitTests({ rootRef, timeout })
@@ -36,10 +36,9 @@ selfChecks({ rootRef, timeout })
     return previousSuccess && specSuccess && executionSuccess
   })
   .then(success => {
-    /* istanbul ignore if */
     if (!success) process.exitCode = 1
   })
-  .catch(/* istanbul ignore next */ e => {
+  .catch(e => {
     console.error(e)
     process.exitCode = 1
   })

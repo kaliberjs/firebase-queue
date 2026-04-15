@@ -1,14 +1,2 @@
-.DS_Store
-.idea
-*.iml
-
-dist/
-coverage/
 node_modules/
-
-test/key.json
-test/url.js
-
-npm-debug.log
-
-.nyc_output/
+database-debug.log
